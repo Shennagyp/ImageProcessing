@@ -557,9 +557,39 @@ Logical pixel layout can be independent of its physical storage topology. Provid
 
 ### Deferred
 
-- Binding a complete set of layer resources to a specific ImageIdentifier/ImageRevision.
+- Resource replacement, copy-on-write, and lifetime across derived/replaced image revisions.
 - Resource replacement, copy-on-write, and lifetime across derived/replaced image revisions.
 - Transfer/import orchestration when a selected implementation requires another resource domain or execution target.
+
+---
+
+## ADR-021 — Layer storage bindings are scoped to an exact image revision
+
+**Status:** Baseline for the initial binding model
+
+### Decision
+
+Use ImageStorageBindingSet to associate PixelStorageBinding values with LayerReference values for one exact ImageIdentifier and ImageRevision. The constructor validates that every reference belongs to the supplied snapshot, resolves to an existing pixel-backed layer, and uses a PixelDataDescriptor exactly equal to that layer's semantic descriptor.
+
+The set may be partial. Non-resident or externally backed logical layers may exist without an execution-resource binding. The set reports those layers through unboundPixelLayers; runtime qualification must reject or prepare/import a resource as required by the selected implementation rather than interpreting absence as an empty image.
+
+### Invariants
+
+- The binding set's image identity and revision are immutable.
+- A binding from another image or an unknown layer is rejected.
+- Annotation layers cannot receive pixel storage.
+- Bound pixel descriptors must match the layer's descriptor exactly.
+- A binding set from a stale revision cannot be queried against a newer snapshot.
+- Resource handles remain retained by the storage binding set for its lifetime.
+
+### Consequence
+
+Image metadata can exist independently of current resource residency, while runtime execution receives explicit, revision-correct resource associations. Image state and storage residency can be updated atomically later by the Image state owner.
+
+### Deferred
+
+- Transactional commit of a new image revision and its matching storage-binding set.
+- Resource sharing/copy-on-write rules across derived images and revisions.
 
 ## Phase 0 completion checklist
 
