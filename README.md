@@ -36,7 +36,7 @@ Requires Swift 6.2.1 or a compatible Swift 6 toolchain. Xcode IDE projects are n
     swift build
     swift test
 
-CI builds and tests the core package on Linux and macOS. Provider-specific packages will have their own platform and hardware test requirements.
+A GitHub Actions matrix is configured to build and test the core package on Linux and macOS; its first successful run is still pending. Provider-specific packages will have their own platform and hardware test requirements.
 
 ## Architecture decisions
 
