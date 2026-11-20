@@ -348,6 +348,7 @@ struct ImplementationSpecificationTests {
                 maximumAbsoluteError: 0.00005
             ),
             layerSupport: .init(inputKinds: [.raster], outputKinds: [.raster]),
+            pixelDataSupport: BlurFixture.implementationPixelSupport,
             performanceHints: invalidHints
         )
         #expect(throws: ImplementationSpecificationValidationError.invalidPerformanceHints) {
@@ -485,12 +486,16 @@ extension ImplementationSpecificationTests {
         )
         try valid.validate(implements: operation.erased)
 
-        let missingRequired = BlurImplementationFixture.specification(effects: .pure)
+        let missingRequired = BlurImplementationFixture.specification(
+            parameterSupport: [],
+            effects: .pure
+        )
         #expect(throws: ImplementationSpecificationValidationError.effectContractMismatch) {
             try missingRequired.validate(implements: operation.erased)
         }
 
         let forbiddenExtraEffect = BlurImplementationFixture.specification(
+            parameterSupport: [],
             effects: OperationEffectContract(
                 requiredEffects: [.randomness, .externalIO],
                 permittedEffects: [.randomness, .externalIO]
