@@ -67,6 +67,7 @@
 \begin{enumerate}
   \item Provider identity/version and platform-aware provider discovery.
   \item Device identity, properties, supported features, execution contexts, and static capability descriptors.
+  \item Context-local capability descriptors, standardized generic capability identifiers, and the context scope in capability constraints. Provider/device facts cannot satisfy a context-scoped requirement.
   \item Context-local capability descriptors and standardized generic capability identifiers for allocation/import, work submission/dependencies, and synchronization. Context-scoped requirements are checked against the actual created context.
   \item Generic resource identifiers scoped by execution target, descriptors for buffer/texture/opaque resource kinds, capacity/alignment/memory-domain metadata, and validated allocation requests.
   \item Optional allocation/import context capabilities. Imported handles retain their source resources; no image/pixel semantics enter \GEP{}.
@@ -92,6 +93,7 @@
   \item Optional synchronization is scoped and does not require every provider to expose the same native primitive.
   \item Native provider differences remain behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
   \item Stale or unknown state is never misreported as current or idle.
+  \item A context-scoped capability requirement succeeds only when the prepared context reports it and implements the corresponding optional context protocol.
 \end{itemize}
 
 \textbf{Gate.} Do not make the common protocol larger merely to expose one vendor-specific metric or command primitive.
