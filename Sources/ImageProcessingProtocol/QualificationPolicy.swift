@@ -399,10 +399,40 @@ public struct QualificationPolicy: Hashable, Sendable {
         }
     }
 
+    private enum CapabilityValueKind: Equatable {
+        case boolean
+        case integer
+        case decimal
+        case string
+        case stringSet
+    }
+
+    private func capabilityValueKind(
+        _ requirement: ExecutionCapabilityRequirement
+    ) -> CapabilityValueKind {
+        switch requirement {
+        case let .exact(_, value):
+            switch value {
+            case .boolean: .boolean
+            case .integer: .integer
+            case .decimal: .decimal
+            case .string: .string
+            case .stringSet: .stringSet
+            }
+        case .integerAtLeast: .integer
+        case .decimalAtLeast: .decimal
+        case .stringSetContains: .stringSet
+        }
+    }
+
     private func capabilityRequirementsConflict(
         _ lhs: ExecutionCapabilityRequirement,
         _ rhs: ExecutionCapabilityRequirement
     ) -> Bool {
+        guard capabilityValueKind(lhs) == capabilityValueKind(rhs) else {
+            return true
+        }
+
         switch (lhs, rhs) {
         case let (.exact(_, left), .exact(_, right)):
             return left != right
