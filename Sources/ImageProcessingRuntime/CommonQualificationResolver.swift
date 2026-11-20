@@ -251,10 +251,7 @@ public actor CommonQualificationResolver {
                provider.descriptor.identifier != requiredProvider {
                 return false
             }
-            return providerAllowed(
-                provider.descriptor.identifier,
-                by: requirements
-            )
+            return true
         }
     }
 
