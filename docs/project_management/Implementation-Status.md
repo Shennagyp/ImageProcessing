@@ -53,7 +53,7 @@ GitHub Actions Linux build/test passed on the first matrix run. The first macOS 
 
 ## Not implemented
 
-- Image document, layer, pixel/data descriptors, and resource ownership.
+- Image document, layer, image-specific pixel/data descriptors, and their mapping to generic execution resource handles.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
