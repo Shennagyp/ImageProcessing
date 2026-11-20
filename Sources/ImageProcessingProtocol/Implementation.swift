@@ -37,6 +37,7 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
     public let role: ImplementationResourceRole
     public let kind: ExecutionResourceKind
     public let allowedMemoryDomains: Set<ExecutionMemoryDomain>
+    public let minimumCapacityBytes: UInt64
     public let minimumAlignmentBytes: UInt64
     public let access: ExecutionResourceAccessMode
     public let requiresImport: Bool
@@ -45,6 +46,7 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
         role: ImplementationResourceRole,
         kind: ExecutionResourceKind,
         allowedMemoryDomains: Set<ExecutionMemoryDomain>,
+        minimumCapacityBytes: UInt64 = 1,
         minimumAlignmentBytes: UInt64 = 1,
         access: ExecutionResourceAccessMode,
         requiresImport: Bool = false
@@ -52,6 +54,7 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
         self.role = role
         self.kind = kind
         self.allowedMemoryDomains = allowedMemoryDomains
+        self.minimumCapacityBytes = minimumCapacityBytes
         self.minimumAlignmentBytes = minimumAlignmentBytes
         self.access = access
         self.requiresImport = requiresImport
@@ -60,6 +63,7 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
     public var isValid: Bool {
         role.isValid
             && !allowedMemoryDomains.isEmpty
+            && minimumCapacityBytes > 0
             && minimumAlignmentBytes > 0
             && minimumAlignmentBytes.nonzeroBitCount == 1
     }
@@ -178,6 +182,9 @@ public struct ImplementationSpecification: Hashable, Sendable {
         guard operation.outputType == outputType else {
             throw ImplementationSpecificationValidationError.outputTypeMismatch
         }
+        guard requiredCapabilities.allSatisfy(Self.isValidCapabilityConstraint) else {
+            throw ImplementationSpecificationValidationError.invalidRequiredCapability
+        }
 
         do {
             try OperationParameterSupportValidation.validate(
@@ -225,7 +232,10 @@ public struct ImplementationSpecification: Hashable, Sendable {
            effectContract.outputAliasing == .mayAliasInput {
             throw ImplementationSpecificationValidationError.effectContractMismatch
         }
-        guard effectContract.effects.isSubset(of: operation.effectContract.effects) else {
+        guard operation.effectContract.isValid,
+              effectContract.isValid,
+              operation.effectContract.requiredEffects.isSubset(of: effectContract.requiredEffects),
+              effectContract.permittedEffects.isSubset(of: operation.effectContract.permittedEffects) else {
             throw ImplementationSpecificationValidationError.effectContractMismatch
         }
 
@@ -259,6 +269,25 @@ public struct ImplementationSpecification: Hashable, Sendable {
 
         if let performanceHints, !performanceHints.isValid {
             throw ImplementationSpecificationValidationError.invalidPerformanceHints
+        }
+    }
+
+    private static func isValidCapabilityConstraint(
+        _ constraint: ExecutionCapabilityConstraint
+    ) -> Bool {
+        switch constraint.requirement {
+        case let .exact(_, .decimal(value)):
+            return value.isFinite
+        case let .exact(_, .string(value)):
+            return !value.isEmpty
+        case let .exact(_, .stringSet(values)):
+            return !values.isEmpty && values.allSatisfy { !$0.isEmpty }
+        case let .decimalAtLeast(_, minimum):
+            return minimum.isFinite
+        case let .stringSetContains(_, value):
+            return !value.isEmpty
+        case .exact, .integerAtLeast:
+            return true
         }
     }
 
