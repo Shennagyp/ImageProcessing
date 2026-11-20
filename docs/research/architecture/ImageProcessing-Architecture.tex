@@ -160,7 +160,11 @@ The design has four primary semantic objects:
   \item \textbf{Pixel resource:} an opaque reference to actual numerical storage, independent of the logical image and layer identities.
 \end{enumerate}
 
-An operation object is not itself a Metal kernel, CUDA kernel, OpenCV call, or arbitrary closure. It defines \emph{what} must be computed. One or more operation implementations define \emph{how} that meaning is computed on a particular execution provider. A qualification function determines which implementations are valid for the operation, its actual inputs, the available provider and device, and the execution constraints. A separate selection policy chooses among valid candidates.
+An operation object is not itself a Metal kernel, CUDA kernel, OpenCV call, or arbitrary closure. It defines \emph{what} must be computed. One or more operation implementations define \emph{how} that meaning is computed using an available execution environment. A domain-specific qualification function determines which operation implementations can satisfy the operation contract for the actual input and available execution capabilities. A separate selection policy chooses among qualified candidates.
+
+The protocol-library direction is deliberate. \texttt{ImageProcessingProtocol} is the primary, domain-facing contract library. It defines the image-processing vocabulary and the rules by which image operations and their implementations are described and qualified. It uses the lower-level \texttt{GeneralExecutionProtocol} for generic execution capabilities. The dependency is one-way: \texttt{GeneralExecutionProtocol} MUST NOT import or depend on image-processing types. It knows about execution providers, devices, resources, submission, completion, and synchronization, but it does not know what an image, layer, or blur operation is.
+
+The qualification function belongs to the image-processing domain because only that domain can decide whether a candidate preserves an operation's image semantics. It reads generic provider/device capabilities through \texttt{GeneralExecutionProtocol}; it does not own GPU queues or submit work. Runtime selection is a subsequent concern.
 
 \subsection{The intended execution relationship}
 
@@ -180,6 +184,26 @@ $\Downarrow$\\[5pt]
 \end{tabularx}
 \end{center}
 
+\subsection{Protocol-library boundary and dependency direction}
+
+The intended package relationship is shown below. The arrow denotes a source-level dependency (imports or consumes protocol contracts), not runtime control flow.
+
+\begin{center}
+\begin{tabularx}{0.96\textwidth}{@{}L{0.29\textwidth}Y@{}}
+\toprule
+\textbf{Library or package} & \textbf{Owns and depends on} \\
+\midrule
+\texttt{ImageProcessingProtocol} & The primary domain contract: image/layer abstractions, operation definitions, operation-implementation contracts, image-specific qualification inputs/results, and the qualifying function contract. It consumes generic execution facts from \texttt{GeneralExecutionProtocol}. \\
+\texttt{GeneralExecutionProtocol} & The lower-level, reusable execution contract: providers, devices, contexts, generic resources, submission, completion, synchronization, transfer, and generic capabilities. It has no dependency on \texttt{ImageProcessingProtocol}. \\
+Concrete execution providers & Implement \texttt{GeneralExecutionProtocol} for CPU, Metal, CUDA, OpenCL, Direct3D 12, or another execution technology. \\
+Image-processing implementation adapters & Implement operation contracts from \texttt{ImageProcessingProtocol}; they use one or more execution providers or a higher-level library/runtime. \\
+\texttt{ImageProcessingRuntime} & Integrates the two protocol libraries, invokes qualification, selects among qualified implementations, plans execution, and coordinates result creation or replacement. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This direction avoids two errors. First, a generic execution library must not acquire image-specific concepts merely because image processing is its first consumer. Second, the image-processing API must not expose native GPU mechanisms as its public semantic model. Provider implementations depend on the general protocol; operation adapters depend on the image-processing protocol and whichever provider or library they use. The runtime is the composition point.
+
 \subsection{Decisions recorded in this baseline}
 
 \begin{longtable}{@{}L{0.27\textwidth}Z{0.67\textwidth}@{}}
@@ -190,7 +214,9 @@ Image representation & An image is a logical object/document composed of typed l
 Layer representation & Raster pixels, masks, categorical labels, and annotations have distinct semantics. They MUST NOT be flattened or numerically interpolated as if they were interchangeable. \\
 Storage & Physical pixel storage is separate from logical image/layer identity and is hidden behind a resource abstraction. \\
 Operation representation & An operation is an immutable object with stable semantic identity, version, parameters, and contracts. \\
-Operation implementation & The algorithm implementation is separate from the operation object and is registered against an execution provider. \\
+Protocol libraries & \texttt{ImageProcessingProtocol} is the primary domain contract and consumes the lower-level \texttt{GeneralExecutionProtocol}; the latter remains generic and image-agnostic. \\
+Operation implementation & The algorithm implementation is separate from the operation object and conforms to an operation-implementation contract in \texttt{ImageProcessingProtocol}. It may use one or more general execution providers or an opaque higher-level runtime. \\
+Qualification & The image-specific qualifying function belongs to \texttt{ImageProcessingProtocol}; it evaluates operation semantics against implementation support and generic execution capabilities. \\
 Composition & Operations support typed sequential composition. A composed operation is itself an operation description. \\
 Result semantics & Producing a new logical image and replacing the state of an existing image are separate explicit API choices. Neither choice guarantees physical in-place memory reuse. \\
 Execution technologies & General provider implementations are required for technologies such as CPU, Metal, CUDA, OpenCL, Direct3D 12 and, when justified, Vulkan. \\
@@ -328,7 +354,7 @@ The image's displayed composite is a rendering result. It is not a replacement f
 
 \subsection{Pixel resource and data descriptor}
 
-A \PixelResource{} refers to the numerical content used by a layer. It separates logical content from its physical allocation. A resource may refer to host memory, a Metal texture, a CUDA allocation, an OpenCL memory object, a Direct3D resource, an OpenCV allocation, or an externally owned camera buffer.
+A \PixelResource{} refers to the numerical content used by a layer. It separates logical content from its physical allocation. A resource may refer to host memory, a Metal texture, a CUDA allocation, an OpenCL memory object, a Direct3D resource, an OpenCV allocation, or an externally owned camera buffer. The semantic descriptor belongs to \texttt{ImageProcessingProtocol}; the opaque execution allocation/handle belongs to \texttt{GeneralExecutionProtocol}. The former says what the bytes mean (shape, format, channels, precision, color or scientific interpretation); the latter says how the allocation is owned, accessed, submitted to, synchronized, imported, or released. The image protocol may hold or reference a generic execution resource, but the general execution protocol must never acquire pixel or layer semantics.
 
 The descriptor MUST separate at least the following dimensions:
 \begin{itemize}
@@ -480,50 +506,64 @@ An operation that acts on image content MUST make its target semantics explicit.
 
 A layer-targeted operation preserves unrelated layers. A composite-targeted operation processes a rendering result and produces a new raster result; it must not silently flatten and discard the source layer structure. Composite rendering rules, color-management space, opacity, and blend behavior must be explicit.
 
-\section{Execution-provider architecture}
+\section{Protocol libraries and execution-provider architecture}
 
-\subsection{Two independent concerns}
+\subsection{Protocol-library dependency direction}
 
-The architecture separates the general execution technology from the algorithm implementation.
+The architecture is not organized by placing a generic compute abstraction above the image-processing API. The domain-facing \texttt{ImageProcessingProtocol} library is the primary contract. It defines what an image-processing operation is, what an implementation must promise, and how a candidate is qualified for a particular image and operation. It depends on the lower-level \texttt{GeneralExecutionProtocol} only for execution facts and contracts that are genuinely generic.
 
-\begin{description}[style=nextline,leftmargin=0pt,labelindent=0pt,labelwidth=0pt,itemindent=0pt]
-  \item[Execution provider] Supplies access to a compute substrate, devices, resource allocation/import, command submission, completion, and synchronization. Examples include CPU execution, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan.
-  \item[Operation implementation] Implements a particular operation (or a supported operation family) using a provider or a higher-level runtime. Examples include a Metal Gaussian blur kernel, an OpenCV CPU blur adapter, an OpenCV CUDA implementation, or a Core Image filter adapter.
-\end{description}
+\texttt{GeneralExecutionProtocol} is deliberately domain-neutral. It defines how a provider exposes devices, contexts, resources, work submission, completion, synchronization, and transfers. It MUST NOT define images, layers, pixel meaning, blur, blending, segmentation, or image-specific qualification. That keeps it reusable by other domains and prevents an image-processing library from becoming the owner of generic compute infrastructure.
 
-This is a two-dimensional registry. A provider may have many operation implementations, and an operation may have several implementations. Neither side should contain a monolithic list of every possible pairing.
+The direction is therefore:
+\[
+  \texttt{ImageProcessingProtocol}
+  \;\longrightarrow\;
+  \texttt{GeneralExecutionProtocol}
+  \;\longrightarrow\;
+  \text{concrete execution-provider implementations}.
+\]
+The arrow is a dependency direction. Concrete provider packages implement the lower-level protocol. Image-processing adapters implement the domain operation contracts and use provider implementations to execute them. The runtime integrates the two and is not itself a hardware provider.
 
-\subsection{General provider protocol}
+\subsection{GeneralExecutionProtocol library}
 
-A general provider protocol should expose only capabilities common enough to be meaningful across execution technologies. Conceptually, a provider is responsible for:
+The general execution library exposes only concepts that remain meaningful outside image processing. A provider supplies access to a compute substrate, devices, resource allocation/import, command submission, completion, and synchronization. Examples include CPU execution, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan.
+
+The common protocol SHOULD cover:
 \begin{itemize}
-  \item identifying the provider implementation and its version;
-  \item discovering devices or execution targets and reporting capability descriptors;
-  \item creating and managing an execution context for a selected device;
-  \item allocating, importing, retaining, exporting, and releasing opaque resources;
-  \item submitting work with declared input/output resource use and dependencies;
-  \item reporting completion, failure, and supported synchronization mechanisms;
-  \item exposing optional interoperability paths with other providers.
+  \item provider identity, version, and device discovery;
+  \item device and execution-context capabilities;
+  \item generic resource creation, import, retention, export, and release;
+  \item work submission with declared resource access and dependencies;
+  \item completion, failure, cancellation, and synchronization primitives;
+  \item transfer and interoperability capabilities where available.
 \end{itemize}
 
-The common protocol MUST NOT require every provider to expose a Metal-like command buffer, a CUDA-like stream, an OpenCL command queue, or a Direct3D command list as the same public object. These are native mechanisms with different lifecycle and synchronization semantics. The common API should model the intent (submission, dependency, completion, resource access) while provider-specific implementations retain access to their native features.
+It MUST NOT force every provider to expose a Metal-like command buffer, a CUDA-like stream, an OpenCL command queue, or a Direct3D command list as the same public object. These native mechanisms differ. The common API expresses intent; provider-specific implementations retain native details. Optional capability protocols should cover image/texture resources, general buffers, shader compilation, peer-device transfers, external-memory interop, asynchronous queues, and specialized synchronization.
 
-A minimal common protocol with optional capability interfaces is preferable to a large interface that forces unused functionality on all providers. Examples of optional capabilities include image/texture resources, general buffers, shader compilation, peer-device transfers, external-memory interop, asynchronous queues, and specialized synchronization.
+\subsection{ImageProcessingProtocol operation contract}
 
-\subsection{Operation-implementation protocol}
+The image-processing protocol library defines the domain-facing operation and implementation contracts. The operation object describes meaning and parameters. An operation implementation declares which operation identities/versions it supports, the input and output semantics it can satisfy, and the generic execution capabilities it requires. Its execution entry point operates on validated image-processing inputs and returns outputs conforming to the declared contracts.
+
+This is a many-to-many relationship: one operation can have implementations for several execution technologies, and one provider can be used by many operation implementations. Neither the operation object nor the generic provider is a monolithic collection of all operation/provider pairs.
 
 Each operation implementation registers:
 \begin{enumerate}
   \item the operation identifier and supported semantic versions;
-  \item the provider/device requirements;
+  \item the provider/device capability requirements, expressed using \texttt{GeneralExecutionProtocol} concepts;
   \item supported input/output layer kinds, formats, layouts, and parameter ranges;
   \item precision and numerical guarantees;
-  \item resource and synchronization requirements;
+  \item resource, access, and synchronization requirements;
   \item an execution entry point that consumes validated inputs and produces declared outputs;
-  \item diagnostic information explaining rejection or failure.
+  \item diagnostic information explaining qualification rejection or execution failure.
 \end{enumerate}
 
-The implementation must not redefine the operation's meaning. It may reject a parameter or data representation it cannot implement correctly. A backend does not need to implement every operation; an operation does not need an implementation on every backend.
+An implementation must not redefine the operation's meaning. It may reject a parameter or data representation it cannot implement correctly. A backend does not need to implement every operation; an operation does not need an implementation on every backend.
+
+\subsection{Image-specific qualification contract}
+
+The \texttt{ImageProcessingProtocol} library owns the qualifying-function contract because the decision is semantic: whether an implementation correctly realizes a particular image-processing operation for the supplied image/layer descriptors and constraints. The qualifying function consumes generic capability facts supplied by \texttt{GeneralExecutionProtocol}; it does not duplicate device discovery, allocate memory, or submit kernels.
+
+The \texttt{ImageProcessingRuntime} invokes this qualification contract over registered operation implementations and available execution contexts. Qualification returns eligible candidates with explicit requirements/reasons. Runtime selection then chooses among them according to policy. Keeping qualification and selection distinct prevents a performance score from making an invalid implementation appear acceptable.
 
 \subsection{Native providers and library adapters}
 
@@ -552,7 +592,7 @@ An adapter may manage its own compute context and scheduling. In that case, the 
 
 For example, an ONNX Runtime session may partition a model internally among execution providers. The image runtime should normally qualify and select the model/session as one higher-level implementation candidate, rather than attempting to select a backend independently for every internal ONNX node. The same rule applies to a Core Image filter chain when Core Image owns evaluation.
 
-\subsection{Provider capability model}
+\subsection{General execution capability model}
 
 A provider capability descriptor should report facts, not promises inferred from a platform name. Depending on the provider, useful facts include:
 \begin{itemize}
@@ -571,13 +611,13 @@ The operating system is a provider-discovery and packaging constraint. It is not
 
 \subsection{Qualification is a correctness filter}
 
-The qualification function answers: \emph{Can this registered implementation execute this operation on these inputs and this provider/device while satisfying the operation's contract?}
+The qualification function is part of the \texttt{ImageProcessingProtocol} domain contract. It answers: \emph{Can this registered operation implementation execute this operation on these inputs using this execution context while satisfying the operation's image-processing semantics?} The runtime supplies provider/device facts through \texttt{GeneralExecutionProtocol}; the image-processing protocol interprets those facts against operation requirements.
 
 Define:
 \[
-  Q(o, x, p, d, c) \longrightarrow q,
+  Q(o, x, m, e, c) \longrightarrow q,
 \]
-where $o$ is an operation instance, $x$ is the input descriptor/resource state, $p$ is a provider, $d$ is a device or execution target, $c$ is the set of execution constraints, and $q$ is a structured qualification result.
+where $o$ is an operation instance, $x$ is the input/layer descriptor and resource state, $m$ is a candidate operation implementation, $e$ is a generic execution context or capability description, $c$ is the set of execution constraints, and $q$ is a structured qualification result. The provider identity and device capabilities are facts carried by $e$, not image-processing concepts owned by the general execution library.
 
 The result is not merely a Boolean. It should contain one of:
 \begin{itemize}
@@ -604,7 +644,7 @@ The qualification function MUST consider the combination of:
 
 \subsection{Qualification versus selection}
 
-Qualification and selection must remain separate.
+Qualification and selection must remain separate. The image-processing protocol defines the qualification semantics and result contract. The runtime enumerates implementations and execution contexts, invokes qualification, and performs selection only after invalid candidates have been removed.
 
 \begin{description}[style=nextline,leftmargin=0pt,labelindent=0pt,labelwidth=0pt,itemindent=0pt]
   \item[Qualification] Establishes semantic validity and execution feasibility. A faster implementation that violates the required precision or changes the output interpretation is rejected.
@@ -946,6 +986,9 @@ The following rules are the compact invariants that future API and implementatio
   \item An operation is an immutable object describing meaning and parameters, not a backend-specific executable.
   \item Operation semantics are versioned independently from implementation versions.
   \item An operation implementation is registered for an operation and an execution environment; it does not own the operation's meaning.
+  \item \texttt{ImageProcessingProtocol} is the primary image-domain contract library and owns operation semantics, implementation contracts, and image-specific qualification.
+  \item \texttt{GeneralExecutionProtocol} is a lower-level, image-agnostic dependency that describes generic compute providers, devices, resources, submission, completion, and synchronization; it MUST NOT depend on \texttt{ImageProcessingProtocol}.
+  \item Concrete CPU, Metal, CUDA, OpenCL, Direct3D 12, or Vulkan providers implement \texttt{GeneralExecutionProtocol}; image-operation adapters implement \texttt{ImageProcessingProtocol} and use those providers.
   \item A general compute-provider protocol represents common execution/resource responsibilities while optional capabilities preserve native differences.
   \item A library such as OpenCV or a runtime such as ONNX Runtime may be an implementation adapter; it is not automatically equivalent to a low-level compute provider.
   \item Qualification determines correctness and feasibility. Selection optimizes only among qualified candidates.
@@ -961,7 +1004,7 @@ The following rules are the compact invariants that future API and implementatio
 
 The design should not imitate one existing framework wholesale. OpenCV contributes mature image algorithms and practical array/storage lessons; PyTorch demonstrates a common numerical object and dispatch architecture; ONNX Runtime demonstrates capability-based execution-provider partitioning; Core Image demonstrates useful deferred image evaluation; and native compute APIs demonstrate why resources, command submission, and synchronization require provider-specific implementations.
 
-The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, general compute-provider protocols, operation-specific implementations, qualification, and selection. This provides a stable semantic center while allowing Metal, CUDA, OpenCL, Direct3D 12, CPU, and higher-level libraries to coexist as implementations.
+The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, an \texttt{ImageProcessingProtocol} domain contract, a lower-level and image-agnostic \texttt{GeneralExecutionProtocol}, operation-specific implementations, qualification, and selection. Concrete CPU/Metal/CUDA/OpenCL/Direct3D 12 providers implement the general execution protocol; image-processing adapters implement the image-processing operation contracts. The runtime joins the two without collapsing their responsibilities.
 
 The most consequential boundary is the separation between \emph{what an operation means} and \emph{which implementation executes it}. The most consequential data boundary is the separation between \emph{logical image/layer identity} and \emph{physical pixel storage}. Preserving both boundaries is the foundation for portability, numerical consistency, safe mutation, and efficient heterogeneous execution.
 
@@ -987,6 +1030,40 @@ Logical replacement & Atomic update of an image document's state while retaining
 Physical in-place execution & Reuse/overwrite of an existing allocation; an optimization independent of logical replacement. \\
 \bottomrule
 \end{longtable}
+
+\section{Reference package structure (provisional)}
+
+The package names below express dependency boundaries, not a requirement to create all packages in the first milestone.
+\begin{lstlisting}
+GeneralExecutionProtocol/
+  Provider, Device, Context, Resource, Submission, Completion, Sync
+
+ImageProcessingProtocol/
+  Image, Layer, PixelResourceDescriptor
+  Operation, OperationImplementation
+  QualificationContext, QualificationResult, QualifyingFunction
+
+ImageProcessingRuntime/
+  Registry, QualificationRunner, Selection, ExecutionPlanning
+  ImageResult, ReplacementTransaction
+
+ExecutionProviders/
+  CPU, Metal, CUDA, OpenCL, Direct3D12, Vulkan
+
+ImageProcessingImplementations/
+  CoreImage, Accelerate, OpenCV, MetalKernels
+  CUDAKernels, OpenCLKernels, Direct3D12Kernels
+  ONNXRuntime, CoreML
+\end{lstlisting}
+
+Dependency rules:
+\begin{itemize}
+  \item \texttt{GeneralExecutionProtocol} has no dependency on image-processing types.
+  \item \texttt{ImageProcessingProtocol} may depend on \texttt{GeneralExecutionProtocol} for generic execution contracts, but the reverse dependency is forbidden.
+  \item Provider implementations conform to \texttt{GeneralExecutionProtocol}.
+  \item Operation adapters conform to \texttt{ImageProcessingProtocol}; native operation adapters may also consume a concrete provider implementation.
+  \item \texttt{ImageProcessingRuntime} integrates the protocols and implements registry/selection/execution orchestration without becoming a provider.
+\end{itemize}
 
 \section{Reference API vocabulary (provisional)}
 
