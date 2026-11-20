@@ -134,21 +134,28 @@ public enum OperationParameterValidationError: Error, Equatable, Sendable {
 }
 
 public enum OperationParameterValidation {
-    public static func validate(
-        specifications: [OperationParameterSpecification],
-        values: [OperationParameterValueRecord]
+    public static func validateSpecifications(
+        _ specifications: [OperationParameterSpecification]
     ) throws {
-        var specificationByID: [OperationParameterIdentifier: OperationParameterSpecification] = [:]
+        var identifiers = Set<OperationParameterIdentifier>()
         for specification in specifications {
             guard specification.domain.isValid else {
                 throw OperationParameterValidationError.invalidDomain(specification.identifier)
             }
-            guard specificationByID[specification.identifier] == nil else {
+            guard identifiers.insert(specification.identifier).inserted else {
                 throw OperationParameterValidationError.duplicateSpecification(specification.identifier)
             }
-            specificationByID[specification.identifier] = specification
         }
+    }
 
+    public static func validate(
+        specifications: [OperationParameterSpecification],
+        values: [OperationParameterValueRecord]
+    ) throws {
+        try validateSpecifications(specifications)
+        let specificationByID = Dictionary(
+            uniqueKeysWithValues: specifications.map { ($0.identifier, $0) }
+        )
         var seenValues = Set<OperationParameterIdentifier>()
         for entry in values {
             guard seenValues.insert(entry.identifier).inserted else {
