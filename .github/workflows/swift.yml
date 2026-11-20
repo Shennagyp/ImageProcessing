@@ -1,0 +1,47 @@
+name: Swift CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "Sources/**"
+      - "Tests/**"
+      - ".github/workflows/swift.yml"
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "Sources/**"
+      - "Tests/**"
+      - ".github/workflows/swift.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Swift 6.2.1 on \${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: \${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2.1"
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build packages
+        run: swift build
+
+      - name: Run contract tests
+        run: swift test
