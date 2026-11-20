@@ -137,8 +137,8 @@
 \toprule
 \textbf{Field} & \textbf{Definition} \\
 \midrule
-Purpose & Establish a coherent architecture for a reusable image-processing library with layered image objects, operation objects, compositional processing, and runtime selection among heterogeneous implementations. \\
-Scope & Public semantic model, object and resource model, operation contracts, composition, compute-provider protocols, qualification, implementation selection, execution, memory, numerical behavior, and verification strategy. \\
+Purpose & Establish a coherent architecture for a reusable image-processing library with layered image objects, operation objects, compositional processing, and environment-aware resolution among heterogeneous implementations. \\
+Scope & Public semantic model, object and resource model, operation/implementation specifications, composition, compute-provider protocols, environment observations, common qualification/resolution, execution, memory, numerical behavior, and verification strategy. \\
 Out of scope & A node editor or visual programming frontend; a general workflow engine; a new machine-learning training framework; a replacement for OpenCV, PyTorch, or ONNX; and application-specific user interfaces. \\
 Normative language & \textquotedblleft{}MUST\textquotedblright{}, \textquotedblleft{}MUST NOT\textquotedblright{}, \textquotedblleft{}SHOULD\textquotedblright{}, and \textquotedblleft{}MAY\textquotedblright{} express design strength within this proposal. They do not imply that code already enforces the requirement. \\
 Evidence status & Statements about third-party systems are referenced to their official documentation. Architectural recommendations are design conclusions, not claims that a cited library implements this project's proposed model. \\
@@ -825,6 +825,8 @@ Consider a case in which the GPU kernel is much faster but the GPU queue is busy
 
 Initial estimates may be simple and partly measured. The architecture requires honest cost boundaries and observable decisions, not an elaborate predictive model before evidence exists. Unknown telemetry must remain unknown and must not be silently treated as zero cost.
 
+For a composed function, routing must consider compatible implementation sequences or execution segments, not choose each operation independently by its isolated kernel estimate. The planner accounts for the cost of transitions between candidates, resource residency, and intermediate materialization. A locally fastest implementation can be globally slower when it forces transfers or synchronization before the next operation. The initial planner may use a simple segment-based strategy; it does not need a general optimizer or a public graph representation.
+
 \subsection{Resolution, reservations, and changing device state}
 
 A qualification result is based on an environment snapshot and is not a permanent reservation. Device load, available memory, and resource availability can change between resolution and execution.
@@ -832,6 +834,8 @@ A qualification result is based on an environment snapshot and is not a permanen
 Before execution, the coordinator MUST acquire/reserve the resources required by the selected plan and validate critical availability assumptions. If reservation fails or the snapshot is stale, the runtime may refresh the environment and resolve again, but only within the original hard constraints. It must not silently fall back to a forbidden provider or lower precision. If fallback is permitted, it may resolve to another eligible candidate. If no candidate remains, return a structured availability/resource failure.
 
 The resolver should return the ranked candidate evaluations, selected candidate/plan, rejected/temporarily-unavailable reasons, cost assumptions, and environment-snapshot identity/time. This supports diagnostics and reproducibility.
+
+A candidate is an executable binding, not merely an implementation class: it consists of an implementation instance, the provider or managed-runtime instance it uses, the selected device/execution target, and the environment snapshot against which it was evaluated. One generic implementation class can therefore produce multiple candidates when several compatible devices are discovered. A managed runtime whose internal device partitioning is opaque is represented as one candidate unless it exposes reliable partition/resource details.
 
 \subsection{Fallback policy}
 
@@ -1088,6 +1092,8 @@ The core library and its external implementations are separate delivery tracks. 
 Provider and algorithm implementation work is an independent workstream, not a technology checklist. CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, Accelerate, Core Image, and OpenCV packages are prioritized by actual target requirements, hardware access, maintainability, and conformance evidence. A package may be developed in parallel once its required contracts are stable. No one provider is required merely to complete a numbered core phase.
 
 \section{Risks and decisions still open}
+
+The current status of each foundational decision is tracked in the [Architecture Decision Register](https://github.com/Shennagyp/ImageProcessing/blob/main/docs/research/architecture/decisions/Decision-Register.md). Items marked proposed or deferred below are not silently treated as frozen public API.
 
 \subsection{Decisions that must be resolved before freezing public API}
 
