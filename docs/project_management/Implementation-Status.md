@@ -25,6 +25,9 @@ This file records actual repository state. The architecture and implementation p
 - Provider-level and device-level availability/load snapshots.
 - Dynamic observations explicitly distinguish known, stale, and unknown values. Known observations require a validity interval and source.
 - An opaque execution-context contract and provider/device discovery contracts.
+- Generic resource identifiers, target-scoped resource references, validated resource descriptors/requests, and allocation/import capability contracts.
+- Resource access declarations with reference-counted handle semantics; imported handles retain their source.
+- Typed work submission and completion contracts, dependency declarations, cancellation outcomes, and optional synchronization capability.
 - Environment snapshots validate provider/device ownership and duplicate identities.
 - A provider can represent an opaque managed execution target without exposing a device list.
 
@@ -39,20 +42,20 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, and typed implementation execution.
+The current test suite covers identifiers/capabilities, capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, typed work submission, dependency ordering, and typed implementation execution.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 10 tests.
+- swift test — passed, 18 tests.
 
-The GitHub Actions Linux/macOS matrix is configured separately; its result must be checked before claiming CI coverage.
+GitHub Actions Linux build/test passed on the first matrix run. The first macOS build exposed use of Date.now (macOS 12+); source defaults have been changed to Date() and the corrected cross-platform run is pending.
 
 ## Not implemented
 
 - Image document, layer, pixel/data descriptors, and resource ownership.
-- Generic resource allocation, import/export, retention, release, and residency transitions.
-- Generic submission, completion, synchronization, cancellation, and failure lifecycle.
+- Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
+- Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
 - Operation implementation registry and safe type-erased execution dispatch.
 - QualificationPolicy, fluent policy builder, scope composition, and conflict diagnostics.
@@ -68,15 +71,14 @@ The GitHub Actions Linux/macOS matrix is configured separately; its result must 
 |---|---|---|
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
-| 2 — GeneralExecutionProtocol | In progress | Discovery, capability and state foundations exist; resource and asynchronous work lifecycle remain. |
+| 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
 | 3 — ImageProcessingProtocol core | In progress | Operation contract exists; image/layer/resource and compositional function model remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
 
-1. Complete generic resource descriptors and lifecycle without introducing image concepts into GeneralExecutionProtocol.
-2. Complete the generic asynchronous submission/completion/synchronization model while preserving provider-native mechanisms behind optional/provider-specific capabilities.
-3. Add image and layer semantic descriptors, numerical contracts, and operation-level input/output requirements.
-4. Add immutable qualification-policy values and construction/composition conflict validation.
-5. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
-6. Add a CPU reference provider and one small operation vertical slice before GPU providers.
+1. Build a reusable test-only provider conformance harness for allocation/import, access retention, dependencies, completion, cancellation, and synchronization.
+2. Complete the image/layer semantic descriptors, numerical contracts, and operation-level input/output requirements.
+3. Add immutable qualification-policy values and construction/composition conflict validation.
+4. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
+5. Add a CPU provider and one small operation vertical slice before GPU providers.
