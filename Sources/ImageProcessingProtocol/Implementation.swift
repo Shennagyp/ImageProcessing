@@ -100,6 +100,7 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case determinismMismatch
     case effectContractMismatch
     case layerSupportMismatch
+    case pixelRepresentationMismatch(inputOutput: String)
     case invalidResourceRequirement(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
     case invalidPerformanceHints
@@ -120,6 +121,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
     public let determinism: ImplementationDeterminism
     public let effectContract: OperationEffectContract
     public let layerSupport: ImplementationLayerSupport
+    public let pixelDataSupport: OperationPixelDataContract
     public let resourceRequirements: [ImplementationResourceRequirement]
     public let performanceHints: ImplementationPerformanceHints?
 
@@ -137,6 +139,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
         determinism: ImplementationDeterminism = .deterministic,
         effectContract: OperationEffectContract = .pure,
         layerSupport: ImplementationLayerSupport = .init(),
+        pixelDataSupport: OperationPixelDataContract = .none,
         resourceRequirements: [ImplementationResourceRequirement] = [],
         performanceHints: ImplementationPerformanceHints? = nil
     ) {
@@ -153,6 +156,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
         self.determinism = determinism
         self.effectContract = effectContract
         self.layerSupport = layerSupport
+        self.pixelDataSupport = pixelDataSupport
         self.resourceRequirements = resourceRequirements
         self.performanceHints = performanceHints
     }
@@ -232,6 +236,17 @@ public struct ImplementationSpecification: Hashable, Sendable {
             throw ImplementationSpecificationValidationError.layerSupportMismatch
         }
 
+        try validatePixelRepresentation(
+            implementation: pixelDataSupport.input,
+            operation: operation.pixelDataContract.input,
+            direction: "input"
+        )
+        try validatePixelRepresentation(
+            implementation: pixelDataSupport.output,
+            operation: operation.pixelDataContract.output,
+            direction: "output"
+        )
+
         var resourceRoles = Set<ImplementationResourceRole>()
         for requirement in resourceRequirements {
             guard requirement.isValid else {
@@ -244,6 +259,24 @@ public struct ImplementationSpecification: Hashable, Sendable {
 
         if let performanceHints, !performanceHints.isValid {
             throw ImplementationSpecificationValidationError.invalidPerformanceHints
+        }
+    }
+
+    private func validatePixelRepresentation(
+        implementation: PixelRepresentationDomain?,
+        operation: PixelRepresentationDomain?,
+        direction: String
+    ) throws {
+        switch (implementation, operation) {
+        case (nil, nil):
+            return
+        case let (.some(implementation), .some(operation))
+            where implementation.isSubset(of: operation):
+            return
+        default:
+            throw ImplementationSpecificationValidationError.pixelRepresentationMismatch(
+                inputOutput: direction
+            )
         }
     }
 
