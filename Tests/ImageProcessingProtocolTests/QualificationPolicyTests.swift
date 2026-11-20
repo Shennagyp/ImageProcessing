@@ -290,3 +290,54 @@ struct QualificationPolicyTests {
         }
     }
 }
+
+
+extension QualificationPolicyTests {
+    @Test
+    func threeWayProviderIntersectionIsValidatedAsAWhole() throws {
+        let cpu = try provider("provider.cpu")
+        let cuda = try provider("provider.cuda")
+        let metal = try provider("provider.metal")
+        let function = numericFunction()
+
+        #expect(throws: QualificationPolicyConflict.self) {
+            try function.qualifying {
+                $0.require(.allowedProviders([cpu, cuda]), source: "set A")
+                $0.require(.allowedProviders([cuda, metal]), source: "set B")
+                $0.require(.allowedProviders([cpu, metal]), source: "set C")
+            }
+        }
+    }
+
+    @Test
+    func threeWayPrecisionIntersectionIsValidatedAsAWhole() throws {
+        let function = numericFunction()
+
+        #expect(throws: QualificationPolicyConflict.self) {
+            try function.qualifying {
+                $0.require(.allowedPrecisions(.computation, [.float16, .float32]))
+                $0.require(.allowedPrecisions(.computation, [.float32, .float64]))
+                $0.require(.allowedPrecisions(.computation, [.float16, .float64]))
+            }
+        }
+    }
+
+    @Test
+    func capabilityRequirementsWithDifferentValueKindsConflict() throws {
+        let feature = try #require(ExecutionCapabilityID(rawValue: "execution.policy.mode"))
+        let function = numericFunction()
+
+        #expect(throws: QualificationPolicyConflict.self) {
+            try function.qualifying {
+                $0.require(.executionCapability(.init(
+                    scope: .provider,
+                    requirement: .exact(feature, .boolean(true))
+                )))
+                $0.require(.executionCapability(.init(
+                    scope: .provider,
+                    requirement: .stringSetContains(feature, "fast")
+                )))
+            }
+        }
+    }
+}
