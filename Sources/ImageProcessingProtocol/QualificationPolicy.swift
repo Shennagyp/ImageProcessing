@@ -368,9 +368,8 @@ public struct QualificationPolicy: Hashable, Sendable {
            case let .executionCapability(b) = rhs,
            a.scope == b.scope,
            capabilityIdentifier(a.requirement) == capabilityIdentifier(b.requirement),
-           capabilityRequirementsConflict(a.requirement, b.requirement),
-           let identifier = capabilityIdentifier(a.requirement) {
-            return .executionCapability(identifier, a.scope)
+           capabilityRequirementsConflict(a.requirement, b.requirement) {
+            return .executionCapability(capabilityIdentifier(a.requirement), a.scope)
         }
 
         return nil
