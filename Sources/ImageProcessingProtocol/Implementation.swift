@@ -270,8 +270,14 @@ public struct ImplementationSpecification: Hashable, Sendable {
             guard support.isValid else {
                 throw ImplementationSpecificationValidationError.invalidNumericalSupport
             }
-            guard support.roundingModes.contains(contract.rounding),
-                  support.overflowBehaviors.contains(contract.overflow),
+            guard supports(
+                    contract.rounding,
+                    declaredBy: support.roundingModes
+                  ),
+                  supports(
+                    contract.overflow,
+                    declaredBy: support.overflowBehaviors
+                  ),
                   support.outputRangeBehaviors.contains(contract.outputRange),
                   errorBound(support.maximumAbsoluteError, satisfies: contract.absoluteErrorTolerance),
                   errorBound(support.maximumRelativeError, satisfies: contract.relativeErrorTolerance) else {
@@ -338,6 +344,24 @@ public struct ImplementationSpecification: Hashable, Sendable {
         if let performanceHints, !performanceHints.isValid {
             throw ImplementationSpecificationValidationError.invalidPerformanceHints
         }
+    }
+
+    private func supports(
+        _ required: OperationRoundingMode,
+        declaredBy supported: Set<OperationRoundingMode>
+    ) -> Bool {
+        required == .implementationDefined
+            ? !supported.isEmpty && !supported.contains(.implementationDefined)
+            : supported.contains(required)
+    }
+
+    private func supports(
+        _ required: OperationOverflowBehavior,
+        declaredBy supported: Set<OperationOverflowBehavior>
+    ) -> Bool {
+        required == .implementationDefined
+            ? !supported.isEmpty && !supported.contains(.implementationDefined)
+            : supported.contains(required)
     }
 
     private func errorBound(
