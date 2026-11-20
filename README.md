@@ -24,7 +24,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 
 The root SwiftPM package currently publishes two modules:
 
-- `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, and provider/device context contracts.
+- `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, target-scoped resource handles, resource allocation/import contracts, typed work submission/completion, dependencies, cancellation, and optional synchronization capabilities.
 - `ImageProcessingProtocol` — typed operation specifications and the generic operation-implementation contract.
 
 `ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
