@@ -26,7 +26,7 @@ private struct AddNumberOperation: ImageOperation {
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "test.number.add")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
-        qualificationDimensions: [.precision]
+        qualificationDimensions: [.precision, .deterministicResults]
     )
 }
 
