@@ -637,6 +637,47 @@ Callers can build typed operation pipelines without manually routing provider or
 - Immutable QualificationPolicy attachment, step-scoped policy rebasing, and conflict provenance.
 - Composition optimizations such as fusion, batching, and resource-residency planning.
 
+---
+
+## ADR-023 — Qualification policy is immutable, scoped, and source-preserving
+
+**Status:** Baseline for the initial policy builder
+
+### Decision
+
+Attach QualificationPolicy directly to ImageFunction. It contains hard requirement declarations and soft optimization preference declarations as separate collections. It preserves each declaration's source identity, optional source label, and scope so diagnostics can explain how an effective policy was formed.
+
+Policy scope is either the complete pipeline or one OperationStepIdentifier occurrence. Pipeline declarations apply to every step where their dimension is applicable. Step declarations affect only that operation occurrence. When a function is reused on the right-hand side of composition, the copied step occurrences receive new identifiers and their step-scoped declarations are rebased to those identifiers. Pipeline declarations remain pipeline-scoped.
+
+The first requirement vocabulary contains exact/allowed provider identities, generic ExecutionCapabilityConstraint values, dimensioned precision constraints (input/storage, computation, accumulation, output), and deterministic-result requirements. The first optimization objectives are low latency, low memory, low energy, high throughput, and deterministic results, with optional explicit priority and positive finite weight.
+
+OperationSpecification declares the policy dimensions that an operation exposes. The initial applicability dimension is precision. A precision rule scoped to one step is rejected unless that operation declares precision applicability. A pipeline precision rule is rejected if no step exposes the dimension; operations that do not expose it do not acquire invented numerical semantics.
+
+Policy construction and function composition are validation boundaries. The builder checks step references, precision applicability, nonempty provider/precision allowed sets, effective provider/precision intersections, execution capability value-type compatibility, preference weights, and contradictory preference declarations at the same objective/scope. Pipeline restrictions are intersected with each target step's restrictions. This validates aggregate intersections across all declarations, not merely pairwise intersections. Conflicts retain every prior declaration that contributed to the empty intersection and the incoming declaration.
+
+### Invariants
+
+- Requirements and preferences are stored separately; preferences never relax or override requirements.
+- Hard requirements combine conjunctively. Provider and precision allowed sets have intersection semantics at each effective scope.
+- Pipeline requirements are inherited; step-scoped declarations do not leak to other steps.
+- Different step scopes do not conflict merely because they constrain the same dimension.
+- Preferences for the same objective at the same scope cannot disagree on priority or weight. A pipeline and a step may use different priorities for the same objective.
+- Precision requirements are dimensioned and require operation-declared applicability.
+- Generic execution capability requirements retain provider/device/context scope from GeneralExecutionProtocol.
+- Invalid or unknown step references, empty intersections, mismatched capability value types, and invalid weights are rejected before function execution.
+- Composition does not execute work or resolve implementations; it only validates and preserves the policy.
+
+### Consequence
+
+Policy is declarative and travels with the typed function value. Runtime resolution can evaluate the same immutable requirement declarations against operation/implementation specifications and the current execution environment, while retaining enough provenance to explain candidate rejection and preference ranking.
+
+### Deferred
+
+- Candidate eligibility and end-to-end ranking against real ImplementationSpecification precision/support matrices.
+- Additional operation-specific policy dimensions such as border modes and color/alpha behavior after their semantic contracts are modeled.
+- Runtime policy serialization/versioning and compatibility across persisted policy versions.
+- Cost estimate confidence, objective trade-offs, and measured ranking calibration.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
