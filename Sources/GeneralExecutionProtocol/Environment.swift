@@ -59,7 +59,7 @@ public struct ExecutionObservation<Value: Sendable>: Sendable {
         self.quality = nil
     }
 
-    public func state(at date: Date = .now) -> ExecutionObservationState<Value> {
+    public func state(at date: Date = Date()) -> ExecutionObservationState<Value> {
         switch storage {
         case let .unknown(reason):
             return .unknown(reason: reason)
@@ -100,7 +100,7 @@ public struct ExecutionDeviceStateSnapshot: Sendable {
     public let utilizationFraction: ExecutionObservation<ExecutionFraction>
 
     public init(
-        capturedAt: Date = .now,
+        capturedAt: Date = Date(),
         availability: ExecutionAvailability,
         availableMemoryBytes: ExecutionObservation<UInt64> = .init(unknownReason: "not reported"),
         queueDepth: ExecutionObservation<UInt64> = .init(unknownReason: "not reported"),
@@ -159,7 +159,7 @@ public struct ExecutionProviderStateSnapshot: Sendable {
     public let estimatedQueueDelayNanoseconds: ExecutionObservation<UInt64>
 
     public init(
-        capturedAt: Date = .now,
+        capturedAt: Date = Date(),
         availability: ExecutionAvailability,
         queueDepth: ExecutionObservation<UInt64> = .init(unknownReason: "not reported"),
         estimatedQueueDelayNanoseconds: ExecutionObservation<UInt64> = .init(unknownReason: "not reported")
@@ -221,7 +221,7 @@ public struct ExecutionEnvironmentSnapshot: Sendable {
     public let providers: [ExecutionProviderSnapshot]
 
     public init(
-        capturedAt: Date = .now,
+        capturedAt: Date = Date(),
         platform: ExecutionPlatformDescriptor,
         providers: [ExecutionProviderSnapshot]
     ) throws {
