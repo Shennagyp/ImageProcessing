@@ -1193,16 +1193,13 @@ The package names below express dependency boundaries, not a requirement to crea
 \begin{lstlisting}
 GeneralExecutionProtocol/
   Provider, Device, Context, Resource, Submission, Completion, Sync
+  CapabilityDescriptor, Availability/StateObservation
 
 ImageProcessingProtocol/
   Image, Layer, PixelResourceDescriptor
   ImageFunction, Operation, OperationSpecification
   ImageOperationImplementation
   ImplementationSpecification, QualificationPolicy
-
-GeneralExecutionProtocol/
-  Provider, Device, Context, Resource, Submission, Completion, Sync
-  CapabilityDescriptor, Availability/StateObservation
 
 ImageProcessingRuntime/
   Registry, EnvironmentDiscovery, Snapshot
@@ -1238,12 +1235,16 @@ The names below are vocabulary candidates, not frozen declarations.
 \texttt{Image} & Logical image document/handle. \\
 \texttt{Layer} & Typed content entry in an image document. \\
 \texttt{PixelResource} & Opaque numerical storage handle. \\
-\texttt{Operation} & Immutable operation description/instance. \\
-\texttt{CompositeOperation} & Ordered composition of compatible operations. \\
-\texttt{ComputeProvider} & General execution technology adapter. \\
-\texttt{Operation\allowbreak Implementation} & Concrete implementation of an operation. \\
-\texttt{QualificationResult} & Structured compatibility result with reasons and requirements. \\
-\texttt{ExecutionPlan} & Internal plan selected for a composed operation. \\
+\texttt{ImageFunction} & Typed, composable function over image-domain inputs and outputs. \\
+\texttt{Operation} & Immutable semantic operation description/instance. \\
+\texttt{OperationSpecification} & Semantic requirements and permitted behavior for one operation. \\
+\texttt{ImageOperationImplementation} & Generic typed contract for one implementation class, specialized by its associated operation type. \\
+\texttt{ImplementationSpecification} & Declarative static support and execution requirements of one implementation class. \\
+\texttt{ComputeProvider} & General execution technology adapter exposing generic execution lifecycle and resources. \\
+\texttt{QualificationPolicy} & Immutable requirements and preferences attached to a function/pipeline through the fluent API. \\
+\texttt{ExecutionEnvironmentSnapshot} & Time-bounded provider/device capability and runtime-state observations. \\
+\texttt{ResolutionResult} & Candidate eligibility, ranking, selected plan, cost assumptions, and diagnostics. \\
+\texttt{ExecutionPlan} & Internal plan for a composed operation/function. \\
 \texttt{applying} & Produce a new logical image result. \\
 \texttt{apply} & Replace image state transactionally. \\
 \bottomrule
