@@ -48,7 +48,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\textcolor{muted}{ImageProcessing --- Internal Architecture Paper}}
-\fancyhead[R]{\small\textcolor{muted}{Design baseline 0.2}}
+\fancyhead[R]{\small\textcolor{muted}{Design baseline 0.3}}
 \fancyfoot[L]{\small\textcolor{muted}{Internal engineering document --- not for publication}}
 \fancyfoot[R]{\small\textcolor{muted}{\thepage}}
 \renewcommand{\headrulewidth}{0.35pt}
@@ -112,7 +112,7 @@
   \begin{tabular}{@{}ll@{}}
     \textbf{Document type:} & Internal technical design paper \\
     \textbf{Status:} & Proposed architecture baseline; implementation not yet specified \\
-    \textbf{Version:} & 0.2 \\
+    \textbf{Version:} & 0.3 \\
     \textbf{Date:} & 20 November 2026 \\
     \textbf{Repository:} & \url{https://github.com/Shennagyp/ImageProcessing} \\
     \textbf{Audience:} & Library architecture, API, runtime, backend and test engineering \\
@@ -143,7 +143,8 @@ Out of scope & A node editor or visual programming frontend; a general workflow 
 Normative language & \textquotedblleft{}MUST\textquotedblright{}, \textquotedblleft{}MUST NOT\textquotedblright{}, \textquotedblleft{}SHOULD\textquotedblright{}, and \textquotedblleft{}MAY\textquotedblright{} express design strength within this proposal. They do not imply that code already enforces the requirement. \\
 Evidence status & Statements about third-party systems are referenced to their official documentation. Architectural recommendations are design conclusions, not claims that a cited library implements this project's proposed model. \\
 Change policy & Changes to operation semantics, image interpretation, mutation guarantees, or provider contracts require an explicit design revision and corresponding tests. \\
-Revision 0.2 & Corrects protocol-library layering: \texttt{ImageProcessing\allowbreak Protocol} is the primary domain contract and depends one-way on the generic, image-agnostic \texttt{GeneralExecution\allowbreak Protocol}. Qualification ownership and the semantic/resource boundary are clarified. \\
+Revision 0.2 & Corrects protocol-library layering: \texttt{ImageProcessing\allowbreak Protocol} is the primary domain contract and depends one-way on the generic, image-agnostic \texttt{GeneralExecution\allowbreak Protocol}. \\ 
+Revision 0.3 & Establishes one generic operation-implementation contract, declarative operation and implementation specifications, environment-aware qualification and routing, fluent pipeline policy, construction-time conflict validation, and independent implementation packages. \\
 \bottomrule
 \end{longtable}
 
@@ -153,19 +154,23 @@ Revision 0.2 & Corrects protocol-library layering: \texttt{ImageProcessing\allow
 
 \Project{} should be object-oriented in its representation of image documents, operation-oriented in its processing API, functional in the semantics of ordinary transformations, and heterogeneous in its execution implementation.
 
-The design has four primary semantic objects:
+The principal distinction is between an operation and any concrete implementation of it. An operation such as \texttt{GaussianBlur} defines one stable meaning, parameter model, input/output contract, and numerical contract. Multiple independent implementation classes may implement that same operation: for example, \texttt{CPUGaussianBlur}, \texttt{CUDAGaussianBlur}, and \texttt{MetalGaussianBlur}. They are separate implementations of one operation, not separate operations and not methods added to a monolithic backend interface.
+
+The domain contract defines one generic \texttt{ImageOperationImplementation} protocol, specialized by an associated operation type. Each implementation publishes a declarative \texttt{ImplementationSpecification}; it does not need to supply a bespoke qualification algorithm. The runtime may type-erase implementations internally for heterogeneous registration while retaining typed operation and implementation APIs at module boundaries.
+
+Four sources of information participate in execution resolution:
 \begin{enumerate}
-  \item \textbf{Image document:} a logical, identifiable image composed of ordered, typed layers.
-  \item \textbf{Layer:} a semantic component of the image, such as raster pixels, a mask, a label map, or vector annotations.
-  \item \textbf{Operation object:} an immutable, parameterized description of a computation with explicit input, output, numerical, and mutation contracts.
-  \item \textbf{Pixel resource:} an opaque reference to actual numerical storage, independent of the logical image and layer identities.
+  \item \textbf{Operation and operation specification:} what the operation means, which inputs and outputs it accepts, and which semantic/numerical guarantees are required or permitted.
+  \item \textbf{Implementation specification:} what one concrete operation implementation supports, its algorithm-specific limits, precision behavior, provider requirements, and resource characteristics.
+  \item \textbf{Execution environment:} which platforms, providers, devices, capabilities, and resources are actually available, plus the freshest reliable state observations such as queue pressure and available memory.
+  \item \textbf{Pipeline qualification policy:} declarative requirements and preferences supplied through a fluent API on the composed function.
 \end{enumerate}
 
-An operation object is not itself a Metal kernel, CUDA kernel, OpenCV call, or arbitrary closure. It defines \emph{what} must be computed. One or more operation implementations define \emph{how} that meaning is computed using an available execution environment. A domain-specific qualification function determines which operation implementations can satisfy the operation contract for the actual input and available execution capabilities. A separate selection policy chooses among qualified candidates.
+A common, data-driven qualifying/resolution function evaluates these complementary inputs. It first excludes candidates that cannot satisfy hard semantic or technical requirements, then ranks the remaining candidates using the pipeline objectives and current execution state. The function can therefore route a busy GPU workload to a compatible CPU implementation when the pipeline permits it, or select a different implementation that satisfies a required FP32 computation mode. It must never select an implementation that violates the operation's semantic contract.
 
-The protocol-library direction is deliberate. \texttt{ImageProcessing\allowbreak Protocol} is the primary, domain-facing contract library. It defines the image-processing vocabulary and the rules by which image operations and their implementations are described and qualified. It uses the lower-level \texttt{GeneralExecution\allowbreak Protocol} for generic execution capabilities. The dependency is one-way: \texttt{GeneralExecution\allowbreak Protocol} MUST NOT import or depend on image-processing types. It knows about execution providers, devices, resources, submission, completion, and synchronization, but it does not know what an image, layer, or blur operation is.
+The protocol-library direction is deliberate. \texttt{ImageProcessing\allowbreak Protocol} is the primary, domain-facing contract library. It defines image-processing semantics, operations, implementation specifications, and declarative qualification-policy types. It consumes generic execution facts from the lower-level \texttt{GeneralExecution\allowbreak Protocol}. The latter remains image-agnostic: it describes providers, devices, resources, submission, completion, generic capabilities, and observable execution state, but it does not know what an image, layer, or blur operation is.
 
-The qualification function belongs to the image-processing domain because only that domain can decide whether a candidate preserves an operation's image semantics. It reads generic provider/device capabilities through \texttt{GeneralExecution\allowbreak Protocol}; it does not own GPU queues or submit work. Runtime selection is a subsequent concern.
+Concrete execution-provider packages and image-operation implementation packages are outside the core protocol/runtime dependency. A consuming application selects and registers the packages it needs. Adding an implementation must not require changing the operation definition, qualification algorithm, or core runtime.
 
 \subsection{The intended execution relationship}
 
@@ -194,11 +199,11 @@ The intended package relationship is shown below. The arrow denotes a source-lev
 \toprule
 \textbf{Library or package} & \textbf{Owns and depends on} \\
 \midrule
-\texttt{ImageProcessing\allowbreak Protocol} & The primary domain contract: image/layer abstractions, operation definitions, operation-implementation contracts, image-specific qualification inputs/results, and the qualifying function contract. It consumes generic execution facts from \texttt{GeneralExecution\allowbreak Protocol}. \\
-\texttt{GeneralExecution\allowbreak Protocol} & The lower-level, reusable execution contract: providers, devices, contexts, generic resources, submission, completion, synchronization, transfer, and generic capabilities. It has no dependency on \texttt{ImageProcessing\allowbreak Protocol}. \\
+\texttt{ImageProcessing\allowbreak Protocol} & The primary domain contract: image/layer abstractions, operation definitions/specifications, the generic operation-implementation contract, implementation-specification descriptors, typed composition, and declarative qualification-policy/result contracts. It consumes generic execution facts from \texttt{GeneralExecution\allowbreak Protocol}. \\
+\texttt{GeneralExecution\allowbreak Protocol} & The lower-level, reusable execution contract: providers, devices, contexts, generic resources, submission, completion, synchronization, transfer, static capabilities, and observable dynamic execution state. It has no dependency on \texttt{ImageProcessing\allowbreak Protocol}. \\
 Concrete execution providers & Implement \texttt{GeneralExecution\allowbreak Protocol} for CPU, Metal, CUDA, OpenCL, Direct3D 12, or another execution technology. \\
-Image-processing implementation adapters & Implement operation contracts from \texttt{ImageProcessing\allowbreak Protocol}; they use one or more execution providers or a higher-level library/runtime. \\
-\texttt{ImageProcessingRuntime} & Integrates the two protocol libraries, invokes qualification, selects among qualified implementations, plans execution, and coordinates result creation or replacement. \\
+Image-operation implementation packages & Supply independent classes conforming to the generic operation-implementation contract. Each class declares an implementation specification and uses a provider or managed algorithm runtime. They are selected and registered by the consuming application. \\
+\texttt{ImageProcessingRuntime} & Integrates the two protocols, discovers and snapshots the execution environment, registers heterogeneous implementations, evaluates qualification and routing, plans composed execution, and coordinates result creation or replacement. \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -214,15 +219,18 @@ This direction avoids two errors. First, a generic execution library must not ac
 Image representation & An image is a logical object/document composed of typed layers; it is not merely a matrix, tensor, or GPU allocation. \\
 Layer representation & Raster pixels, masks, categorical labels, and annotations have distinct semantics. They MUST NOT be flattened or numerically interpolated as if they were interchangeable. \\
 Storage & Physical pixel storage is separate from logical image/layer identity and is hidden behind a resource abstraction. \\
-Operation representation & An operation is an immutable object with stable semantic identity, version, parameters, and contracts. \\
+Operation representation & An operation is an immutable object with stable semantic identity, version, parameters, input/output contracts, and numerical semantics. \\
+Operation implementations & One generic implementation protocol is specialized by an associated operation type. Multiple independent classes may implement the same operation. \\
+Specifications & Operation specifications describe semantic requirements and permitted behavior; implementation specifications declare the concrete algorithm's support, limits, provider requirements, and resource characteristics. \\
 Protocol libraries & \texttt{ImageProcessing\allowbreak Protocol} is the primary domain contract and consumes the lower-level \texttt{GeneralExecution\allowbreak Protocol}; the latter remains generic and image-agnostic. \\
-Operation implementation & The algorithm implementation is separate from the operation object and conforms to an operation-implementation contract in \texttt{ImageProcessing\allowbreak Protocol}. It may use one or more general execution providers or an opaque higher-level runtime. \\
-Qualification & The image-specific qualifying function belongs to \texttt{ImageProcessing\allowbreak Protocol}; it evaluates operation semantics against implementation support and generic execution capabilities. \\
-Composition & Operations support typed sequential composition. A composed operation is itself an operation description. \\
+Execution environment & Provider/device capabilities and current availability/state are supplied as environment observations, not embedded in implementation specifications or inferred solely from the operating-system name. \\
+Qualification and routing & One common resolver evaluates operation semantics, implementation specifications, environment state, and pipeline policy. It filters invalid candidates and ranks valid candidates. \\
+Pipeline policy & Fluent configuration on a function/pipeline expresses hard requirements and soft preferences. Policies are declarative immutable values, not custom per-implementation code. \\
+Policy composition & Hard requirements compose conjunctively; incompatible requirements are rejected at builder/composition boundaries with source-aware diagnostics. Preferences use explicit objective dimensions and cannot override requirements. \\
+Platform handling & Platform is an environmental fact. No platform-specific preference profile is required to choose Metal on an Apple system or CUDA on a supported NVIDIA system; candidate specifications and discovered availability determine eligibility. \\
+Composition & Operations support typed sequential composition. A composed function retains step-scoped policy and supports pipeline-wide objectives. \\
+Implementation distribution & Concrete provider and operation-implementation packages are independent of the core protocol/runtime. The application selects and registers them. \\
 Result semantics & Producing a new logical image and replacing the state of an existing image are separate explicit API choices. Neither choice guarantees physical in-place memory reuse. \\
-Execution technologies & General provider implementations are required for technologies such as CPU, Metal, CUDA, OpenCL, Direct3D 12 and, when justified, Vulkan. \\
-Qualification & Qualification filters implementations for semantic and technical compatibility. Selection then chooses among the qualified candidates. \\
-Planning & The runtime SHOULD evaluate a composed sequence as a whole or in compatible segments, not greedily dispatch each operation without considering data movement. \\
 Public graph editor & Explicitly excluded from the current design. No node editor, visual graph frontend, or public graph-programming framework is part of this baseline. \\
 \bottomrule
 \end{longtable}
@@ -241,13 +249,13 @@ The architecture MUST satisfy the following requirements.
 \begin{enumerate}
   \item \textbf{Semantic consistency.} An operation has one defined meaning regardless of which implementation executes it.
   \item \textbf{Backend extensibility.} New compute technologies and algorithm libraries can be added without changing the public image and operation semantics.
-  \item \textbf{Explicit qualification.} Compatibility is determined from the operation, input description, provider/device capabilities, and constraints; it is not inferred solely from the operating-system name.
-  \item \textbf{Multiple implementations.} One operation may have several implementations, and one provider may implement many operations.
+  \item \textbf{Environment-aware resolution.} A common evaluator uses operation semantics, implementation specifications, provider/device capabilities, current availability/state, and declarative pipeline policy. It must not depend on platform-name heuristics or per-backend qualification code.
+  \item \textbf{Multiple implementations.} One operation may have several independent implementation classes; one provider may serve many implementations; and one implementation package may depend on a separate provider package.
   \item \textbf{Layer awareness.} Processing can target an explicitly selected layer or an explicitly rendered composite; unrelated layers are not silently destroyed.
   \item \textbf{Copy/replace semantics.} The caller can request a new image result or replacement of the existing logical image state.
   \item \textbf{Resource efficiency.} The runtime can share immutable resources, use copy-on-write where safe, retain device residency, and avoid unnecessary transfers.
   \item \textbf{Numerical honesty.} Precision, color interpretation, alpha behavior, border rules, and approximation tolerances are part of the operation contract.
-  \item \textbf{Testability.} Semantics can be verified independently from provider implementations and from platform-specific hardware.
+  \item \textbf{Testability.} Semantics and qualification rules can be verified independently from real provider implementations and platform-specific hardware, using fake providers and declarative implementation specifications.
   \item \textbf{Failure safety.} A failed replacement MUST NOT leave the source image partially modified.
 \end{enumerate}
 
@@ -381,20 +389,60 @@ Image-to-tensor conversion MUST be explicit about channel order, layout (for exa
 
 \subsection{An operation is a declarative object}
 
-An operation is an immutable, parameterized object that names a computation and describes the contract that every implementation must satisfy. It is not merely a method that happens to call a backend. It is also not required to contain executable machine code.
+An operation is an immutable, parameterized object that names a computation and describes the contract that every implementation must satisfy. It is not a backend method, a kernel, or a function that already knows which implementation will execute.
 
 An operation instance SHOULD expose or reference:
 \begin{enumerate}
   \item a stable operation identifier and semantic version;
   \item immutable parameters with validation rules;
   \item typed input and output descriptions;
+  \item an \textbf{operation specification} describing semantic requirements and permitted behavior;
   \item data constraints (formats, dimensions, layouts, layer kinds, and parameter domains);
-  \item numerical semantics (precision, rounding, range, color/alpha rules, border/interpolation rules);
-  \item mutation and aliasing semantics;
-  \item effect classification where it is not a pure transformation.
+  \item numerical semantics (input/storage precision, computation precision, accumulation precision, output precision, rounding, range, color/alpha rules, border/interpolation rules);
+  \item mutation, aliasing, and effect semantics.
 \end{enumerate}
 
-For example, a Gaussian blur operation is not fully specified by \textquotedblleft{}sigma = 1.2\textquotedblright{}. Its border extension, kernel construction/truncation, channel treatment, alpha treatment, component precision, and output behavior are also relevant. Two kernels that use the same public name but disagree on these choices are not necessarily equivalent implementations.
+For example, a Gaussian blur operation is not fully specified by \textquotedblleft{}sigma = 1.2\textquotedblright{}. Its border extension, kernel construction/truncation, channel treatment, alpha treatment, and numerical contract are also relevant. Two implementations carrying the same operation identity but disagreeing on these choices are not conformant merely because both are called Gaussian blur.
+
+\subsection{Operation specification versus implementation specification}
+
+These specifications are complementary and have different owners.
+
+\textbf{Operation specification} describes the operation's semantic truth: what result is required, which input domains and parameters are valid, what numerical guarantees apply, and which implementation variations are permitted. It may be refined by the concrete operation parameters and by the caller's pipeline requirements.
+
+\textbf{Implementation specification} describes one concrete implementation class: which operation identity/version it implements, what semantic modes and parameter ranges it supports, which input/output representations and precision modes it can realize, which provider capabilities it requires, and its resource/execution characteristics. It is declarative metadata, not a custom \texttt{qualify()} function.
+
+For a \texttt{GaussianBlur}, an implementation specification may declare supported border modes, supported component formats, computation/accumulation precision, maximum radius, required device capabilities, and resource limits. \texttt{CUDAGaussianBlur} declares a CUDA provider requirement; \texttt{MetalGaussianBlur} declares a Metal requirement; \texttt{CPUGaussianBlur} declares the CPU capability requirements. The runtime compares these declarations with the actual environment. It does not encode special-case logic such as \textquotedblleft{}if macOS then prefer Metal\textquotedblright{}.
+
+Implementation specifications MUST distinguish:
+\begin{itemize}
+  \item static, tested support declared by the implementation;
+  \item provider/device capabilities reported by the execution provider;
+  \item transient availability and load, reported by the current environment snapshot.
+\end{itemize}
+A specification must not claim that a device is currently available or currently idle. Those are runtime facts.
+
+\subsection{One generic operation-implementation contract}
+
+All concrete algorithm classes conform to one generic implementation contract specialized by an associated operation type. Conceptually:
+
+\begin{lstlisting}
+public protocol ImageOperationImplementation {
+    associatedtype Operation: ImageOperation
+
+    var specification: ImplementationSpecification { get }
+
+    func execute(
+        operation: Operation,
+        input: Operation.Input,
+        context: ExecutionContext
+    ) async throws -> Operation.Output
+}
+\end{lstlisting}
+
+The protocol has no mandatory per-class qualification method. The implementation publishes its specification and executes only after the runtime has resolved it as a valid candidate. A future operation-specific extension may be introduced only when a real semantic constraint cannot be represented declaratively; it must be owned by the operation/runtime contract, not duplicated as arbitrary qualification code in every backend class.
+
+The associated operation type preserves type safety for the public implementation API. The runtime may use private type erasure to register different operation types in one heterogeneous registry; that mechanism must not leak as \texttt{Any}-based application code.
 
 \subsection{Operation identity and versioning}
 
@@ -445,6 +493,10 @@ let blur        = GaussianBlur(sigma: 1.2, border: .reflect)
 let resize      = Resize(width: 1024, height: 768)
 
 let pipeline = correction.then(blur).then(resize)
+    .qualifying {
+        .require(.precision(.computation, .fp32))
+        .prefer(.lowLatency)
+    }
 
 let result = try await source.applying(
     pipeline,
@@ -543,30 +595,37 @@ The common protocol SHOULD cover:
 
 It MUST NOT force every provider to expose a Metal-like command buffer, a CUDA-like stream, an OpenCL command queue, or a Direct3D command list as the same public object. These native mechanisms differ. The common API expresses intent; provider-specific implementations retain native details. Optional capability protocols should cover image/texture resources, general buffers, shader compilation, peer-device transfers, external-memory interop, asynchronous queues, and specialized synchronization.
 
-\subsection{ImageProcessingProtocol operation contract}
+\subsection{ImageProcessingProtocol operation and implementation contracts}
 
-The image-processing protocol library defines the domain-facing operation and implementation contracts. The operation object describes meaning and parameters. An operation implementation declares which operation identities/versions it supports, the input and output semantics it can satisfy, and the generic execution capabilities it requires. Its execution entry point operates on validated image-processing inputs and returns outputs conforming to the declared contracts.
+The image-processing protocol library defines the domain-facing operation and implementation contracts. An operation object describes meaning and parameters. Its specification describes required and permitted semantics. A concrete implementation class conforms to the generic \texttt{ImageOperationImplementation} contract with one associated operation type and publishes an \texttt{ImplementationSpecification}.
 
-This is a many-to-many relationship: one operation can have implementations for several execution technologies, and one provider can be used by many operation implementations. Neither the operation object nor the generic provider is a monolithic collection of all operation/provider pairs.
+This is a many-to-many relationship at the system level:
+\begin{itemize}
+  \item one operation type may have several implementation classes;
+  \item one execution provider may support many operation implementation classes;
+  \item an operation implementation may use a provider, a higher-level algorithm library, or a managed execution runtime;
+  \item a consuming application may register only the implementation packages it chooses to deploy.
+\end{itemize}
 
-Each operation implementation registers:
+Each implementation specification SHOULD declare:
 \begin{enumerate}
-  \item the operation identifier and supported semantic versions;
-  \item the provider/device capability requirements, expressed using \texttt{GeneralExecution\allowbreak Protocol} concepts;
-  \item supported input/output layer kinds, formats, layouts, and parameter ranges;
-  \item precision and numerical guarantees;
-  \item resource, access, and synchronization requirements;
-  \item an execution entry point that consumes validated inputs and produces declared outputs;
-  \item diagnostic information explaining qualification rejection or execution failure.
+  \item operation identifier and supported semantic version range;
+  \item implementation identifier, version, and provenance;
+  \item execution binding: required provider/runtime and required generic capabilities;
+  \item supported input/output layer kinds, formats, layouts, dimensions, and parameter ranges;
+  \item supported input/storage, computation, accumulation, and output precision modes;
+  \item supported semantic options such as border modes, interpolation, color spaces, alpha handling, and deterministic behavior;
+  \item resource requirements, access modes, memory constraints, and import/export needs;
+  \item static execution characteristics or cost-model hints, clearly distinguished from measured current state.
 \end{enumerate}
 
-An implementation must not redefine the operation's meaning. It may reject a parameter or data representation it cannot implement correctly. A backend does not need to implement every operation; an operation does not need an implementation on every backend.
+An implementation must not redefine the operation's meaning. It may declare that it supports only a subset of the operation's semantic domain. A backend does not need to implement every operation; an operation does not need an implementation on every provider. No backend package is required to modify the operation type or runtime when adding a new conformant implementation.
 
-\subsection{Image-specific qualification contract}
+\subsection{The common qualification/resolution contract}
 
-The \texttt{ImageProcessing\allowbreak Protocol} library owns the qualifying-function contract because the decision is semantic: whether an implementation correctly realizes a particular image-processing operation for the supplied image/layer descriptors and constraints. The qualifying function consumes generic capability facts supplied by \texttt{GeneralExecution\allowbreak Protocol}; it does not duplicate device discovery, allocate memory, or submit kernels.
+The image-processing domain owns the semantics and policy vocabulary for qualification. The runtime supplies the available implementations and a current generic execution-environment snapshot. A single common resolver evaluates the four complementary inputs: operation and its specification, implementation specification, execution environment, and pipeline qualification policy.
 
-The \texttt{ImageProcessingRuntime} invokes this qualification contract over registered operation implementations and available execution contexts. Qualification returns eligible candidates with explicit requirements/reasons. Runtime selection then chooses among them according to policy. Keeping qualification and selection distinct prevents a performance score from making an invalid implementation appear acceptable.
+The common evaluator is data-driven. It compares declarative specification fields and generic provider capabilities; it does not contain a growing list of special cases for CPU, CUDA, Metal, OpenCV, or particular operating systems. The resolver is described in detail in the qualification section.
 
 \subsection{Native providers and library adapters}
 
@@ -595,105 +654,194 @@ An adapter may manage its own compute context and scheduling. In that case, the 
 
 For example, an ONNX Runtime session may partition a model internally among execution providers. The image runtime should normally qualify and select the model/session as one higher-level implementation candidate, rather than attempting to select a backend independently for every internal ONNX node. The same rule applies to a Core Image filter chain when Core Image owns evaluation.
 
-\subsection{General execution capability model}
+\subsection{General execution capability and state model}
 
-A provider capability descriptor should report facts, not promises inferred from a platform name. Depending on the provider, useful facts include:
+A provider capability descriptor reports facts, not promises inferred from a platform name. Depending on the provider, useful static facts include:
 \begin{itemize}
-  \item device identity, vendor, architecture, driver/runtime version, and availability;
-  \item supported resource types and pixel/component formats;
-  \item supported compute precisions and relevant numerical limitations;
-  \item maximum dimensions, allocation limits, and alignment constraints;
-  \item asynchronous submission and synchronization capabilities;
-  \item supported import/export and interop paths;
-  \item whether the provider manages internal scheduling or exposes operation-level execution control.
+  \item provider/device identity, vendor, architecture, driver/runtime version, and supported platform/runtime combinations;
+  \item supported resource types, import/export paths, pixel/component formats, and alignment constraints;
+  \item supported compute features and precision modes;
+  \item maximum dimensions, allocation limits, and device memory characteristics;
+  \item asynchronous submission, synchronization, and interoperability capabilities;
+  \item whether scheduling and execution are externally visible or managed internally by a higher-level runtime.
 \end{itemize}
 
-The operating system is a provider-discovery and packaging constraint. It is not sufficient evidence that a particular operation is supported. Runtime devices, driver versions, library builds, and actual capability reports determine eligibility.
+The environment also exposes dynamic observations where the provider can report them:
+\begin{itemize}
+  \item device health and current availability;
+  \item available memory and memory pressure;
+  \item queue depth, outstanding work, and estimated queue delay;
+  \item workload/utilization observations where the platform exposes trustworthy metrics;
+  \item thermal/power state or throttling information where available;
+  \item current resource residency and outstanding synchronization dependencies.
+\end{itemize}
 
-\section{Qualification and implementation selection}
+Dynamic observations MUST carry observation time and validity/freshness information. The protocol must not pretend that every operating system or driver exposes a reliable global GPU-utilization number. When such telemetry is unavailable, the runtime can still use its own outstanding submissions, queue depth, allocation knowledge, and measured execution history. Missing telemetry is represented as unknown, not as zero load.
 
-\subsection{Qualification is a correctness filter}
+The operating-system platform is an environmental fact and may constrain which provider packages can load or which capabilities exist. It is not itself a preference rule. A CUDA implementation is eligible only when its declared provider/capability requirements are satisfied by an actually discovered CUDA execution path; a Metal implementation is eligible only when a compatible Metal path exists. The resolver need not encode a platform-to-provider preference table.
 
-The qualification function is part of the \texttt{ImageProcessing\allowbreak Protocol} domain contract. It answers: \emph{Can this registered operation implementation execute this operation on these inputs using this execution context while satisfying the operation's image-processing semantics?} The runtime supplies provider/device facts through \texttt{GeneralExecution\allowbreak Protocol}; the image-processing protocol interprets those facts against operation requirements.
+\section{Qualification and implementation resolution}
 
-Define:
+\subsection{One common resolver; distinct internal stages}
+
+The caller configures a function/pipeline declaratively. The runtime invokes one common qualifying/resolution function over the composed operations and the registered implementation specifications. The resolver is smart about implementation declarations and current hardware state; individual implementation classes do not each implement their own qualification algorithm.
+
+Conceptually:
 \[
-  Q(o, x, m, e, c) \longrightarrow q,
+  R(o, x, s_o, s_i, e, p) \longrightarrow
+  \text{ranked candidate evaluations and an execution choice},
 \]
-where $o$ is an operation instance, $x$ is the input/layer descriptor and resource state, $m$ is a candidate operation implementation, $e$ is a generic execution context or capability description, $c$ is the set of execution constraints, and $q$ is a structured qualification result. The provider identity and device capabilities are facts carried by $e$, not image-processing concepts owned by the general execution library.
-
-The result is not merely a Boolean. It should contain one of:
+where:
 \begin{itemize}
-  \item \textbf{Qualified:} all required semantic and technical conditions are satisfied;
-  \item \textbf{Rejected:} one or more conditions are not satisfied, with machine-readable reason codes;
-  \item \textbf{Qualified with explicit preparation:} the implementation is valid only after declared, permitted conversions or imports.
+  \item $o$ is the operation instance and semantic version;
+  \item $x$ is the concrete input, target, and resource descriptor/state;
+  \item $s_o$ is the operation specification and its semantic requirements;
+  \item $s_i$ is a candidate implementation specification;
+  \item $e$ is the execution-environment snapshot, including provider/device capabilities and current state observations;
+  \item $p$ is the immutable qualification policy attached to the function/pipeline.
 \end{itemize}
 
-Preparation steps must be explicit. A conversion that changes precision, range, color semantics, or label interpretation is not a harmless transport detail. It must either be part of the operation's contract or be rejected.
-
-\subsection{Qualification inputs}
-
-The qualification function MUST consider the combination of:
+The public architecture has one resolution entry point. Internally, it must preserve two logically distinct stages:
 \begin{enumerate}
-  \item operation identity/version and validated parameter values;
-  \item input and target layer kinds;
-  \item input dimensions, layout, stride, component type, channel model, and semantic interpretation;
-  \item precision and numerical tolerance required by the operation/caller;
-  \item provider and device capabilities, runtime versions, and optional features;
-  \item input resource residency, importability, and synchronization state;
-  \item output requirements and resource constraints;
-  \item user constraints such as deterministic execution, preferred device, memory budget, latency target, or forbidden providers.
+  \item \textbf{Eligibility:} determine whether a candidate can satisfy every hard semantic, numerical, input/output, provider, and resource requirement.
+  \item \textbf{Ranking:} compare only eligible candidates using the applicable preferences, current state, and estimated complete execution cost.
+\end{enumerate}
+This distinction is not an invitation for each backend to implement its own qualifier and selector. It is an internal structure of one shared, data-driven resolver. A score can never make an ineligible candidate eligible.
+
+\subsection{The four complementary inputs}
+
+\begin{longtable}{@{}L{0.20\textwidth}L{0.30\textwidth}Z{0.39\textwidth}@{}}
+\toprule
+\textbf{Input} & \textbf{Owner} & \textbf{What it contributes} \\
+\midrule
+Operation specification & \texttt{ImageProcessing\allowbreak Protocol} & Semantic meaning, valid parameters/inputs, required guarantees, and permitted implementation variation. \\
+Implementation specification & Concrete operation implementation package & Static, tested support for the operation, provider requirements, precision behavior, modes, limits, and resource characteristics. \\
+Execution environment & \texttt{GeneralExecution\allowbreak Protocol} providers plus runtime observations & Actual platform, loaded providers, discovered devices, hardware capabilities, resource availability, residency, queue pressure, and state freshness. \\
+Pipeline policy & Immutable policy attached through the functional API & Caller requirements and optimization preferences, globally or scoped to an operation/step. \\
+\bottomrule
+\end{longtable}
+
+These inputs are complementary, not competing preference sets. The operation specification says what must be true. The implementation specification says what one algorithm can provide. The environment says what can be used now. The pipeline policy says which valid outcomes the caller requires or prefers.
+
+\subsection{Declarative pipeline qualification policy}
+
+The functional pipeline MAY expose a fluent configuration extension that builds an immutable policy value. It configures the common resolver; it does not inject code into an operation or implementation class.
+
+Illustrative API (names and overloads are provisional):
+
+\begin{lstlisting}
+let pipeline = ImagePipeline {
+    GaussianBlur(sigma: 1.5)
+    ColorCorrection(...)
+    Resize(width: 1024, height: 768)
+}
+.qualifying {
+    // Hard requirement applied to applicable numeric operations.
+    .require(.precision(.computation, .fp32))
+
+    // Soft objective: rank valid candidates for end-to-end latency.
+    .prefer(.lowLatency)
+
+    // Optional rule scoped to a particular operation type/step.
+    .for(GaussianBlur.self) {
+        .require(.borderMode(.reflect))
+    }
+}
+\end{lstlisting}
+
+A pipeline-wide requirement is inherited by all applicable operations. An operation-scoped policy narrows or refines the policy for that operation occurrence/type. Composition preserves step-scoped policy and does not leak one operation's local preference into unrelated steps. The builder validates that each policy dimension applies to its target operations; ambiguous applicability must produce a diagnostic rather than be silently ignored.
+
+The policy is independent of concrete provider names by default. The caller normally states a requirement or objective such as FP32 computation, low latency, low memory use, deterministic results, or bounded energy. The resolver discovers which implementation/provider combination best satisfies it. An explicit provider restriction MAY exist for reproducibility or deployment control, but it is a hard constraint, not a platform-conditioned preference.
+
+\subsection{Requirements and preferences are different}
+
+A \textbf{requirement} removes candidates that cannot satisfy it. A \textbf{preference} ranks candidates that remain.
+
+For example:
+\begin{itemize}
+  \item \texttt{require(computationPrecision: fp32)} means an FP16-only implementation is not eligible.
+  \item \texttt{prefer(computationPrecision: fp32)} means FP32 is ranked higher, but a lower precision may be selected only if the operation specification permits it and its declared numerical guarantee remains acceptable.
+  \item \texttt{prefer(lowLatency)} may select CPU while a GPU is busy if CPU is eligible and its estimated end-to-end latency is lower.
+  \item \texttt{require(provider: CUDA)} forbids CPU fallback. If CUDA is unavailable or cannot reserve required resources, the request waits/retries according to the execution policy or returns a structured failure.
+\end{itemize}
+
+Precision MUST be dimensioned. Input/storage precision, computation precision, accumulation precision, and output precision are different properties. A bare \texttt{FP32} label is ambiguous. The policy API should therefore identify the precision dimension it constrains. A preference never authorizes a result outside the operation's numerical contract; a hard requirement is needed when the caller specifically requires that precision.
+
+\subsection{Environment-aware qualification and routing}
+
+The resolver must consider more than whether a GPU exists. It evaluates:
+\begin{enumerate}
+  \item provider and device compatibility with the implementation specification;
+  \item operation-specific format, parameter, border, color, alpha, and precision support;
+  \item memory capacity, current memory pressure, resource importability, and residency;
+  \item device health, availability, queue depth, outstanding work, and estimated delay where observable;
+  \item conversion, allocation, upload/download, synchronization, and output-materialization costs;
+  \item pipeline hard requirements and soft objectives.
 \end{enumerate}
 
-\subsection{Qualification versus selection}
+A busy GPU is not automatically semantically unqualified. It may remain an eligible candidate with a worse cost estimate. If the pipeline prioritizes latency and an eligible CPU route is predicted to finish sooner, the resolver can select CPU. If the pipeline requires CUDA, the CPU route is ineligible regardless of its speed. If the GPU is unavailable, lost, or cannot satisfy a mandatory resource requirement, the candidate is temporarily unavailable or rejected with a structured reason.
 
-Qualification and selection must remain separate. The image-processing protocol defines the qualification semantics and result contract. The runtime enumerates implementations and execution contexts, invokes qualification, and performs selection only after invalid candidates have been removed.
+The runtime must not infer that a GPU is idle because no global utilization metric is available. It uses the best reliable observations: its own queue/outstanding-work accounting, provider-reported state, available memory, measured latency, and telemetry freshness. Every dynamic observation SHOULD include an observation timestamp and, where practical, a confidence or source quality.
 
-\begin{description}[style=nextline,leftmargin=0pt,labelindent=0pt,labelwidth=0pt,itemindent=0pt]
-  \item[Qualification] Establishes semantic validity and execution feasibility. A faster implementation that violates the required precision or changes the output interpretation is rejected.
-  \item[Selection] Chooses among already-qualified candidates using a policy such as lowest estimated end-to-end latency, lowest transfer cost, lowest memory pressure, energy preference, device affinity, or explicit user preference.
-\end{description}
+\subsection{Conflict prevention and policy composition}
 
-A candidate can be valid but slow. A candidate can be fast but invalid. Selection cannot promote an invalid candidate.
+The fluent builder produces a normalized, immutable policy rather than an unstructured list of positive and negative predicates. Each constraint dimension has a well-defined representation: for example, an allowed precision set, a required provider, or one explicit optimization objective/profile. This prevents contradictory declarations from accumulating unnoticed.
 
-\subsection{Candidate model}
-
-A qualified candidate should include:
-\begin{itemize}
-  \item the operation implementation and provider/device identity;
-  \item verified input and output format support;
-  \item required imports, conversions, or temporary resources;
-  \item numerical guarantees and any bounded approximation;
-  \item expected resource residency after execution;
-  \item estimated cost information, clearly marked as an estimate;
-  \item fallback or failure behavior.
-\end{itemize}
-
-Qualification results should be explainable. A diagnostic should be able to state, for example: \textquotedblleft{}Rejected: FP64 output required, provider exposes no qualified FP64 implementation\textquotedblright{} or \textquotedblleft{}Qualified after explicit RGBA-to-RGBA16F conversion; conversion is lossy and requires caller permission.\textquotedblright{}
-
-\subsection{Selection across a composed sequence}
-
-Greedy per-operation selection is insufficient. Consider a sequence with three operations. A locally fastest choice for the first operation may force a device transfer before the second; a slightly slower first choice may allow all three to remain resident on one device.
-
-For a sequence $o_1,\ldots,o_n$, the planner should consider implementation candidates and transition costs between them. A useful conceptual objective is:
+Hard constraints compose conjunctively. If two composed functions permit sets $A$ and $B$ for the same dimension, the combined admissible set is:
 \[
-  \min_{i_1,\ldots,i_n}
-  \left(
-    \sum_{k=1}^{n} C_{\mathrm{exec}}(o_k,i_k)
-    + \sum_{k=1}^{n-1} C_{\mathrm{transition}}(i_k,i_{k+1})
-    + C_{\mathrm{allocation}}
-    + C_{\mathrm{synchronization}}
-  \right)
+  A_{\mathrm{combined}} = A \cap B.
 \]
-subject to every selected candidate being qualified and all intermediate output contracts matching the next input contract.
+An empty result is a policy conflict and MUST be rejected when the builder is finalized or when the functions are composed. For example, requiring FP32 in one constituent and FP16-only in another, when both constraints apply to the same operation scope, is invalid. A requirement and an exclusion of the same provider is also invalid.
 
-This is a planning principle, not a requirement to implement a complex global optimizer initially. The first runtime can use a modest segment-based policy, but it must track provider transitions and resource residency rather than choosing each operation in isolation.
+Preferences are not intersected as sets. They are represented as explicit objective dimensions and, when multiple objectives must be traded off, by a declared priority or weight model. Contradictory declarations for the same objective at the same scope are rejected unless the caller explicitly supplies a valid ordering/weighting. Composition preserves preferences scoped to individual steps; pipeline-wide objectives apply to the complete execution plan. An operation-local rule cannot silently erase a pipeline-wide hard requirement.
+
+Conflict diagnostics MUST preserve provenance: policy scope, pipeline/operation/step identity, source declaration, conflicting declaration, and the incompatible dimension. Validation occurs:
+\begin{itemize}
+  \item while building/finalizing a policy;
+  \item when composing functions or pipelines;
+  \item when loading a serialized policy;
+  \item again at runtime as a defensive boundary for dynamic or externally supplied declarations.
+\end{itemize}
+Runtime availability failures are not policy conflicts. Requiring CUDA on a machine without an available compatible CUDA device is an unsatisfied requirement, not a contradictory configuration.
+
+\subsection{Cost model and candidate ranking}
+
+For each eligible candidate, the resolver estimates complete cost rather than comparing kernel duration alone. A useful initial model is:
+\[
+  C_{\mathrm{total}} =
+  C_{\mathrm{queue}} +
+  C_{\mathrm{transfer}} +
+  C_{\mathrm{conversion}} +
+  C_{\mathrm{allocation}} +
+  C_{\mathrm{compute}} +
+  C_{\mathrm{synchronization}} +
+  C_{\mathrm{materialization}}.
+\]
+The model may also account for peak memory, power/thermal objectives, expected throughput, and current resource pressure.
+
+Consider a case in which the GPU kernel is much faster but the GPU queue is busy and the input is resident in host memory. CPU can be the better candidate because it avoids queue delay and upload. Conversely, a GPU may be preferable when input is already resident there and a sequence can remain on the same device. This is why routing must consider resource residency and the composed sequence.
+
+Initial estimates may be simple and partly measured. The architecture requires honest cost boundaries and observable decisions, not an elaborate predictive model before evidence exists. Unknown telemetry must remain unknown and must not be silently treated as zero cost.
+
+\subsection{Resolution, reservations, and changing device state}
+
+A qualification result is based on an environment snapshot and is not a permanent reservation. Device load, available memory, and resource availability can change between resolution and execution.
+
+Before execution, the coordinator MUST acquire/reserve the resources required by the selected plan and validate critical availability assumptions. If reservation fails or the snapshot is stale, the runtime may refresh the environment and resolve again, but only within the original hard constraints. It must not silently fall back to a forbidden provider or lower precision. If fallback is permitted, it may resolve to another eligible candidate. If no candidate remains, return a structured availability/resource failure.
+
+The resolver should return the ranked candidate evaluations, selected candidate/plan, rejected/temporarily-unavailable reasons, cost assumptions, and environment-snapshot identity/time. This supports diagnostics and reproducibility.
 
 \subsection{Fallback policy}
 
-CPU fallback is useful but must not be automatic in every circumstance. Fallback is permitted only when the CPU implementation is qualified for the same semantic contract and the caller's constraints permit it. If the caller requires a particular device, precision, determinism level, or latency class, falling back may violate the request and must produce a clear failure.
+CPU fallback is not a universal rule. It is one possible route selected when:
+\begin{itemize}
+  \item a CPU implementation is registered and qualified for the same operation semantics;
+  \item the pipeline does not require a different provider;
+  \item the CPU route satisfies precision, output, and resource requirements;
+  \item its estimated cost is competitive for the selected objective.
+\end{itemize}
 
-No silent downgrade of precision, color space, alpha semantics, border behavior, or label handling is permitted.
+No silent downgrade of precision, color space, alpha semantics, border behavior, label handling, or deterministic guarantees is permitted. A preference can be compromised; a requirement cannot.
 
 \section{Execution, memory, and lifecycle}
 
@@ -840,45 +988,32 @@ try await image.apply(
 \subsection{Provider and implementation registration}
 
 \begin{lstlisting}
-// Conceptual registration only; exact protocol methods are not frozen.
-registry.registerProvider(MetalProvider())
-registry.registerProvider(CUDAProvider())
-registry.registerProvider(OpenCLProvider())
-registry.registerProvider(Direct3D12Provider())
+// The application selects the provider packages it deploys.
 registry.registerProvider(CPUProvider())
+registry.registerProvider(MetalProvider())
 
-registry.register(
-    GaussianBlurMetalImplementation(),
-    for: .gaussianBlur
-)
-
-registry.register(
-    GaussianBlurOpenCVCPUImplementation(),
-    for: .gaussianBlur
-)
+// Independent operation implementations target the same operation.
+registry.register(CPUGaussianBlur())
+registry.register(MetalGaussianBlur())
+registry.register(OpenCVGaussianBlur())
 \end{lstlisting}
 
-A provider registration does not imply that all operation implementations are available. An operation registration does not imply that it is qualified for every device discovered by that provider.
+The CPU/Metal/OpenCV implementation packages are not dependencies of the core protocol/runtime. A consuming application imports and registers the ones it chooses. Registration does not imply universal qualification: the common resolver evaluates each implementation specification against the current environment and pipeline policy.
 
-\subsection{Qualification and selection}
+\subsection{Qualification and resolution}
 
 \begin{lstlisting}
-let candidates = runtime.qualify(
-    operation: blur,
-    input: sourceLayer.descriptor,
-    target: target,
-    constraints: request.constraints
+// Conceptual internal runtime path; ordinary callers need not manage candidates.
+let resolution = try runtime.resolve(
+    pipeline: pipeline,
+    input: source,
+    environment: executionEnvironment.snapshot()
 )
 
-let plan = try runtime.select(
-    qualifiedCandidates: candidates,
-    objective: request.objective
-)
-
-let output = try await runtime.execute(plan)
+let output = try await runtime.execute(resolution.plan)
 \end{lstlisting}
 
-The actual public API should not expose a caller-managed qualification ceremony for ordinary use. This sketch shows internal responsibilities. Advanced users may eventually be offered explain/inspect APIs for diagnostics and reproducibility.
+The runtime's inspection API may expose ranked candidates and structured reasons for diagnostics. The standard apply API should perform resolution internally. The application states semantic requirements and optimization preferences; it does not select CUDA or Metal merely because it knows the operating-system name.
 
 \section{Testing and verification strategy}
 
@@ -929,23 +1064,26 @@ The design should support headless command-line builds and tests; it must not re
 
 \section{Implementation sequence}
 
-The sequence below minimizes architectural risk. It deliberately postpones abstractions that are not yet justified.
+The core library and its external implementations are separate delivery tracks. Core phases establish stable contracts, specifications, policy validation, environment observation, and the common resolver/runtime. Concrete provider and operation-implementation packages then apply those interfaces independently; they are not sequential phases of core-library development.
 
 \begin{longtable}{@{}L{0.085\textwidth}L{0.24\textwidth}Z{0.60\textwidth}@{}}
 \toprule
 \textbf{Stage} & \textbf{Deliverable} & \textbf{Acceptance evidence} \\
 \midrule
-0 & Semantic contract and data descriptors & Precisely specified image/layer/resource metadata; unit tests for format, stride, alpha, color and ownership descriptors. \\
-1 & Image/layer object model & Stable image/layer identity, explicit target selection, shallow derived image, replacement transaction, copy-on-write resource tests. \\
-2 & Operation objects and composition & Immutable operation instances, parameter validation, semantic versioning, typed sequential composition, reference tests for a small operation set. \\
-3 & CPU provider and baseline implementations & Functional CPU path with complete operation conformance and failure tests. OpenCV CPU may be used as an adapter where its semantics match. \\
-4 & Provider protocol and qualification registry & Device/provider discovery, implementation registration, structured qualification reasons, and explicit selection. \\
-5 & First GPU provider & Implement one native GPU provider end-to-end (Metal is the natural Apple-platform candidate); prove residency, synchronization, lifetime, and numerical equivalence. \\
-6 & Additional provider adapters & Add CUDA, OpenCL, and Direct3D 12 incrementally, each with capability tests and an explicit platform/hardware CI plan. Do not add a provider merely to complete a checklist. \\
-7 & High-level algorithm and model runtimes & Add Core Image, Accelerate, OpenCV accelerated paths, ONNX Runtime, or Core ML as adapters when a real operation or model workload benefits. \\
-8 & Planner improvements & Measure sequence-level cost, provider transitions, resource interop, and safe fusion opportunities. Do not introduce speculative cost models before collecting measurements. \\
+0 & Architecture and policy decisions & Stable ownership/dependency rules; specification model; precision semantics; policy scopes/composition; environment-state limits; package boundaries. \\
+1 & Operation and implementation contracts & Immutable operation objects, operation specifications, one generic implementation protocol, declarative implementation specifications, stable identifiers/versions. \\
+2 & General execution contracts & Provider/device/resource contracts, static capabilities, dynamic state observations, freshness and unknown-value semantics. \\
+3 & Image-processing protocol implementation & Image/layer/operation/composition types, typed policy builder, normalized immutable policy, type-erased internal registry descriptors. \\
+4 & Environment discovery and implementation registry & Provider discovery, implementation registration, snapshot identity, diagnostics, fake-provider/fake-implementation contract tests. \\
+5 & Common qualification and resolver & Spec-driven eligibility, hard requirements, preferences, cost ranking, structured conflicts and unsatisfied-requirement diagnostics. \\
+6 & Execution coordinator and pipeline planning & Resource reservation/revalidation, whole-pipeline or segment routing, execution, transactional result publication, cancellation/failure behavior. \\
+7 & Independent implementation packs and reference application & At least one external provider pack and multiple operation implementation classes for the same operation; the sample application registers packages without changing core code. Other provider/algorithm packs can be developed independently. \\
+8 & Measured optimization & Residency-aware planning, cost calibration, memory reuse, batching/fusion only with conformance evidence, and full-pipeline benchmarks. \\
+9 & Production readiness & Versioned packages, platform/provider/operation support matrix, diagnostics, API docs, packaging, compatibility, release process and tested consumer application. \\
 \bottomrule
 \end{longtable}
+
+Provider and algorithm implementation work is an independent workstream, not a technology checklist. CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, Accelerate, Core Image, and OpenCV packages are prioritized by actual target requirements, hardware access, maintainability, and conformance evidence. A package may be developed in parallel once its required contracts are stable. No one provider is required merely to complete a numbered core phase.
 
 \section{Risks and decisions still open}
 
@@ -988,14 +1126,22 @@ The following rules are the compact invariants that future API and implementatio
   \item Pixel storage is a resource with explicit descriptor, ownership, lifetime, residency, and synchronization.
   \item An operation is an immutable object describing meaning and parameters, not a backend-specific executable.
   \item Operation semantics are versioned independently from implementation versions.
-  \item An operation implementation is registered for an operation and an execution environment; it does not own the operation's meaning.
-  \item \texttt{ImageProcessing\allowbreak Protocol} is the primary image-domain contract library and owns operation semantics, implementation contracts, and image-specific qualification.
-  \item \texttt{GeneralExecution\allowbreak Protocol} is a lower-level, image-agnostic dependency that describes generic compute providers, devices, resources, submission, completion, and synchronization; it MUST NOT depend on \texttt{ImageProcessing\allowbreak Protocol}.
-  \item CPU, Metal, CUDA, OpenCL, Direct3D 12, and Vulkan providers implement the general execution contract. Image-operation adapters implement the image-processing contract.
-  \item A general compute-provider protocol represents common execution/resource responsibilities while optional capabilities preserve native differences.
-  \item A library such as OpenCV or a runtime such as ONNX Runtime may be an implementation adapter; it is not automatically equivalent to a low-level compute provider.
-  \item Qualification determines correctness and feasibility. Selection optimizes only among qualified candidates.
-  \item Selection considers the composed sequence, resource residency, conversion, transfer, and synchronization costs.
+  \item One generic \texttt{ImageOperationImplementation} protocol is specialized by an associated operation type; multiple independent classes may implement the same operation.
+  \item Operation specifications describe semantic requirements and permitted variation. Implementation specifications declare one implementation's static, tested support and provider/resource requirements.
+  \item Implementation classes do not each implement bespoke qualification logic. The common resolver evaluates declarative specifications.
+  \item \texttt{ImageProcessing\allowbreak Protocol} owns image semantics, operation and implementation contracts, declarative policy types, and qualification result vocabulary.
+  \item \texttt{GeneralExecution\allowbreak Protocol} is a lower-level, image-agnostic dependency describing providers, devices, resources, submission, completion, capabilities, and observable execution state; it MUST NOT depend on image-processing concepts.
+  \item Provider packages implement the generic execution contract. Operation implementation packages implement image-processing contracts. The consuming application chooses and registers both.
+  \item Platform is an environment fact, not a default provider preference. Eligibility follows actual provider discovery, declared implementation requirements, and device capabilities.
+  \item The execution environment distinguishes static capability from dynamic availability/load and records telemetry freshness; unknown load is not treated as zero.
+  \item One common resolver evaluates operation semantics, implementation specifications, current environment state, and pipeline policy. It filters invalid candidates and ranks only eligible candidates.
+  \item Requirements determine admissibility; preferences guide ranking and can never override semantic or hard execution requirements.
+  \item Pipeline qualification is declarative and fluent. It produces immutable policy values rather than injected per-implementation code.
+  \item Hard policy requirements compose conjunctively and are validated when built/composed. Empty intersections and contradictory assignments produce provenance-rich diagnostics.
+  \item Soft preferences use explicit objective dimensions and declared trade-off semantics; they are not intersected as sets.
+  \item Dynamic qualification is snapshot-based. Resource reservation and critical state are revalidated before execution; stale plans may be resolved again only within original hard constraints.
+  \item Routing considers queue delay, transfer, conversion, allocation, compute, synchronization, materialization, residency, and pipeline transitions—not kernel time alone.
+  \item CPU fallback is permitted only when it satisfies all hard requirements and the pipeline does not require another provider.
   \item New-image and replace-image APIs express logical behavior; neither promises in-place memory mutation.
   \item Replacement is transactional and preserves the old image state on failure.
   \item Operation targets (layer, composite, or explicit multi-input set) are never inferred in a destructive or ambiguous way.
@@ -1025,8 +1171,15 @@ Pixel resource & Opaque reference to numerical pixel/array storage. \\
 Operation object & Immutable parameterized description of a computation and its contract. \\
 Operation implementation & Concrete algorithm implementation that satisfies an operation contract on a provider/runtime. \\
 Compute provider & Execution substrate adapter exposing devices, resources, submission, completion, and synchronization. \\
-Qualification & Compatibility decision establishing whether an implementation can satisfy an operation for given inputs and constraints. \\
-Selection & Policy choosing among qualified implementations. \\
+Operation specification & Declarative statement of an operation's semantic requirements and permitted behavior. \\
+Implementation specification & Declarative, versioned statement of one implementation's tested support, constraints, provider requirements, and resource characteristics. \\
+Execution environment snapshot & Time-bounded view of available providers/devices, capabilities, resource state, and observable workload/availability. \\
+Qualification policy & Immutable declarative requirements and preferences supplied to the common resolver. \\
+Qualification/resolution & Shared evaluation that filters ineligible implementations and ranks eligible candidates against policy and current environment state. \\
+Requirement & Hard condition an implementation must satisfy to remain eligible. \\
+Preference & Soft objective used to rank eligible candidates; it cannot relax a requirement. \\
+
+
 Residency & Current location/access domain of a resource (host, device, shared, external, or managed). \\
 Materialization & Evaluation of a deferred representation into a concrete resource/output. \\
 Logical replacement & Atomic update of an image document's state while retaining its logical identity. \\
@@ -1043,20 +1196,27 @@ GeneralExecutionProtocol/
 
 ImageProcessingProtocol/
   Image, Layer, PixelResourceDescriptor
-  Operation, OperationImplementation
-  QualificationContext, QualificationResult, QualifyingFunction
+  ImageFunction, Operation, OperationSpecification
+  ImageOperationImplementation
+  ImplementationSpecification, QualificationPolicy
+
+GeneralExecutionProtocol/
+  Provider, Device, Context, Resource, Submission, Completion, Sync
+  CapabilityDescriptor, Availability/StateObservation
 
 ImageProcessingRuntime/
-  Registry, QualificationRunner, Selection, ExecutionPlanning
+  Registry, EnvironmentDiscovery, Snapshot
+  CommonQualifierResolver, CostModel, ExecutionPlanner
+  TypeErasure, ResourceReservation, ExecutionCoordinator
   ImageResult, ReplacementTransaction
 
-ExecutionProviders/
+ExternalExecutionProviderPacks/
   CPU, Metal, CUDA, OpenCL, Direct3D12, Vulkan
 
-ImageProcessingImplementations/
-  CoreImage, Accelerate, OpenCV, MetalKernels
-  CUDAKernels, OpenCLKernels, Direct3D12Kernels
-  ONNXRuntime, CoreML
+ExternalOperationImplementationPacks/
+  GaussianBlur: CPU, Metal, CUDA, OpenCV, ...
+  Resize: CPU, Metal, CUDA, OpenCV, ...
+  CoreImage, Accelerate, OpenCV, ONNXRuntime, CoreML adapters
 \end{lstlisting}
 
 Dependency rules:
