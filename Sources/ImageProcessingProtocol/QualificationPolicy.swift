@@ -413,15 +413,15 @@ public struct QualificationPolicy: Hashable, Sendable {
         switch requirement {
         case let .exact(_, value):
             switch value {
-            case .boolean: .boolean
-            case .integer: .integer
-            case .decimal: .decimal
-            case .string: .string
-            case .stringSet: .stringSet
+            case .boolean: return .boolean
+            case .integer: return .integer
+            case .decimal: return .decimal
+            case .string: return .string
+            case .stringSet: return .stringSet
             }
-        case .integerAtLeast: .integer
-        case .decimalAtLeast: .decimal
-        case .stringSetContains: .stringSet
+        case .integerAtLeast: return .integer
+        case .decimalAtLeast: return .decimal
+        case .stringSetContains: return .stringSet
         }
     }
 
