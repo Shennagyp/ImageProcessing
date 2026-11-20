@@ -1,0 +1,102 @@
+\documentclass[11pt,a4paper,oneside]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=24mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb,booktabs,longtable,tabularx,array,enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+\definecolor{ink}{HTML}{202A35}
+\definecolor{muted}{HTML}{5D6875}
+\definecolor{rulegray}{HTML}{D7DDE3}
+\definecolor{codebg}{HTML}{F5F7F9}
+\definecolor{codeblue}{HTML}{174A73}
+\definecolor{codegreen}{HTML}{28623B}
+
+\hypersetup{colorlinks=true,linkcolor=codeblue,urlcolor=codeblue,citecolor=codegreen,
+  pdftitle={ImageProcessing Implementation Plan},
+  pdfauthor={ImageProcessing Project},
+  pdfsubject={Phased implementation roadmap and acceptance gates}}
+\setlist[itemize]{leftmargin=1.55em,itemsep=2pt,topsep=4pt}
+\setlist[enumerate]{leftmargin=1.75em,itemsep=2pt,topsep=4pt}
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.15}
+\titleformat{\section}{\Large\bfseries\color{ink}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.7em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{muted}{ImageProcessing --- Implementation Plan}}
+\fancyhead[R]{\small\textcolor{muted}{Roadmap 0.1}}
+\fancyfoot[L]{\small\textcolor{muted}{Internal engineering plan --- not for publication}}
+\fancyfoot[R]{\small\textcolor{muted}{\thepage}}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\lstdefinelanguage{SwiftLite}{
+  morekeywords={public,private,internal,struct,class,enum,protocol,func,let,var,try,await,async,throws,return,where,associatedtype,extension,static,final,actor,if,else,guard,case,switch,for,in,nil,true,false},
+  sensitive=true,morecomment=[l]{//},morestring=[b]"}
+\lstset{language=SwiftLite,basicstyle=\small\ttfamily,keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegreen},stringstyle=\color{red!55!black},backgroundcolor=\color{codebg},
+  frame=single,rulecolor=\color{rulegray},framerule=0.4pt,xleftmargin=0.7em,
+  xrightmargin=0.7em,breaklines=true,columns=fullflexible,keepspaces=true,showstringspaces=false}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\IPP}{\texttt{ImageProcessing\allowbreak Protocol}}
+\newcommand{\GEP}{\texttt{GeneralExecution\allowbreak Protocol}}
+\newcommand{\IPR}{\texttt{ImageProcessing\allowbreak Runtime}}
+\newcommand{\Project}{\textsc{ImageProcessing}}
+\newcommand{\phase}[1]{\clearpage\section{Phase #1}}
+\newcommand{\deliverables}{\subsection{Deliverables}}
+\newcommand{\exitcriteria}{\subsection{Exit criteria}}
+
+\begin{document}
+\pagenumbering{gobble}\begin{titlepage}
+  \centering
+  \vspace*{19mm}
+  {\Large\bfseries IMAGEPROCESSING PROJECT\par}
+  \vspace{14mm}
+  {\huge\bfseries Implementation Plan\par}
+  \vspace{4mm}
+  {\LARGE Phased Roadmap, Deliverables, and Acceptance Gates\par}
+  \vspace{10mm}
+  {\large From semantic contracts to portable heterogeneous execution\par}
+  \vfill
+  \begin{tabular}{@{}ll@{}}
+    \textbf{Document type:} & Internal implementation plan \\
+    \textbf{Status:} & Proposed; phase gates require approval before execution \\
+    \textbf{Version:} & 0.1 \\
+    \textbf{Date:} & 20 November 2026 \\
+    \textbf{Architecture baseline:} & 0.2 \\
+    \textbf{Repository:} & \url{https://github.com/Shennagyp/ImageProcessing} \\
+  \end{tabular}
+  \vfill
+  \begin{minipage}{0.87\textwidth}
+    \small\color{muted}
+    This plan translates the current architecture baseline into implementation phases. It is intentionally expressed as dependency-ordered gates rather than calendar estimates. A phase is complete only when its deliverables and acceptance criteria are demonstrated; starting the next phase is not justified by code volume or elapsed time alone.
+  \end{minipage}
+  \vspace*{13mm}
+\end{titlepage}
+
+\clearpage
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+\input{Implementation-Plan/01-roadmap-and-rules.tex}
+\input{Implementation-Plan/02-phases-0-to-3.tex}
+\input{Implementation-Plan/03-phases-4-to-6.tex}
+\input{Implementation-Plan/04-phases-7-to-9.tex}
+\input{Implementation-Plan/05-phases-10-to-12.tex}
+\input{Implementation-Plan/06-validation-and-governance.tex}
+
+\end{document}
