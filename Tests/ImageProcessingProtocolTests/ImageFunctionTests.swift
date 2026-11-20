@@ -25,7 +25,8 @@ private struct AddNumberOperation: ImageOperation {
 
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "test.number.add")!,
-        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        qualificationDimensions: [.precision]
     )
 }
 
@@ -67,7 +68,7 @@ struct ImageFunctionTests {
             stepIdentifier: formatStep
         )
 
-        let composed: ImageFunction<NumberValue, TextValue> = add.followed(by: format)
+        let composed: ImageFunction<NumberValue, TextValue> = try add.followed(by: format)
 
         #expect(composed.stepCount == 2)
         #expect(composed.steps[0].specification.identifier == AddNumberOperation.specification.identifier)
@@ -102,8 +103,8 @@ struct ImageFunctionTests {
     func identityFunctionHasNoStepsAndComposesOnEitherSide() throws {
         let identity = ImageFunction<NumberValue, NumberValue>.identity()
         let operation = ImageFunction(operation: AddNumberOperation(amount: 4))
-        let left = identity.followed(by: operation)
-        let right = operation.followed(by: identity)
+        let left = try identity.followed(by: operation)
+        let right = try operation.followed(by: identity)
 
         #expect(identity.stepCount == 0)
         #expect(left.stepCount == 1)
@@ -119,7 +120,7 @@ struct ImageFunctionTests {
             operation: AddNumberOperation(amount: 1),
             stepIdentifier: originalID
         )
-        let repeated: ImageFunction<NumberValue, NumberValue> = add.followed(by: add)
+        let repeated: ImageFunction<NumberValue, NumberValue> = try add.followed(by: add)
 
         #expect(repeated.stepCount == 2)
         #expect(repeated.steps[0].identifier != repeated.steps[1].identifier)
@@ -134,7 +135,7 @@ struct ImageFunctionTests {
         let summarize = ImageFunction(operation: SummarizeTextOperation(suffix: "!"))
 
         let composed: ImageFunction<NumberValue, SummaryValue> =
-            add.followed(by: format).followed(by: summarize)
+            try add.followed(by: format).followed(by: summarize)
 
         #expect(composed.stepCount == 3)
         #expect(composed.steps.map(\.specification.identifier) == [
