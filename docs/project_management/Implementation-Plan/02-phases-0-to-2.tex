@@ -37,9 +37,11 @@
 \deliverables
 \begin{enumerate}
   \item \textbf{Operation identity:} stable identifier, semantic version, immutable parameters, parameter validation, and typed input/output contracts.
-  \item \textbf{Operation specification:} semantic requirements, permitted numerical variation, supported input/output categories, parameter domain, mutation/effect semantics, and precision dimensions.
+  \item \textbf{Operation specification:} semantic requirements, typed parameter schemas/domains, permitted numerical variation, independent input-storage/computation/accumulation/output precision domains, rounding/overflow/range/determinism/error contracts, required/permitted effects, input mutation/output aliasing, accepted/produced layer kinds, and input/output pixel representation domains.
+  \item \textbf{Operation instance preflight:} validate required/optional named parameter values against the operation schema; distinguish an invalid operation instance from a valid parameter value unsupported by one implementation.
   \item \textbf{One generic implementation protocol:} \texttt{ImageOperationImplementation} with an associated \texttt{Operation} type, declarative specification, and typed execution entry point.
-  \item \textbf{Implementation specification:} operation identity/version, implementation identity/version, provider/runtime dependency, required generic capabilities, supported formats/layouts/precision modes, parameter limits, semantic options, resource requirements, and static cost hints.
+  \item \textbf{Implementation specification:} operation identity/version, implementation identity/version, provider/runtime dependency, required generic capabilities, parameter and pixel-representation support subsets, precision/numerical/effect/layer support, input/output/temporary resource requirements, and static performance hints.
+  \item \textbf{Static conformance validation:} validate implementation declarations against the operation contract without consulting transient provider/device availability or load.
   \item \textbf{No per-implementation qualifier:} implementations declare support; they do not each implement independent \texttt{qualify()} code. The core resolver interprets their specifications.
   \item \textbf{Qualification result vocabulary:} eligible, rejected, and temporarily unavailable outcomes with machine-readable reasons, requirements, and preparation/transfer details.
   \item \textbf{Fluent policy contract:} immutable pipeline/operation-scoped configuration with explicit \texttt{require} and \texttt{prefer} semantics.
@@ -51,7 +53,12 @@
   \item Two different implementation classes can declare support for the same \texttt{GaussianBlur} operation without defining separate operation types.
   \item A third implementation can be added without modifying the operation type or generic implementation protocol.
   \item Static implementation capability is distinguishable from runtime provider availability and transient load.
-  \item FP32 computation can be expressed separately from FP32 input/output storage and accumulation precision.
+  \item FP32 computation can be expressed separately from FP32 input/output storage and accumulation precision; each precision dimension is independently validated.
+  \item An implementation can declare a strict subset of operation parameter domains, precision modes, semantic options, and pixel representations without redefining operation semantics.
+  \item Rounding, overflow, output range, deterministic behavior, and numerical error guarantees are checked independently of precision compatibility.
+  \item Required effects, permitted effects, input mutation, and output aliasing are validated without allowing implementations to add unpermitted behavior.
+  \item Static resource requirements and cost hints are separate from live provider/device availability, capacity, queue load, and telemetry.
+  \item Two independent implementation specifications can declare different support for the same operation identity/version without defining separate operation types.
   \item No public contract requires provider-native types or per-backend qualification functions.
 \end{itemize}
 
