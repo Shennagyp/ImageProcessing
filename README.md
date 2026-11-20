@@ -25,7 +25,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 The root SwiftPM package currently publishes two modules:
 
 - `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, target-scoped resource handles, resource allocation/import contracts, typed work submission/completion, dependencies, cancellation, context-scoped capability reporting, and optional synchronization capabilities.
-- `ImageProcessingProtocol` — typed operation/implementation contracts plus image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, and explicit plane-to-resource binding.
+- `ImageProcessingProtocol` — typed operation/implementation contracts plus image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, and revision-scoped layer storage binding sets.
 
 `ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. Pixel descriptors describe meaning/layout and validate storage capacity; they do not own or allocate provider resources. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
 
