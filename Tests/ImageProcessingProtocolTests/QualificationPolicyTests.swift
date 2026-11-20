@@ -31,6 +31,17 @@ private struct NonNumericOperation: ImageOperation {
     )
 }
 
+private struct ComputationOnlyOperation: ImageOperation {
+    typealias Input = PolicyNumber
+    typealias Output = PolicyNumber
+
+    static let specification = OperationSpecification<Input, Output>(
+        identifier: OperationIdentifier(rawValue: "policy.computation-only")!,
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        qualificationDimensions: [.computationPrecision]
+    )
+}
+
 struct QualificationPolicyTests {
     private func provider(_ raw: String) throws -> ExecutionProviderID {
         try #require(ExecutionProviderID(rawValue: raw))
@@ -423,5 +434,32 @@ extension QualificationPolicyTests {
                 $0.require(.precision(.computation, .uint8))
             }
         }
+    }
+}
+
+
+extension QualificationPolicyTests {
+    @Test
+    func precisionRequirementMustMatchTheExactOperationPrecisionDimension() throws {
+        let stepID = try step("step.computation-only")
+        let function = ImageFunction(
+            operation: ComputationOnlyOperation(),
+            stepIdentifier: stepID
+        )
+
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.forStep(stepID) {
+                    $0.require(.precision(.inputStorage, .uint8))
+                }
+            }
+        }
+
+        let computationRequirement = try function.qualifying {
+            $0.forStep(stepID) {
+                $0.require(.precision(.computation, .float32))
+            }
+        }
+        #expect(computationRequirement.qualificationPolicy.requirements.count == 1)
     }
 }
