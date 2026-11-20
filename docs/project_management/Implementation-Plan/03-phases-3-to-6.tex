@@ -41,6 +41,7 @@
   \item Policy tests cover three-way allowed-set intersections (not only pairwise conflicts), execution-capability value-type conflicts, unknown step scopes, duplicate step IDs, invalid weights, and same-scope objective conflicts.
   \item Pipeline and step preferences for the same objective may use different priorities without leaking scope; differing priorities at the same scope are rejected.
   \item Right-hand step-scoped policy declarations are rebased to the new occurrence IDs when functions are composed.
+  \item Precision-value validation rejects PixelComponentType values in computation/accumulation dimensions and ArithmeticPrecision values in inputStorage/output dimensions.
   \item A valid pipeline-level FP32 computation requirement is preserved through composition and is not silently weakened by a local preference.
   \item Public APIs expose no provider-native resource classes and no public node/graph editor model.
 \end{itemize}
