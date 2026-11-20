@@ -88,29 +88,41 @@ enum ExecutionProviderConformanceHarness {
         }
 
         let capabilities = context.capabilities
-        if advertisesTrue(.resourceAllocation, in: capabilities)
-            || advertisesTrue(.resourceImport, in: capabilities) {
-            guard context is any ExecutionResourceAllocatingContext else {
-                throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
-                    .resourceAllocation
-                )
-            }
+        if advertisesTrue(.resourceAllocation, in: capabilities),
+           !(context is any ExecutionResourceAllocatingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .resourceAllocation
+            )
         }
-        if advertisesTrue(.workSubmission, in: capabilities)
-            || advertisesTrue(.workDependencies, in: capabilities) {
-            guard context is any ExecutionWorkSubmittingContext else {
-                throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
-                    .workSubmission
-                )
-            }
+        if advertisesTrue(.resourceImport, in: capabilities),
+           !(context is any ExecutionResourceAllocatingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .resourceImport
+            )
         }
-        if advertisesTrue(.contextSynchronization, in: capabilities)
-            || advertisesTrue(.resourceSynchronization, in: capabilities) {
-            guard context is any ExecutionSynchronizingContext else {
-                throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
-                    .contextSynchronization
-                )
-            }
+        if advertisesTrue(.workSubmission, in: capabilities),
+           !(context is any ExecutionWorkSubmittingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .workSubmission
+            )
+        }
+        if advertisesTrue(.workDependencies, in: capabilities),
+           !(context is any ExecutionWorkSubmittingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .workDependencies
+            )
+        }
+        if advertisesTrue(.contextSynchronization, in: capabilities),
+           !(context is any ExecutionSynchronizingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .contextSynchronization
+            )
+        }
+        if advertisesTrue(.resourceSynchronization, in: capabilities),
+           !(context is any ExecutionSynchronizingContext) {
+            throw ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+                .resourceSynchronization
+            )
         }
     }
 
