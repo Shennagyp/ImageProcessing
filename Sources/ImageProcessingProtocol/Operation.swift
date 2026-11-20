@@ -32,6 +32,8 @@ public protocol OperationValue: Sendable {
 public enum OperationQualificationDimension: String, Hashable, Sendable {
     /// The operation has a meaningful numerical precision contract.
     case precision
+    /// The operation permits implementation variation in determinism.
+    case deterministicResults
 }
 
 /// A typed operation specification. Input/output identifiers are derived from
