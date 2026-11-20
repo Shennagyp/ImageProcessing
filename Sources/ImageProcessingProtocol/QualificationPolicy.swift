@@ -95,6 +95,7 @@ public struct QualificationPolicyConflict: Error, Hashable, Sendable {
 }
 
 public enum QualificationPolicyValidationError: Error, Hashable, Sendable {
+    case duplicateStepIdentifier(OperationStepIdentifier)
     case emptyProviderSet(PolicyDeclarationOrigin)
     case emptyPrecisionSet(PrecisionDimension, PolicyDeclarationOrigin)
     case invalidPreferenceWeight(PolicyDeclarationOrigin)
@@ -160,7 +161,13 @@ public struct QualificationPolicy: Hashable, Sendable {
     }
 
     func validate(for steps: [AnyImageOperationStep]) throws {
-        let stepsByID = Dictionary(uniqueKeysWithValues: steps.map { ($0.identifier, $0) })
+        var stepsByID: [OperationStepIdentifier: AnyImageOperationStep] = [:]
+        for step in steps {
+            guard stepsByID[step.identifier] == nil else {
+                throw QualificationPolicyValidationError.duplicateStepIdentifier(step.identifier)
+            }
+            stepsByID[step.identifier] = step
+        }
 
         for declaration in requirements {
             switch declaration.requirement {
@@ -265,9 +272,9 @@ public struct QualificationPolicy: Hashable, Sendable {
                 switch declaration.requirement {
                 case let .precision(dimension, _),
                      let .allowedPrecisions(dimension, _):
-                    dimension
+                    return dimension
                 default:
-                    nil
+                    return nil
                 }
             })
             for dimension in precisionDimensions {
