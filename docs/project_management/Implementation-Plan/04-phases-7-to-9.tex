@@ -1,0 +1,65 @@
+\phase{7 --- Apple execution and algorithm implementations}
+
+\textbf{Objective.} Deliver a production-quality Apple path without changing the public image-processing contract.
+
+\deliverables
+\begin{enumerate}
+  \item CPU acceleration adapters using Accelerate/vImage where they satisfy the operation contract.
+  \item Core Image adapters for appropriate image operations, with explicit handling of its context, color management, deferred evaluation, and materialization boundaries.
+  \item A native Metal provider implementing \GEP{} on supported Apple devices.
+  \item Metal operation implementations for the initial operation set where a native kernel offers a measured advantage or an essential capability.
+  \item Safe interoperation among CPU memory, Core Image representations, and Metal resources where documented and supported; otherwise use explicit copy/materialization adapters.
+  \item Headless command-line build/test scripts. The workflow must not require an Xcode project or the Xcode IDE; native Metal compilation still requires a compatible Apple SDK/toolchain and must be validated on the actual target environment.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item CPU and Apple implementations pass the same operation conformance tests.
+  \item Resource lifetimes and synchronization are verified under repeated asynchronous execution.
+  \item No unintended CPU/GPU round trip is present in a same-device sequence, as demonstrated by instrumentation.
+  \item Core Image's deferred results are not reported as materialized outputs before the public completion contract is met.
+  \item The public operation and image APIs do not expose Core Image or Metal types.
+\end{itemize}
+
+\phase{8 --- OpenCV and C/C++ interoperability adapters}
+
+\textbf{Objective.} Reuse OpenCV's mature algorithms without making OpenCV the library's semantic or storage model.
+
+\deliverables
+\begin{enumerate}
+  \item A narrow interop boundary for calling C++ implementations from the public library (a C ABI or an appropriate platform bridge, chosen after validating supported toolchains).
+  \item Explicit adapters for wrapping/copying image memory, including lifetime, stride, alignment, ownership, and mutability.
+  \item OpenCV CPU operation implementations registered as \IPP{} candidates only when their semantics match the operation contract.
+  \item Optional OpenCV CUDA/OpenCL adapters treated as algorithm implementations, not as replacements for the general provider protocols.
+  \item Diagnostics that disclose when an adapter copies, converts, or changes residency.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item No C++ type such as \texttt{cv::Mat}, \texttt{cv::UMat}, or \texttt{cv::cuda::GpuMat} leaks into the public semantic API.
+  \item External buffer lifetime and ownership are tested, including asynchronous use.
+  \item OpenCV implementations pass the same operation conformance suite; unsupported semantic modes are rejected.
+  \item Tests demonstrate whether the chosen adapter path shares storage or performs a copy.
+\end{itemize}
+
+\phase{9 --- CUDA and OpenCL native providers}
+
+\textbf{Objective.} Add direct implementations of the general execution contract for NVIDIA CUDA and OpenCL, then register operation kernels independently.
+
+\deliverables
+\begin{enumerate}
+  \item CUDA provider: device discovery, contexts/streams as applicable, resource allocation/import, submission, events/completion, and safe release.
+  \item OpenCL provider: platform/device discovery, contexts, queues, memory objects, event dependencies, and safe release.
+  \item Native operation implementations for a subset selected by benchmark evidence.
+  \item Interop contracts for OpenCV CUDA/OpenCL adapters only where real sharing and synchronization guarantees exist.
+  \item CI/test plans using actual supported NVIDIA and OpenCL hardware; mock-only qualification is insufficient.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item Both providers pass the generic \GEP{} conformance suite.
+  \item Every registered operation implementation passes the \IPP{} operation suite.
+  \item Provider switching preserves output semantics and reports transfers/conversions accurately.
+  \item Device loss, allocation failure, cancellation, and synchronization errors do not corrupt image state.
+  \item CPU fallback occurs only when it is qualified and allowed by request constraints.
+\end{itemize}
