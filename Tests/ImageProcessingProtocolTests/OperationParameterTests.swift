@@ -40,6 +40,28 @@ private struct ParameterizedOperation: ImageOperation {
     )
 }
 
+private struct ChainedParameterizedOperation: ImageOperation {
+    typealias Input = ParameterOutput
+    typealias Output = ParameterOutput
+
+    let parameterValues: [OperationParameterValueRecord]
+
+    static let specification = OperationSpecification<Input, Output>(
+        identifier: OperationIdentifier(rawValue: "parameters.chained")!,
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        parameterSpecifications: [
+            OperationParameterSpecification(
+                identifier: ParameterFixture.radius,
+                domain: .real(minimum: 0.1, maximum: 20)
+            ),
+            OperationParameterSpecification(
+                identifier: ParameterFixture.border,
+                domain: .options([ParameterFixture.reflect, ParameterFixture.clamp])
+            )
+        ]
+    )
+}
+
 struct OperationParameterTests {
     private func entry(
         _ identifier: OperationParameterIdentifier,
@@ -186,7 +208,7 @@ struct OperationParameterTests {
             entry(ParameterFixture.radius, .real(1)),
             entry(ParameterFixture.border, .option(ParameterFixture.reflect))
         ]))
-        let second = ImageFunction(operation: ParameterizedOperation(parameterValues: [
+        let second = ImageFunction(operation: ChainedParameterizedOperation(parameterValues: [
             entry(ParameterFixture.radius, .real(2)),
             entry(ParameterFixture.border, .option(ParameterFixture.clamp))
         ]))
