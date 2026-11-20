@@ -86,6 +86,7 @@
   \item Observation timestamps and freshness/quality metadata. Unsupported telemetry is represented as unknown, never as zero load.
   \item Structured provider errors, device-loss behavior, allocation/retention, and release rules.
   \item Fake/test provider and conformance doubles whose capabilities and state can be controlled deterministically.
+  \item Reusable test-only provider conformance harness for device ownership/discovery, opaque provider-managed targets, context identity/capability truthfulness, resource allocation/import, work submission/completion, and synchronization.
 \end{enumerate}
 
 \exitcriteria
@@ -101,6 +102,7 @@
   \item Native provider differences remain behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
   \item Stale or unknown state is never misreported as current or idle.
   \item A context-scoped capability requirement succeeds only when the prepared context reports it and implements the corresponding optional context protocol.
+  \item The reusable conformance harness passes against the in-memory provider fixture and can be applied to each concrete provider implementation without adding image-specific assertions.
 \end{itemize}
 
 \textbf{Gate.} Do not make the common protocol larger merely to expose one vendor-specific metric or command primitive.
