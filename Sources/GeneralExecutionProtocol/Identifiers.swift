@@ -31,6 +31,20 @@ public struct ExecutionCapabilityID: RawRepresentable, Hashable, Sendable, Custo
     public var description: String { rawValue }
 }
 
+/// Standard generic execution capability identifiers. Providers may publish
+/// additional namespaced capabilities without changing the protocol library.
+public extension ExecutionCapabilityID {
+    static let bufferResources = Self(rawValue: "execution.resource.buffer")!
+    static let textureResources = Self(rawValue: "execution.resource.texture")!
+    static let resourceAllocation = Self(rawValue: "execution.resource.allocation")!
+    static let resourceImport = Self(rawValue: "execution.resource.import")!
+    static let workSubmission = Self(rawValue: "execution.work.submission")!
+    static let workDependencies = Self(rawValue: "execution.work.dependencies")!
+    static let contextSynchronization = Self(rawValue: "execution.synchronization.context")!
+    static let resourceSynchronization = Self(rawValue: "execution.synchronization.resource")!
+    static let peerResourceTransfer = Self(rawValue: "execution.transfer.peer-resource")!
+}
+
 /// A provider-scoped device reference. Device identifiers need only be unique
 /// within their provider; the pair is the stable execution-target identity.
 public struct ExecutionTargetReference: Hashable, Sendable {
