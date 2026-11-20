@@ -20,6 +20,10 @@ This repository contains the proposed architecture baseline (0.3) and a phase-ga
 - The core protocols/runtime do not depend on concrete implementation packages. The consuming application selects and registers provider packs and operation-implementation packs.
 - The public processing model is operation-oriented and compositional. No node editor or visual graph frontend is part of the design.
 
+## Architecture decisions
+
+The [Architecture Decision Register](docs/research/architecture/decisions/Decision-Register.md) records the Phase 0 working baseline, proposed public-API decisions, and deliberately deferred questions. It is the companion decision log for the architecture paper.
+
 ## Design paper
 
 The authoritative design baseline is:
