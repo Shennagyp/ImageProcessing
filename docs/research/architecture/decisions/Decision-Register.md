@@ -987,7 +987,7 @@ Qualification no longer labels an output/temporary resource path eligible merely
 - Selecting one allocatable domain using policy and full-path cost.
 - Provider allocation, physical capacity reservation/reuse, and allocation-failure handling.
 - Actual resource descriptor validation and resource binding to typed output values.
-- Temporary resource size planning.
+- Temporary resource size planning; candidates declaring temporary allocations are rejected until their size/alignment can be represented by an operation-derived plan.
 - Residency/import/synchronization transitions and output postcondition validation.
 
 ---

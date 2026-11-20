@@ -434,6 +434,31 @@ struct CommonQualificationResolverTests {
     }
 
     @Test
+    func temporaryResourceWithoutDataDerivedPlanIsRejected() async throws {
+        let now = Date(timeIntervalSince1970: 50_027)
+        let requirement = ImplementationResourceRequirement(
+            role: .temporary("scratch"),
+            kind: .buffer,
+            allowedMemoryDomains: [.host],
+            minimumCapacityBytes: 16,
+            access: .write
+        )
+        let implementation = QualificationImplementation(
+            resourceRequirements: [requirement]
+        )
+        let report = try await makeReport(
+            provider: QualificationTestProvider(capturedAt: now),
+            implementation: implementation,
+            now: now
+        )
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].rejections.contains(
+            .temporaryResourcePlanningUnsupported("scratch")
+        ))
+    }
+
+    @Test
     func outputResourceKindMustBeAdvertisedByPreparedContext() async throws {
         let now = Date(timeIntervalSince1970: 50_028)
         let capabilities = try ExecutionCapabilities([

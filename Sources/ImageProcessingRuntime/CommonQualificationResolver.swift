@@ -871,6 +871,11 @@ public actor CommonQualificationResolver {
         implementation: ImplementationSpecification,
         rejections: inout [CandidateQualificationRejection]
     ) -> [QualifiedOutputResourceAllocation] {
+        for requirement in implementation.resourceRequirements {
+            if case let .temporary(identifier) = requirement.role {
+                rejections.append(.temporaryResourcePlanningUnsupported(identifier))
+            }
+        }
         let implementationRequirements = implementation.resourceRequirements.compactMap {
             requirement -> (index: Int, requirement: ImplementationResourceRequirement)? in
             guard case let .output(index) = requirement.role else { return nil }

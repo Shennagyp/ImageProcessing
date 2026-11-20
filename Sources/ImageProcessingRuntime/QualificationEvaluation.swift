@@ -102,6 +102,7 @@ public enum CandidateQualificationRejection: Hashable, Sendable {
     case contextCapabilityInvalid(ExecutionCapabilityID)
     case contextResourceKindUnsupported(ImplementationResourceRole, ExecutionResourceKind)
     case contextResourceMemoryDomainsUnsupported(ImplementationResourceRole, Set<ExecutionMemoryDomain>)
+    case temporaryResourcePlanningUnsupported(String)
     case outputResourcePlanningFailed(String)
     case outputResourceNotDeclaredByImplementation(Int)
     case implementationOutputResourceNotPlanned(Int)
