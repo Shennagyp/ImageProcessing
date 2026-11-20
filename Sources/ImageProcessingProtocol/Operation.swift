@@ -35,61 +35,81 @@ public extension OperationValue {
     var valueTypeIdentifier: OperationValueIdentifier { Self.typeIdentifier }
 }
 
-public enum OperationOutputResourcePlanError: Error, Equatable, Sendable {
-    case inputValueTypeMismatch
-    case negativeOutputIndex(Int)
-    case zeroCapacity(Int)
-    case invalidAlignment(Int)
-    case duplicateOutputIndex(Int)
+public enum OperationResourcePlanRole: Hashable, Sendable {
+    case output(Int)
+    case temporary(String)
 }
 
-/// Data-derived storage size/alignment needed for one output resource slot.
-/// It describes this operation invocation's output, not a provider memory
-/// domain or a concrete allocation.
-public struct OperationOutputResourceRequirement: Hashable, Sendable {
-    public let outputIndex: Int
+public enum OperationResourcePlanError: Error, Equatable, Sendable {
+    case inputValueTypeMismatch
+    case invalidRole(OperationResourcePlanRole)
+    case zeroCapacity(OperationResourcePlanRole)
+    case invalidAlignment(OperationResourcePlanRole)
+    case duplicateRole(OperationResourcePlanRole)
+}
+
+/// Data-derived storage size/alignment for one output or temporary resource
+/// slot required by this exact operation invocation.
+public struct OperationResourcePlanRequirement: Hashable, Sendable {
+    public let role: OperationResourcePlanRole
     public let minimumCapacityBytes: UInt64
     public let minimumAlignmentBytes: UInt64
 
     public init(
-        outputIndex: Int,
+        role: OperationResourcePlanRole,
         minimumCapacityBytes: UInt64,
         minimumAlignmentBytes: UInt64 = 1
     ) throws {
-        guard outputIndex >= 0 else {
-            throw OperationOutputResourcePlanError.negativeOutputIndex(outputIndex)
+        switch role {
+        case let .output(index) where index < 0:
+            throw OperationResourcePlanError.invalidRole(role)
+        case let .temporary(identifier) where identifier.isEmpty:
+            throw OperationResourcePlanError.invalidRole(role)
+        default:
+            break
         }
         guard minimumCapacityBytes > 0 else {
-            throw OperationOutputResourcePlanError.zeroCapacity(outputIndex)
+            throw OperationResourcePlanError.zeroCapacity(role)
         }
         guard minimumAlignmentBytes > 0,
               minimumAlignmentBytes.nonzeroBitCount == 1 else {
-            throw OperationOutputResourcePlanError.invalidAlignment(outputIndex)
+            throw OperationResourcePlanError.invalidAlignment(role)
         }
-        self.outputIndex = outputIndex
+        self.role = role
         self.minimumCapacityBytes = minimumCapacityBytes
         self.minimumAlignmentBytes = minimumAlignmentBytes
     }
 }
 
-/// Complete generic output-resource slots for one invocation. This plan does
-/// not allocate or select a provider, memory domain, or native resource.
-public struct OperationOutputResourcePlan: Hashable, Sendable {
-    public let resources: [OperationOutputResourceRequirement]
+/// Complete data-derived output and temporary resource requirements for one
+/// invocation. It never selects a provider/domain or allocates a native resource.
+public struct OperationResourcePlan: Hashable, Sendable {
+    public let resources: [OperationResourcePlanRequirement]
 
     public static let empty = Self(uncheckedResources: [])
 
-    public init(resources: [OperationOutputResourceRequirement]) throws {
-        var seen = Set<Int>()
+    public init(resources: [OperationResourcePlanRequirement]) throws {
+        var seen = Set<OperationResourcePlanRole>()
         for resource in resources {
-            guard seen.insert(resource.outputIndex).inserted else {
-                throw OperationOutputResourcePlanError.duplicateOutputIndex(resource.outputIndex)
+            guard seen.insert(resource.role).inserted else {
+                throw OperationResourcePlanError.duplicateRole(resource.role)
             }
         }
-        self.resources = resources.sorted { $0.outputIndex < $1.outputIndex }
+        self.resources = resources.sorted { lhs, rhs in
+            switch (lhs.role, rhs.role) {
+            case let (.output(left), .output(right)):
+                return left < right
+            case (.output(_), .temporary(_)):
+                return true
+            case (.temporary(_), .output(_)):
+                return false
+            case let (.temporary(left), .temporary(right)):
+                return left < right
+            }
+        }
     }
 
-    private init(uncheckedResources: [OperationOutputResourceRequirement]) {
+    private init(uncheckedResources: [OperationResourcePlanRequirement]) {
         self.resources = uncheckedResources
     }
 }
@@ -344,7 +364,7 @@ public struct AnyImageOperationStep: Sendable {
     public let operation: any ImageOperation
     public let specification: AnyOperationSpecification
     public let parameterValues: [OperationParameterValueRecord]
-    private let outputResourcePlanner: @Sendable (any OperationValue) throws -> OperationOutputResourcePlan
+    private let resourcePlanner: @Sendable (any OperationValue) throws -> OperationResourcePlan
 
     public init<Operation: ImageOperation>(
         operation: Operation,
@@ -355,11 +375,11 @@ public struct AnyImageOperationStep: Sendable {
         self.operation = operation
         self.specification = Operation.specification.erased
         self.parameterValues = operation.parameterValues
-        self.outputResourcePlanner = { inputValue in
+        self.resourcePlanner = { inputValue in
             guard let typedInput = inputValue as? Operation.Input else {
-                throw OperationOutputResourcePlanError.inputValueTypeMismatch
+                throw OperationResourcePlanError.inputValueTypeMismatch
             }
-            return try operation.outputResourcePlan(for: typedInput)
+            return try operation.resourcePlan(for: typedInput)
         }
     }
 
@@ -370,7 +390,7 @@ public struct AnyImageOperationStep: Sendable {
             operation: operation,
             specification: specification,
             parameterValues: parameterValues,
-            outputResourcePlanner: outputResourcePlanner
+            resourcePlanner: resourcePlanner
         )
     }
 
@@ -380,22 +400,22 @@ public struct AnyImageOperationStep: Sendable {
         operation: any ImageOperation,
         specification: AnyOperationSpecification,
         parameterValues: [OperationParameterValueRecord],
-        outputResourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationOutputResourcePlan
+        resourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationResourcePlan
     ) {
         self.identifier = identifier
         self.sourceIdentifier = sourceIdentifier
         self.operation = operation
         self.specification = specification
         self.parameterValues = parameterValues
-        self.outputResourcePlanner = outputResourcePlanner
+        self.resourcePlanner = resourcePlanner
     }
 
-    /// Derives invocation-specific output resource size/alignment from the
+    /// Derives invocation-specific output and temporary requirements from the
     /// exact typed input and immutable operation instance.
-    public func outputResourcePlan(
+    public func resourcePlan(
         for input: any OperationValue
-    ) throws -> OperationOutputResourcePlan {
-        try outputResourcePlanner(input)
+    ) throws -> OperationResourcePlan {
+        try resourcePlanner(input)
     }
 
     public func validateParameters() throws {
@@ -416,15 +436,15 @@ public protocol ImageOperation: Sendable {
     static var specification: OperationSpecification<Input, Output> { get }
     var parameterValues: [OperationParameterValueRecord] { get }
 
-    /// Describes output resource sizes for this exact operation/input pair.
-    func outputResourcePlan(for input: Input) throws -> OperationOutputResourcePlan
+    /// Describes output and temporary resource sizes for this exact operation/input pair.
+    func resourcePlan(for input: Input) throws -> OperationResourcePlan
 }
 
 public extension ImageOperation {
     var parameterValues: [OperationParameterValueRecord] { [] }
 
-    /// Default for operations with no runtime-allocated generic output resources.
-    func outputResourcePlan(for input: Input) throws -> OperationOutputResourcePlan {
+    /// Default for operations with no runtime-allocated generic output or temporary resources.
+    func resourcePlan(for input: Input) throws -> OperationResourcePlan {
         .empty
     }
 }

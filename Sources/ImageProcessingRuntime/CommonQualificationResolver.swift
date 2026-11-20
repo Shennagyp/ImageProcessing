@@ -109,33 +109,33 @@ public actor CommonQualificationResolver {
                 continue
             }
 
-            let operationOutputPlan: OperationOutputResourcePlan
+            let operationResourcePlan: OperationResourcePlan
             do {
-                operationOutputPlan = try step.outputResourcePlan(for: input)
+                operationResourcePlan = try step.resourcePlan(for: input)
             } catch {
                 evaluations.append(
                     evaluation(
                         implementation,
                         target: nil,
-                        rejections: [.outputResourcePlanningFailed(String(describing: error))],
+                        rejections: [.resourcePlanningFailed(String(describing: error))],
                         uncertainties: []
                     )
                 )
                 continue
             }
 
-            var outputPlanRejections: [CandidateQualificationRejection] = []
-            let outputResourceAllocations = qualifyOutputResourceAllocations(
-                operationPlan: operationOutputPlan,
+            var resourcePlanRejections: [CandidateQualificationRejection] = []
+            let resourceAllocations = qualifyResourceAllocations(
+                operationPlan: operationResourcePlan,
                 implementation: implementation.specification,
-                rejections: &outputPlanRejections
+                rejections: &resourcePlanRejections
             )
-            if !outputPlanRejections.isEmpty {
+            if !resourcePlanRejections.isEmpty {
                 evaluations.append(
                     evaluation(
                         implementation,
                         target: nil,
-                        rejections: outputPlanRejections,
+                        rejections: resourcePlanRejections,
                         uncertainties: []
                     )
                 )
@@ -343,8 +343,8 @@ public actor CommonQualificationResolver {
                         requirements: applicableRequirements,
                         rejections: &rejections
                     )
-                    let feasibleOutputResourceAllocations = evaluateOutputResourceFeasibility(
-                        staticAllocations: outputResourceAllocations,
+                    let feasibleResourceAllocations = evaluateResourceAllocationFeasibility(
+                        staticAllocations: resourceAllocations,
                         implementation: implementation.specification,
                         context: context,
                         rejections: &rejections
@@ -365,7 +365,7 @@ public actor CommonQualificationResolver {
                                 deviceState: provider.devices.first(where: { $0.target == target })?.state,
                                 assessedAt: now
                             ),
-                            outputResourceAllocations: feasibleOutputResourceAllocations,
+                            resourceAllocations: feasibleResourceAllocations,
                             inputResourceAccesses: inputResourceAccesses
                         )
                         evaluations.append(
@@ -866,37 +866,50 @@ public actor CommonQualificationResolver {
         }
     }
 
-    private func qualifyOutputResourceAllocations(
-        operationPlan: OperationOutputResourcePlan,
+    private func implementationResourceRole(
+        for role: OperationResourcePlanRole
+    ) -> ImplementationResourceRole {
+        switch role {
+        case let .output(index):
+            return .output(index)
+        case let .temporary(identifier):
+            return .temporary(identifier)
+        }
+    }
+
+    private func qualifyResourceAllocations(
+        operationPlan: OperationResourcePlan,
         implementation: ImplementationSpecification,
         rejections: inout [CandidateQualificationRejection]
-    ) -> [QualifiedOutputResourceAllocation] {
-        for requirement in implementation.resourceRequirements {
-            if case let .temporary(identifier) = requirement.role {
-                rejections.append(.temporaryResourcePlanningUnsupported(identifier))
+    ) -> [QualifiedResourceAllocation] {
+        let implementationRequirements = implementation.resourceRequirements.filter {
+            switch $0.role {
+            case .output(_), .temporary(_):
+                return true
+            case .input(_):
+                return false
             }
         }
-        let implementationRequirements = implementation.resourceRequirements.compactMap {
-            requirement -> (index: Int, requirement: ImplementationResourceRequirement)? in
-            guard case let .output(index) = requirement.role else { return nil }
-            return (index, requirement)
-        }
+        let requirementsByRole = Dictionary(
+            uniqueKeysWithValues: implementationRequirements.map { ($0.role, $0) }
+        )
         let plannedResources = Dictionary(
-            uniqueKeysWithValues: operationPlan.resources.map { ($0.outputIndex, $0) }
+            uniqueKeysWithValues: operationPlan.resources.map {
+                (implementationResourceRole(for: $0.role), $0)
+            }
         )
 
-        var allocations: [QualifiedOutputResourceAllocation] = []
+        var allocations: [QualifiedResourceAllocation] = []
         for planned in operationPlan.resources {
-            guard let declared = implementationRequirements.first(where: {
-                $0.index == planned.outputIndex
-            })?.requirement else {
-                rejections.append(.outputResourceNotDeclaredByImplementation(planned.outputIndex))
+            let role = implementationResourceRole(for: planned.role)
+            guard let declared = requirementsByRole[role] else {
+                rejections.append(.resourceNotDeclaredByImplementation(role))
                 continue
             }
 
             allocations.append(
-                QualifiedOutputResourceAllocation(
-                    outputIndex: planned.outputIndex,
+                QualifiedResourceAllocation(
+                    role: role,
                     kind: declared.kind,
                     allowedMemoryDomains: declared.allowedMemoryDomains,
                     minimumCapacityBytes: max(
@@ -913,8 +926,8 @@ public actor CommonQualificationResolver {
             )
         }
 
-        for (index, _) in implementationRequirements where plannedResources[index] == nil {
-            rejections.append(.implementationOutputResourceNotPlanned(index))
+        for requirement in implementationRequirements where plannedResources[requirement.role] == nil {
+            rejections.append(.implementationResourceNotPlanned(requirement.role))
         }
         return allocations
     }
@@ -1078,12 +1091,12 @@ public actor CommonQualificationResolver {
         }
     }
 
-    private func evaluateOutputResourceFeasibility(
-        staticAllocations: [QualifiedOutputResourceAllocation],
+    private func evaluateResourceAllocationFeasibility(
+        staticAllocations: [QualifiedResourceAllocation],
         implementation: ImplementationSpecification,
         context: any ExecutionContext,
         rejections: inout [CandidateQualificationRejection]
-    ) -> [QualifiedOutputResourceAllocation] {
+    ) -> [QualifiedResourceAllocation] {
         let resourceRequirements = implementation.resourceRequirements.filter {
             switch $0.role {
             case .output(_), .temporary(_): true
@@ -1103,7 +1116,7 @@ public actor CommonQualificationResolver {
             ExecutionMemoryDomain.allCases.filter { reportedDomains.contains($0.rawValue) }
         )
 
-        var allocatableDomainsByOutput: [Int: Set<ExecutionMemoryDomain>] = [:]
+        var allocatableDomainsByRole: [ImplementationResourceRole: Set<ExecutionMemoryDomain>] = [:]
         for requirement in resourceRequirements {
             switch requirement.kind {
             case .buffer:
@@ -1137,20 +1150,18 @@ public actor CommonQualificationResolver {
                 )
                 continue
             }
-            if case let .output(index) = requirement.role {
-                allocatableDomainsByOutput[index] = allocatableDomains
-            }
+            allocatableDomainsByRole[requirement.role] = allocatableDomains
         }
 
         return staticAllocations.map { allocation in
-            QualifiedOutputResourceAllocation(
-                outputIndex: allocation.outputIndex,
+            QualifiedResourceAllocation(
+                role: allocation.role,
                 kind: allocation.kind,
                 allowedMemoryDomains: allocation.allowedMemoryDomains,
                 minimumCapacityBytes: allocation.minimumCapacityBytes,
                 minimumAlignmentBytes: allocation.minimumAlignmentBytes,
                 access: allocation.access,
-                allocatableMemoryDomains: allocatableDomainsByOutput[allocation.outputIndex] ?? []
+                allocatableMemoryDomains: allocatableDomainsByRole[allocation.role] ?? []
             )
         }
     }
