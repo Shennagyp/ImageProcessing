@@ -229,6 +229,17 @@ public enum PixelStorageLayout: Hashable, Sendable {
     case planar([PixelPlaneLayout])
 }
 
+public extension PixelStorageLayout {
+    var planes: [PixelPlaneLayout] {
+        switch self {
+        case let .interleaved(plane):
+            [plane]
+        case let .planar(planes):
+            planes
+        }
+    }
+}
+
 public enum PixelDataDescriptorError: Error, Equatable, Sendable {
     case noChannels
     case duplicateChannelIdentifier(ChannelIdentifier)
