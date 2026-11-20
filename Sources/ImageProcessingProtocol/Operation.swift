@@ -1,3 +1,5 @@
+import Foundation
+
 import GeneralExecutionProtocol
 
 public struct OperationIdentifier: RawRepresentable, Hashable, Sendable, CustomStringConvertible {
@@ -72,6 +74,62 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         self.semanticVersion = semanticVersion
         self.inputType = inputType
         self.outputType = outputType
+    }
+}
+
+public struct OperationStepIdentifier: RawRepresentable, Hashable, Sendable, CustomStringConvertible {
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+        guard !rawValue.isEmpty else { return nil }
+        self.rawValue = rawValue
+    }
+
+    public static func generate() -> Self {
+        Self(rawValue: UUID().uuidString.lowercased())!
+    }
+
+    public var description: String { rawValue }
+}
+
+/// One typed operation occurrence in a sequential image function.
+/// identifier distinguishes this occurrence in a composed function;
+/// sourceIdentifier records the original step identity before composition rebased it.
+public struct AnyImageOperationStep: Sendable {
+    public let identifier: OperationStepIdentifier
+    public let sourceIdentifier: OperationStepIdentifier
+    public let operation: any ImageOperation
+    public let specification: AnyOperationSpecification
+
+    public init<Operation: ImageOperation>(
+        operation: Operation,
+        identifier: OperationStepIdentifier = .generate()
+    ) {
+        self.identifier = identifier
+        self.sourceIdentifier = identifier
+        self.operation = operation
+        self.specification = Operation.specification.erased
+    }
+
+    fileprivate func reidentifiedForComposition() -> Self {
+        Self(
+            identifier: .generate(),
+            sourceIdentifier: sourceIdentifier,
+            operation: operation,
+            specification: specification
+        )
+    }
+
+    private init(
+        identifier: OperationStepIdentifier,
+        sourceIdentifier: OperationStepIdentifier,
+        operation: any ImageOperation,
+        specification: AnyOperationSpecification
+    ) {
+        self.identifier = identifier
+        self.sourceIdentifier = sourceIdentifier
+        self.operation = operation
+        self.specification = specification
     }
 }
 
