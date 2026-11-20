@@ -4,7 +4,7 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; mutable image ownership, execution-resource binding, runtime resolution, and concrete image operations are not yet complete.
+The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner and revision-scoped resource bindings exist, while processing composition, runtime resolution, and concrete image operations are not yet complete.
 
 See [Implementation Status](docs/project_management/Implementation-Status.md) for the exact implemented and pending scope. Do not treat a package skeleton or a related type as evidence that a full phase is complete.
 
@@ -25,7 +25,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 The root SwiftPM package currently publishes two modules:
 
 - `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, target-scoped resource handles, resource allocation/import contracts, typed work submission/completion, dependencies, cancellation, context-scoped capability reporting, and optional synchronization capabilities.
-- `ImageProcessingProtocol` — typed operation/implementation contracts plus image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, and revision-scoped layer storage binding sets.
+- `ImageProcessingProtocol` — typed operation/implementation contracts plus image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, revision-scoped layer storage binding sets, and a thread-safe Image state owner with revision-checked atomic replacement.
 
 `ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. Pixel descriptors describe meaning/layout and validate storage capacity; they do not own or allocate provider resources. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
 
