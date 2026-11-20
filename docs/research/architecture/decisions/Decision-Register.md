@@ -603,7 +603,6 @@ Image metadata can exist independently of current resource residency, while runt
 ### Deferred
 
 - Resource sharing/copy-on-write rules across derived images and revisions.
-- Resource sharing/copy-on-write rules across derived images and revisions.
 
 ## Phase 0 completion checklist
 
