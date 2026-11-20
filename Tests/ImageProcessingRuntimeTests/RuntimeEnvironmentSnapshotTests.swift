@@ -85,7 +85,7 @@ struct RuntimeEnvironmentSnapshotTests {
         let ledger = RuntimeWorkLedger()
         let lease = try await ledger.reserveWork(on: target("provider.gpu", "gpu.0"))
 
-        #expect(throws: RuntimeWorkLedgerError.invalidTransition(
+        await #expect(throws: RuntimeWorkLedgerError.invalidTransition(
             lease: lease.identifier,
             expected: .submitted,
             actual: .reserved
@@ -95,7 +95,7 @@ struct RuntimeEnvironmentSnapshotTests {
 
         try await ledger.markSubmitted(lease)
 
-        #expect(throws: RuntimeWorkLedgerError.invalidTransition(
+        await #expect(throws: RuntimeWorkLedgerError.invalidTransition(
             lease: lease.identifier,
             expected: .reserved,
             actual: .submitted
@@ -105,7 +105,7 @@ struct RuntimeEnvironmentSnapshotTests {
 
         try await ledger.completeSubmission(lease)
 
-        #expect(throws: RuntimeWorkLedgerError.unknownLease(lease.identifier)) {
+        await #expect(throws: RuntimeWorkLedgerError.unknownLease(lease.identifier)) {
             try await ledger.completeSubmission(lease)
         }
     }
