@@ -333,7 +333,7 @@ public struct QualificationPolicy: Hashable, Sendable {
                         throw QualificationPolicyValidationError.precisionUnsupportedByOperation(
                             stepIdentifier,
                             dimension,
-                            declarations.map(\\.origin)
+                            declarations.map(\.origin)
                         )
                     }
                 }
