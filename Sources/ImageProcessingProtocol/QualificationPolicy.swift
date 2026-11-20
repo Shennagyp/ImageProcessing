@@ -439,11 +439,11 @@ public struct QualificationPolicy: Hashable, Sendable {
         matches dimension: PrecisionDimension
     ) -> Bool {
         switch (dimension, value) {
-        case (.inputStorage, .storage), (.output, .storage),
-             (.computation, .arithmetic), (.accumulation, .arithmetic):
-            true
+        case (.inputStorage, .storage(_)), (.output, .storage(_)),
+             (.computation, .arithmetic(_)), (.accumulation, .arithmetic(_)):
+            return true
         default:
-            false
+            return false
         }
     }
 
