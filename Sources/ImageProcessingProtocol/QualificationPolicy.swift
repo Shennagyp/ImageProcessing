@@ -262,10 +262,13 @@ public struct QualificationPolicy: Hashable, Sendable {
                     || declaration.origin.scope == effectiveScope
             }
 
-            try validateIntersection<ExecutionProviderID>(
+            let providerValues: (QualificationRequirement) -> Set<ExecutionProviderID>? = {
+                self.allowedProviders($0)
+            }
+            try validateIntersection(
                 applicable,
                 dimension: .provider,
-                values: { allowedProviders($0) }
+                values: providerValues
             )
 
             let precisionDimensions = Set(applicable.compactMap { declaration -> PrecisionDimension? in
@@ -278,16 +281,18 @@ public struct QualificationPolicy: Hashable, Sendable {
                 }
             })
             for dimension in precisionDimensions {
-                try validateIntersection<PixelComponentType>(
+                let precisionValues: (QualificationRequirement) -> Set<PixelComponentType>? = {
+                    requirement in
+                    guard let allowed = self.allowedPrecision(requirement),
+                          allowed.dimension == dimension else {
+                        return nil
+                    }
+                    return allowed.values
+                }
+                try validateIntersection(
                     applicable,
                     dimension: .precision(dimension),
-                    values: { requirement in
-                        guard let allowed = allowedPrecision(requirement),
-                              allowed.dimension == dimension else {
-                            return nil
-                        }
-                        return allowed.values
-                    }
+                    values: precisionValues
                 )
             }
         }
