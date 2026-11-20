@@ -787,6 +787,39 @@ Provider packages and operation implementation packages can be selected independ
 - Context preparation/validation and resource reservation.
 - Cost ranking, execution planning, and execution coordination.
 - Persistent registry metadata and dynamic plug-in loading.
+---
+
+## ADR-027 — Provider registration and discovery preserve partial environment results
+
+**Status:** Initial registry and discovery snapshot implemented; runtime accounting pending
+
+### Decision
+
+ExecutionProviderRegistry lives in ImageProcessingRuntime and is independent of OperationImplementationRegistry. It stores one selected provider package per stable ExecutionProviderID, rejects duplicate registrations, supports explicit unregister, and returns deterministic metadata snapshots.
+
+Discovery queries each registered provider's state and device list and each valid discovered device's state. The caller supplies an explicit ExecutionPlatformDescriptor; this initial registry does not infer or hardcode the host platform.
+
+Discovery is partial rather than all-or-nothing. A provider state/discovery failure is recorded beside the environment snapshot and does not discard other providers. A device state failure keeps the device descriptor in the snapshot with unknown availability and adds a target-scoped failure. Duplicate device identifiers and devices whose provider ID does not match the registering provider are excluded and reported as provider contract violations.
+
+A provider returning no devices is valid because it may represent an opaque managed execution target. A failure to discover devices is distinguishable from a successful empty device list by the accompanying failure record.
+
+### Invariants
+
+- Provider registration does not imply provider availability.
+- Operation implementation registration and provider registration have independent identities and lifecycles.
+- The environment snapshot includes only validated provider/device ownership relationships.
+- Unknown or failed state observations remain unknown; they are never rewritten as idle or available.
+- One failing provider/device cannot erase successful discoveries from another provider.
+- Platform identity is supplied as an explicit environment fact rather than inferred as a provider preference.
+- Discovery is not operation qualification, candidate ranking, or execution routing.
+
+### Deferred
+
+- Runtime-owned outstanding-work and resource-reservation accounting.
+- Unique environment snapshot IDs, refresh generations, and a defined freshness policy.
+- Concurrent discovery/cancellation and timeout policy for providers that do not return.
+- Provider health scoring and repeated failure/circuit-breaker behavior.
+- Candidate binding qualification and context preparation.
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
