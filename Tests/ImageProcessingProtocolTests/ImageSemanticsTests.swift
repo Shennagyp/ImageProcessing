@@ -712,3 +712,74 @@ struct PixelPlaneSampleOriginTests {
         }
     }
 }
+
+
+struct PixelPlaneAlignmentTests {
+    private func channel() throws -> PixelChannelDescriptor {
+        PixelChannelDescriptor(
+            identifier: try #require(ChannelIdentifier(rawValue: "alignment.intensity")),
+            role: .intensity
+        )
+    }
+
+    private func descriptor(
+        offset: UInt64 = 0,
+        rowStride: UInt64 = 16,
+        sliceStride: UInt64 = 16,
+        requiredAlignment: UInt64 = 16
+    ) throws -> PixelDataDescriptor {
+        let plane = PixelPlaneLayout(
+            byteOffset: offset,
+            rowStrideBytes: rowStride,
+            sliceStrideBytes: sliceStride,
+            pixelStrideBytes: 4,
+            requiredAlignmentBytes: requiredAlignment,
+            subsampling: try #require(PixelSubsampling()),
+            channelIndices: [0]
+        )
+        return try PixelDataDescriptor(
+            extent: try #require(ImageExtent(width: 2, height: 1)),
+            componentType: .float32,
+            channels: [try channel()],
+            interpretation: .scientific(ScientificDataInterpretation()),
+            layout: .interleaved(plane)
+        )
+    }
+
+    @Test
+    func planeRequiresPowerOfTwoAlignment() {
+        #expect(throws: PixelDataDescriptorError.invalidRequiredAlignment(plane: 0)) {
+            try descriptor(requiredAlignment: 3)
+        }
+    }
+
+    @Test
+    func planeBaseOffsetMustMeetRequiredAlignment() {
+        #expect(throws: PixelDataDescriptorError.misalignedPlaneOffset(
+            plane: 0,
+            alignment: 16
+        )) {
+            try descriptor(offset: 8)
+        }
+    }
+
+    @Test
+    func rowStrideMustMeetRequiredAlignment() {
+        #expect(throws: PixelDataDescriptorError.misalignedRowStride(
+            plane: 0,
+            alignment: 16
+        )) {
+            try descriptor(rowStride: 24, sliceStride: 24)
+        }
+    }
+
+    @Test
+    func sliceStrideMustMeetRequiredAlignment() {
+        #expect(throws: PixelDataDescriptorError.misalignedSliceStride(
+            plane: 0,
+            alignment: 16
+        )) {
+            try descriptor(rowStride: 16, sliceStride: 24)
+        }
+    }
+}
