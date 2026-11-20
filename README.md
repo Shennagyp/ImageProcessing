@@ -4,7 +4,7 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner and revision-scoped resource bindings exist, while function execution, qualification policy, runtime resolution, and concrete image operations are not yet complete.
+The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner, typed ImageFunction composition, and validated qualification-policy builder are implemented. Function execution, the implementation registry, runtime resolution, and concrete image operations remain pending.
 
 See [Implementation Status](docs/project_management/Implementation-Status.md) for the exact implemented and pending scope. Do not treat a package skeleton or a related type as evidence that a full phase is complete.
 
@@ -16,6 +16,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 - **ImageProcessingProtocol** is the primary image-domain contract. **GeneralExecutionProtocol** is the lower-level, image-agnostic execution contract it consumes.
 - **Execution providers** are distinct from **operation-implementation packages**. The consuming application selects and registers both.
 - A **common resolver** will evaluate operation semantics, implementation specifications, current environment observations, and declarative pipeline policy. Implementations publish specifications; they do not each implement custom qualification functions.
+- `ImageFunction<Input, Output>` preserves typed sequential composition. Its immutable qualification policy separates hard requirements from optimization preferences and scopes declarations to the full pipeline or an operation occurrence.
 - Pipeline qualification is fluent and declarative. Requirements filter candidates; preferences rank only eligible candidates. Conflicting policies are rejected during construction or composition with diagnostics preserving their origins.
 - Platform and current hardware state are environmental facts, not hard-coded platform-to-provider preference rules. A low-latency preference may route to CPU when a compatible GPU is busy, but a required provider or precision mode cannot be silently relaxed.
 - The public processing model is operation-oriented and compositional. No node editor or visual graph frontend is part of the design.
@@ -25,7 +26,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 The root SwiftPM package currently publishes two modules:
 
 - `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, target-scoped resource handles, resource allocation/import contracts, typed work submission/completion, dependencies, cancellation, context-scoped capability reporting, and optional synchronization capabilities.
-- `ImageProcessingProtocol` — typed operation/implementation contracts plus image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, revision-scoped layer storage binding sets, and a thread-safe Image state owner with revision-checked atomic replacement.
+- `ImageProcessingProtocol` — typed operation/implementation contracts, ImageFunction composition, QualificationPolicy builder, image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, revision-scoped layer storage binding sets, and a thread-safe Image state owner with revision-checked atomic replacement.
 
 `ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. Pixel descriptors describe meaning/layout and validate storage capacity; they do not own or allocate provider resources. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
 
@@ -36,7 +37,7 @@ Requires Swift 6.2.1 or a compatible Swift 6 toolchain. Xcode IDE projects are n
     swift build
     swift test
 
-The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 86-test suite (13 suites), including typed function composition, plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting a green cross-platform CI run. Provider-specific packages will have their own platform and hardware test requirements.
+The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 104-test suite (14 suites), including typed function composition, policy conflicts/applicability, plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting cross-platform CI. The preceding 86-test revision passed on Ubuntu 24.04 and macOS. Provider-specific packages will have their own platform and hardware test requirements.
 
 ## Architecture decisions
 
