@@ -1,0 +1,86 @@
+\phase{0 --- Architecture decisions and package boundaries}
+
+\textbf{Objective.} Resolve the decisions that affect every protocol, implementation package, and application before freezing public API.
+
+\textbf{Why first.} A mistake in operation identity, precision meaning, policy composition, or provider lifecycle propagates into every implementation. These are shared contracts, not implementation-specific details.
+
+\deliverables
+\begin{enumerate}
+  \item A decision register for image/layer identity, resource ownership, snapshot/replacement concurrency, operation identity/versioning, and asynchronous completion.
+  \item A formal boundary among \IPP{}, \GEP{}, \IPR{}, external provider packs, and external operation-implementation packs.
+  \item A decision on typed public implementation protocols and private type erasure for the heterogeneous runtime registry.
+  \item A specification schema distinguishing operation semantics, implementation support, provider static capabilities, and dynamic execution state.
+  \item A precision vocabulary that distinguishes input/storage, computation, accumulation, and output precision.
+  \item A qualification-policy model distinguishing hard requirements from soft preferences, with explicit scopes and deterministic composition rules.
+  \item Conflict/error taxonomy: contradictory policy, unsupported semantic requirement, missing provider, temporary device unavailability, resource reservation failure, and implementation execution failure.
+  \item A platform/toolchain support baseline and an environment telemetry capability matrix. Record which state metrics are reliable, optional, estimated, or unavailable.
+  \item Repository/package boundaries, dependency-cycle checks, command-line build/test entry points, and CI for the initially supported targets.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item No unresolved decision blocks the first protocol implementation.
+  \item The dependency graph is acyclic: \IPP{} may depend on \GEP{}; the reverse dependency is forbidden.
+  \item No core package depends on a concrete CPU/GPU/algorithm implementation package.
+  \item The policy model can represent the required FP32 example without confusing storage and computation precision.
+  \item The design distinguishes contradictory policy from a valid requirement that cannot currently be satisfied by available hardware.
+\end{itemize}
+
+\textbf{Do not do yet:} write provider kernels, add a large operation catalog, or create a general-purpose dynamic plug-in loader.
+
+\phase{1 --- Image operation and implementation contracts}
+
+\textbf{Objective.} Specify the domain contracts that allow one operation to have many independent implementation classes.
+
+\deliverables
+\begin{enumerate}
+  \item \textbf{Operation identity:} stable identifier, semantic version, immutable parameters, parameter validation, and typed input/output contracts.
+  \item \textbf{Operation specification:} semantic requirements, permitted numerical variation, supported input/output categories, parameter domain, mutation/effect semantics, and precision dimensions.
+  \item \textbf{One generic implementation protocol:} \texttt{ImageOperationImplementation} with an associated \texttt{Operation} type, declarative specification, and typed execution entry point.
+  \item \textbf{Implementation specification:} operation identity/version, implementation identity/version, provider/runtime dependency, required generic capabilities, supported formats/layouts/precision modes, parameter limits, semantic options, resource requirements, and static cost hints.
+  \item \textbf{No per-implementation qualifier:} implementations declare support; they do not each implement independent \texttt{qualify()} code. The core resolver interprets their specifications.
+  \item \textbf{Qualification result vocabulary:} eligible, rejected, and temporarily unavailable outcomes with machine-readable reasons, requirements, and preparation/transfer details.
+  \item \textbf{Fluent policy contract:} immutable pipeline/operation-scoped configuration with explicit \texttt{require} and \texttt{prefer} semantics.
+  \item \textbf{Example contracts:} Gaussian blur, resize, and blending with enough detail to compare CPU, CUDA, Metal, and algorithm-library implementations without changing operation identity.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item Two different implementation classes can declare support for the same \texttt{GaussianBlur} operation without defining separate operation types.
+  \item A third implementation can be added without modifying the operation type or generic implementation protocol.
+  \item Static implementation capability is distinguishable from runtime provider availability and transient load.
+  \item FP32 computation can be expressed separately from FP32 input/output storage and accumulation precision.
+  \item No public contract requires provider-native types or per-backend qualification functions.
+\end{itemize}
+
+\textbf{Gate.} Do not begin concrete algorithm packages until an operation's semantics and the implementation-specification schema can express meaningful support differences.
+
+\phase{2 --- GeneralExecutionProtocol}
+
+\textbf{Objective.} Define generic execution resources, provider lifecycle, static capabilities, and dynamic state observations without introducing image semantics.
+
+\textbf{Dependency constraint.} \GEP{} MUST NOT import \IPP{}, define Image/Layer/Pixel semantics, or know operation names such as blur, blend, resize, or segmentation.
+
+\deliverables
+\begin{enumerate}
+  \item Provider identity/version and platform-aware provider discovery.
+  \item Device identity, properties, supported features, execution contexts, and static capability descriptors.
+  \item Generic resource handles with ownership, access, lifetime, import/export, residency, and completion dependencies.
+  \item Submission/completion contracts that can represent asynchronous work without pretending Metal command buffers, CUDA streams, OpenCL queues, and D3D command lists are identical.
+  \item A state/availability observation model for device health, availability, memory pressure, outstanding submissions, queue depth, and estimated delay where available.
+  \item Observation timestamps and freshness/quality metadata. Unsupported telemetry is represented as unknown, never as zero load.
+  \item Optional capability interfaces for buffers, images/textures, external-memory interoperability, peer transfer, and specialized synchronization.
+  \item Structured provider errors, device-loss behavior, cancellation, reservation/acquisition, and release rules.
+  \item A fake/test provider whose capabilities and state can be controlled deterministically.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item \GEP{} builds and tests without referencing image-processing symbols.
+  \item A fake provider can report capability and dynamic-state changes and can complete, fail, cancel, and release resources correctly.
+  \item Tests prove that stale or unknown state is not misreported as current or idle.
+  \item Resource lifetime tests prove that submitted work cannot outlive its inputs.
+  \item Native provider differences remain accessible behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
+\end{itemize}
+
+\textbf{Gate.} Do not make the common protocol larger merely to expose one vendor-specific metric or command primitive.
