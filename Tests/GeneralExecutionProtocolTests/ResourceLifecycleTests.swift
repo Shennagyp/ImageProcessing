@@ -256,9 +256,12 @@ struct ResourceLifecycleTests {
             target: ExecutionTargetReference(providerID: providerID, deviceID: deviceID)
         )
         let work = IncrementWork(input: 41, resourceAccesses: [], dependencies: [])
-        let submission = try await context.submit(work)
+        let output = try await ExecutionProviderConformanceHarness.submit(
+            work,
+            using: context
+        )
 
-        #expect(try await submission.value() == 42)
+        #expect(output == 42)
         #expect(try await submission.wait() == ())
         #expect(await submission.cancel() == .tooLate)
     }
@@ -579,4 +582,32 @@ extension ResourceLifecycleTests {
 private struct CapabilityOnlyContext: ExecutionContext {
     let target: ExecutionTargetReference
     let capabilities: ExecutionCapabilities
+}
+
+
+private struct TestSynchronizingContext: ExecutionSynchronizingContext {
+    let target: ExecutionTargetReference
+    func synchronize(_ scope: ExecutionSynchronizationScope) async throws {}
+}
+
+extension ResourceLifecycleTests {
+    @Test
+    func providerConformanceHarnessExercisesOptionalSubmissionAndSynchronization() async throws {
+        let providerID = try #require(ExecutionProviderID(rawValue: "provider.harness-runtime"))
+        let deviceID = try #require(ExecutionDeviceID(rawValue: "device.harness-runtime"))
+        let target = ExecutionTargetReference(providerID: providerID, deviceID: deviceID)
+        let submitter = ImmediateSubmittingContext(target: target)
+        let output = try await ExecutionProviderConformanceHarness.submit(
+            IncrementWork(input: 10, resourceAccesses: [], dependencies: []),
+            using: submitter
+        )
+        #expect(output == 11)
+
+        let synchronizer = TestSynchronizingContext(target: target)
+        try await ExecutionProviderConformanceHarness.synchronize(.context, using: synchronizer)
+
+        #expect(throws: ExecutionProviderConformanceError.contextDoesNotSupportSynchronization) {
+            try await ExecutionProviderConformanceHarness.synchronize(.context, using: submitter)
+        }
+    }
 }
