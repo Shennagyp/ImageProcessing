@@ -166,7 +166,7 @@ struct OperationImplementationRegistryTests {
         )
         let missing = key("registry.multiply.cuda")
 
-        #expect(throws: OperationImplementationRegistryError.registrationNotFound(missing)) {
+        await #expect(throws: OperationImplementationRegistryError.registrationNotFound(missing)) {
             try await registry.execute(
                 step(),
                 input: RegistryInput(value: 4),
@@ -182,7 +182,7 @@ struct OperationImplementationRegistryTests {
         let implementation = MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 2)
         try await registry.register(implementation)
 
-        #expect(throws: OperationImplementationRegistryError.duplicateRegistration(
+        await #expect(throws: OperationImplementationRegistryError.duplicateRegistration(
             key("registry.multiply.cpu")
         )) {
             try await registry.register(implementation)
@@ -205,7 +205,7 @@ struct OperationImplementationRegistryTests {
         let implementation = MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 2)
         try await registry.register(implementation)
 
-        #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
+        await #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
             key("registry.multiply.cpu")
         )) {
             try await registry.execute(
