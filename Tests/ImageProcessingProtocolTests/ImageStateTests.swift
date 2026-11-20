@@ -82,6 +82,27 @@ struct ImageStateTests {
     }
 
     @Test
+    func explicitImageIdentityAllowsInitialLayerStorageBindings() throws {
+        let pixels = try pixels()
+        let imageID = try #require(ImageIdentifier(rawValue: "image.initial-bound"))
+        let raster = try layer(id: "layer.initial-bound", pixels: pixels)
+        let reference = raster.reference(in: imageID)
+        let storage = try binding(pixels: pixels, id: "resource.initial-bound")
+        let image = try Image(
+            identifier: imageID,
+            canvas: canvas(),
+            layers: [raster],
+            storageBindings: [LayerPixelStorageBinding(reference: reference, storage: storage)]
+        )
+
+        let captured = image.snapshot()
+        #expect(captured.identifier == imageID)
+        #expect(captured.revision == .initial)
+        #expect(try captured.storageBindings.binding(for: reference).map { _ in true } == true)
+        #expect(try captured.storageBindings.unboundPixelLayers(in: captured.document).isEmpty)
+    }
+
+    @Test
     func replacementKeepsIdentityAndAtomicallyAdvancesRevision() throws {
         let pixels = try pixels()
         let initialLayer = try layer(id: "layer.initial", pixels: pixels)
