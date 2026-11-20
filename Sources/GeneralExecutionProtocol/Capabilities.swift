@@ -87,6 +87,7 @@ public enum ExecutionCapabilityScope: String, Hashable, Sendable {
     case provider
     case device
     case providerOrDevice
+    case context
 }
 
 /// States where a required capability must be reported. This prevents the
@@ -105,7 +106,8 @@ public struct ExecutionCapabilityConstraint: Hashable, Sendable {
 
     public func isSatisfied(
         providerCapabilities: ExecutionCapabilities,
-        deviceCapabilities: ExecutionCapabilities?
+        deviceCapabilities: ExecutionCapabilities?,
+        contextCapabilities: ExecutionCapabilities? = nil
     ) -> Bool {
         switch scope {
         case .provider:
@@ -115,6 +117,8 @@ public struct ExecutionCapabilityConstraint: Hashable, Sendable {
         case .providerOrDevice:
             return providerCapabilities.satisfies(requirement)
                 || (deviceCapabilities?.satisfies(requirement) ?? false)
+        case .context:
+            return contextCapabilities?.satisfies(requirement) ?? false
         }
     }
 }
