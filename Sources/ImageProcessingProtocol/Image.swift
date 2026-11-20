@@ -37,7 +37,7 @@ public enum ImageError: Error, Equatable, Sendable {
 /// must happen after that read returns, never while this lock is held. A
 /// replacement builds and validates its candidate state outside the lock, then
 /// publishes document plus resource bindings atomically using revision compare-
-swap. Old snapshots keep their resources alive until their own lifetimes end.
+and-swap. Old snapshots keep their resources alive until their own lifetimes end.
 public final class Image: @unchecked Sendable {
     public let identifier: ImageIdentifier
 
@@ -45,11 +45,11 @@ public final class Image: @unchecked Sendable {
     private var currentState: ImageStateSnapshot
 
     public init(
+        identifier: ImageIdentifier = .generate(),
         canvas: ImageCanvasDescriptor,
         layers: [LayerDescriptor],
         storageBindings: [LayerPixelStorageBinding] = []
     ) throws {
-        let identifier = ImageIdentifier.generate()
         let document = try ImageDocumentSnapshot(
             identifier: identifier,
             revision: .initial,
