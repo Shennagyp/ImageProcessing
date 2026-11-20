@@ -1,0 +1,113 @@
+\phase{3 --- ImageProcessingProtocol core implementation}
+
+\textbf{Objective.} Implement the domain contract, typed composition, and declarative policy model against the generic execution dependency.
+
+\deliverables
+\begin{enumerate}
+  \item Concrete image/layer/resource descriptors and immutable operation types/specifications.
+  \item The generic associated-type implementation protocol and public specification descriptors.
+  \item Typed sequential function composition with stable operation/step identity for policy scope and diagnostics.
+  \item A fluent \texttt{qualifying} builder that produces an immutable normalized \texttt{QualificationPolicy}.
+  \item Separate policy fields for hard requirements and optimization preferences; precision policies identify storage, computation, accumulation, or output precision.
+  \item A builder that prevents contradictory values from accumulating in the same policy dimension and reports conflicts with declaration provenance.
+  \item Composition rules: pipeline-wide hard requirements apply to applicable steps; operation/step policies remain scoped; hard allowed sets combine by intersection; preferences combine only through explicit objective/priority/weight semantics.
+  \item Applicability validation so a pipeline rule cannot be silently ignored by an operation that does not expose the constrained semantic dimension.
+  \item Private type-erasure adapters for heterogeneous registration while preserving typed public APIs.
+  \item Explicit layer/composite targets and new-image/replacement result semantics.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item Descriptor tests cover channel model, FP16/FP32/FP64 representation, strides, alpha, color metadata, scientific/non-color data, and invalid combinations.
+  \item Operation tests prove immutable parameters and versioned semantic identity.
+  \item Composition rejects incompatible input/output contracts and preserves policy scope.
+  \item Builder tests reject incompatible required precision/provider declarations and contradictory objective declarations at construction/finalization.
+  \item Composition tests reject empty intersections and report both conflicting sources and the affected operation/step.
+  \item A valid pipeline-level FP32 computation requirement is preserved through composition and is not silently weakened by a local preference.
+  \item Public APIs expose no provider-native resource classes and no public node/graph editor model.
+\end{itemize}
+
+\textbf{Gate.} Do not add runtime routing until policy values are immutable, composable, explainable, and validated.
+
+\phase{4 --- Environment discovery and implementation registries}
+
+\textbf{Objective.} Connect registered implementations to the actual execution environment without making either protocol depend on concrete backends.
+
+\deliverables
+\begin{enumerate}
+  \item Provider registry and discovery over the provider packages selected by the application.
+  \item Operation implementation registry that records operation identity/version, implementation identity/version, and declarative implementation specification.
+  \item Internal type-erased registry entries that safely recover the typed implementation associated with a given operation.
+  \item Environment snapshot assembly from discovered provider/device descriptors, resource state, provider observations, and runtime-owned outstanding-work accounting.
+  \item Snapshot identity, observation time, freshness, and source-quality metadata.
+  \item Registration/version compatibility checks and diagnostics for missing provider dependencies or unsupported operation versions.
+  \item Test doubles for multiple implementations of one operation and for providers whose availability/load changes between snapshots.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item A consumer/sample target can register two implementation classes for the same operation without modifying \IPP{} or \IPR{} source.
+  \item A registered implementation is not considered executable merely because its package loaded; its required provider and capabilities must be discovered.
+  \item Environment snapshots distinguish capability from availability and distinguish unknown load from idle load.
+  \item Heterogeneous registry dispatch is type-safe at the operation boundary and tested for mismatched operation/implementation pairs.
+  \item Provider/implementation version incompatibilities produce explicit diagnostics.
+\end{itemize}
+
+\textbf{Gate.} No routing decisions based only on platform name, package presence, or a static provider list.
+
+\phase{5 --- Common qualification and resolution engine}
+
+\textbf{Objective.} Implement the shared data-driven resolver that interprets operation semantics, implementation declarations, current environment state, and pipeline policy.
+
+\deliverables
+\begin{enumerate}
+  \item One resolver entry point operating across all registered implementation classes; no mandatory custom qualification method on each implementation.
+  \item Eligibility evaluation over operation identity/version, validated parameters, input/output semantics, implementation support, required provider capabilities, and hard pipeline constraints.
+  \item Structured result categories distinguishing semantically rejected, requirement-incompatible, temporarily unavailable, and eligible candidates.
+  \item Ranking of eligible candidates according to pipeline preferences and the best reliable current environment observations.
+  \item Initial cost estimates covering queue delay, transfers, conversions, allocation, compute, synchronization, and output materialization.
+  \item Precision resolution across computation, accumulation, input/storage, and output precision. Required FP32 excludes candidates that cannot meet the specified FP32 dimension; preferred FP32 ranks eligible FP32 candidates higher without permitting semantic contract violations.
+  \item Dynamic-state routing: a busy GPU may rank below a compatible CPU candidate for a latency-oriented request; an explicit required-provider constraint must prevent fallback.
+  \item Candidate and decision diagnostics, including why each candidate was excluded, temporarily unavailable, or ranked lower.
+  \item Stable resolver behavior for an identical operation, policy, registry, and environment snapshot; nondeterministic telemetry/model inputs must be recorded.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item The same GaussianBlur operation is evaluated against CPU and GPU implementation specifications by the same resolver.
+  \item The resolver rejects unsupported border modes, precision, formats, or provider capabilities for the correct reason.
+  \item With FP32 computation required, no FP16-only candidate is selected.
+  \item With FP32 preferred, only candidates permitted by the operation's numerical contract can be ranked as alternatives.
+  \item A busy/unavailable GPU routes to CPU only when CPU is registered, qualified, and fallback is permitted.
+  \item A required CUDA request never silently falls back to CPU.
+  \item An unavailable provider is reported as an unsatisfied environmental requirement, not as a contradictory pipeline policy.
+\end{itemize}
+
+\textbf{Gate.} No execution may begin from a candidate that has not passed the resolver's eligibility stage.
+
+\phase{6 --- Execution coordination and pipeline planning}
+
+\textbf{Objective.} Execute the resolver's choice safely and plan composed functions with data movement and resource lifecycle included.
+
+\deliverables
+\begin{enumerate}
+  \item An execution coordinator that prepares, reserves/acquires, submits, awaits, validates, and releases execution resources through \GEP{}.
+  \item Snapshot freshness and pre-execution revalidation. If a critical reservation fails, refresh and resolve again only within the original hard constraints.
+  \item A first pipeline planner that considers operation adjacency, provider transitions, data residency, conversion requirements, and complete estimated cost.
+  \item Explicit handling of managed runtimes whose internal scheduling is opaque; the outer runtime treats them as one implementation candidate unless reliable partition/resource facts are exposed.
+  \item Cancellation, error propagation, device-loss handling, and resource cleanup.
+  \item New-image result creation and transactional replacement: output is validated before publishing a new image revision.
+  \item Diagnostics recording operation/implementation/provider/device, environment snapshot, candidate ranking, transfers, conversions, fallback, and execution outcome.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item An operation executes through the same path whether its implementation uses CPU, a GPU provider, or an opaque algorithm runtime.
+  \item A sequence is not dispatched greedily without accounting for residency and transition costs.
+  \item Resource reservation failure causes safe re-resolution or a structured failure; it never weakens hard requirements.
+  \item Cancellation and device loss do not corrupt image state or release resources before work is complete.
+  \item Failed execution or output validation leaves the original image revision unchanged.
+  \item End-to-end tests prove that pipeline policy, resolver choice, and executed implementation agree.
+\end{itemize}
+
+\textbf{Gate.} Do not add optimization shortcuts until the baseline lifecycle is correct and observable.
