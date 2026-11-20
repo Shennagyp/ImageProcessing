@@ -11,6 +11,10 @@ let package = Package(
         .library(
             name: "ImageProcessingProtocol",
             targets: ["ImageProcessingProtocol"]
+        ),
+        .library(
+            name: "ImageProcessingRuntime",
+            targets: ["ImageProcessingRuntime"]
         )
     ],
     targets: [
@@ -19,6 +23,10 @@ let package = Package(
             name: "ImageProcessingProtocol",
             dependencies: ["GeneralExecutionProtocol"]
         ),
+        .target(
+            name: "ImageProcessingRuntime",
+            dependencies: ["GeneralExecutionProtocol", "ImageProcessingProtocol"]
+        ),
         .testTarget(
             name: "GeneralExecutionProtocolTests",
             dependencies: ["GeneralExecutionProtocol"]
@@ -26,6 +34,10 @@ let package = Package(
         .testTarget(
             name: "ImageProcessingProtocolTests",
             dependencies: ["ImageProcessingProtocol", "GeneralExecutionProtocol"]
+        ),
+        .testTarget(
+            name: "ImageProcessingRuntimeTests",
+            dependencies: ["ImageProcessingRuntime", "ImageProcessingProtocol", "GeneralExecutionProtocol"]
         )
     ],
     swiftLanguageModes: [.v6]
