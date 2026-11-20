@@ -179,10 +179,10 @@ public actor OperationImplementationRegistry {
             )
         }
         guard specification.inputType == step.specification.inputType,
-              input.typeIdentifier == specification.inputType else {
+              input.valueTypeIdentifier == specification.inputType else {
             throw OperationImplementationRegistryError.inputTypeMismatch(
                 expected: specification.inputType,
-                actual: input.typeIdentifier
+                actual: input.valueTypeIdentifier
             )
         }
         guard specification.outputType == step.specification.outputType else {
@@ -196,10 +196,10 @@ public actor OperationImplementationRegistry {
         }
 
         let output = try await entry.execute(step.operation, input, context)
-        guard output.typeIdentifier == specification.outputType else {
+        guard output.valueTypeIdentifier == specification.outputType else {
             throw OperationImplementationRegistryError.outputTypeMismatch(
                 expected: specification.outputType,
-                actual: output.typeIdentifier
+                actual: output.valueTypeIdentifier
             )
         }
         return output
