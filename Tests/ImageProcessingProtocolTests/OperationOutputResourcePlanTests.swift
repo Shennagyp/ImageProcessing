@@ -2,48 +2,69 @@ import GeneralExecutionProtocol
 @testable import ImageProcessingProtocol
 import Testing
 
-struct OperationOutputResourcePlanTests {
+struct OperationResourcePlanTests {
     @Test
-    func outputResourcePlanOrdersSlotsAndRejectsDuplicateIndices() throws {
-        let higher = try OperationOutputResourceRequirement(
-            outputIndex: 4,
+    func operationResourcePlanOrdersRolesAndRejectsDuplicates() throws {
+        let temporaryZ = try OperationResourcePlanRequirement(
+            role: .temporary("z-scratch"),
             minimumCapacityBytes: 128,
             minimumAlignmentBytes: 16
         )
-        let lower = try OperationOutputResourceRequirement(
-            outputIndex: 1,
+        let outputFour = try OperationResourcePlanRequirement(
+            role: .output(4),
             minimumCapacityBytes: 64
         )
+        let outputOne = try OperationResourcePlanRequirement(
+            role: .output(1),
+            minimumCapacityBytes: 32
+        )
+        let temporaryA = try OperationResourcePlanRequirement(
+            role: .temporary("a-scratch"),
+            minimumCapacityBytes: 256
+        )
 
-        let plan = try OperationOutputResourcePlan(resources: [higher, lower])
-        #expect(plan.resources.map(\.outputIndex) == [1, 4])
+        let plan = try OperationResourcePlan(
+            resources: [temporaryZ, outputFour, outputOne, temporaryA]
+        )
+        #expect(plan.resources.map(\\.role) == [
+            .output(1),
+            .output(4),
+            .temporary("a-scratch"),
+            .temporary("z-scratch")
+        ])
 
-        #expect(throws: OperationOutputResourcePlanError.duplicateOutputIndex(1)) {
-            try OperationOutputResourcePlan(resources: [lower, lower])
+        #expect(throws: OperationResourcePlanError.duplicateRole(.output(1))) {
+            try OperationResourcePlan(resources: [outputOne, outputOne])
         }
     }
 
     @Test
-    func outputResourceRequirementRejectsNegativeIndices() throws {
-        #expect(throws: OperationOutputResourcePlanError.negativeOutputIndex(-1)) {
-            try OperationOutputResourceRequirement(
-                outputIndex: -1,
+    func operationResourcePlanRejectsInvalidRoles() throws {
+        #expect(throws: OperationResourcePlanError.invalidRole(.output(-1))) {
+            try OperationResourcePlanRequirement(
+                role: .output(-1),
+                minimumCapacityBytes: 1
+            )
+        }
+        #expect(throws: OperationResourcePlanError.invalidRole(.temporary(""))) {
+            try OperationResourcePlanRequirement(
+                role: .temporary(""),
                 minimumCapacityBytes: 1
             )
         }
     }
 
     @Test
-    func outputResourceRequirementRejectsInvalidCapacityAndAlignment() throws {
-        #expect(throws: OperationOutputResourcePlanError.zeroCapacity(0)) {
-            try OperationOutputResourceRequirement(
-                outputIndex: 0,
+    func operationResourceRequirementRejectsInvalidCapacityAndAlignment() throws {
+        #expect(throws: OperationResourcePlanError.zeroCapacity(.output(0))) {
+            try OperationResourcePlanRequirement(
+                role: .output(0),
                 minimumCapacityBytes: 0
             )
         }
-        #expect(throws: OperationOutputResourcePlanError.invalidAlignment(0)) {
-            try OperationOutputResourceRequirement(
-                outputIndex: 0,
+        #expect(throws: OperationResourcePlanError.invalidAlignment(.temporary("scratch"))) {
+            try OperationResourcePlanRequirement(
+                role: .temporary("scratch"),
                 minimumCapacityBytes: 1,
                 minimumAlignmentBytes: 3
             )

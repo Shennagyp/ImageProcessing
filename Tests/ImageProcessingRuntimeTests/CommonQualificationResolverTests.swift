@@ -87,15 +87,20 @@ private struct OutputPlanningOperation: ImageOperation {
         )
     )
 
-    func outputResourcePlan(
+    func resourcePlan(
         for input: QualificationInput
-    ) throws -> OperationOutputResourcePlan {
-        let resource = try OperationOutputResourceRequirement(
-            outputIndex: 0,
+    ) throws -> OperationResourcePlan {
+        let output = try OperationResourcePlanRequirement(
+            role: .output(0),
             minimumCapacityBytes: 4_096,
             minimumAlignmentBytes: 256
         )
-        return try OperationOutputResourcePlan(resources: [resource])
+        let temporary = try OperationResourcePlanRequirement(
+            role: .temporary("scratch"),
+            minimumCapacityBytes: 2_048,
+            minimumAlignmentBytes: 128
+        )
+        return try OperationResourcePlan(resources: [output, temporary])
     }
 }
 
@@ -129,6 +134,14 @@ private struct OutputPlanningImplementation: ImageOperationImplementation {
                     allowedMemoryDomains: [.host],
                     minimumCapacityBytes: 512,
                     minimumAlignmentBytes: 64,
+                    access: .write
+                ),
+                ImplementationResourceRequirement(
+                    role: .temporary("scratch"),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    minimumCapacityBytes: 256,
+                    minimumAlignmentBytes: 32,
                     access: .write
                 )
             ]
@@ -422,19 +435,27 @@ struct CommonQualificationResolverTests {
         )
         let report = try await makeOutputReport(provider: provider, now: now)
         let candidate = try #require(report.qualifiedCandidates.first)
-        let allocation = try #require(candidate.outputResourceAllocations.first)
+        let outputAllocation = try #require(
+            candidate.resourceAllocations.first { $0.role == .output(0) }
+        )
+        let temporaryAllocation = try #require(
+            candidate.resourceAllocations.first { $0.role == .temporary("scratch") }
+        )
 
-        #expect(allocation.outputIndex == 0)
-        #expect(allocation.kind == .buffer)
-        #expect(allocation.allowedMemoryDomains == [.host])
-        #expect(allocation.minimumCapacityBytes == 4_096)
-        #expect(allocation.minimumAlignmentBytes == 256)
-        #expect(allocation.access == .write)
-        #expect(allocation.allocatableMemoryDomains == [.host])
+        #expect(outputAllocation.kind == .buffer)
+        #expect(outputAllocation.allowedMemoryDomains == [.host])
+        #expect(outputAllocation.minimumCapacityBytes == 4_096)
+        #expect(outputAllocation.minimumAlignmentBytes == 256)
+        #expect(outputAllocation.access == .write)
+        #expect(outputAllocation.allocatableMemoryDomains == [.host])
+        #expect(temporaryAllocation.kind == .buffer)
+        #expect(temporaryAllocation.minimumCapacityBytes == 2_048)
+        #expect(temporaryAllocation.minimumAlignmentBytes == 128)
+        #expect(temporaryAllocation.allocatableMemoryDomains == [.host])
     }
 
     @Test
-    func temporaryResourceWithoutDataDerivedPlanIsRejected() async throws {
+    func implementationTemporaryResourceWithoutOperationPlanIsRejected() async throws {
         let now = Date(timeIntervalSince1970: 50_027)
         let requirement = ImplementationResourceRequirement(
             role: .temporary("scratch"),
@@ -454,7 +475,7 @@ struct CommonQualificationResolverTests {
 
         #expect(report.qualifiedCandidates.isEmpty)
         #expect(report.evaluations[0].rejections.contains(
-            .temporaryResourcePlanningUnsupported("scratch")
+            .implementationResourceNotPlanned(.temporary("scratch"))
         ))
     }
 
@@ -528,7 +549,7 @@ struct CommonQualificationResolverTests {
         #expect(report.qualifiedCandidates.isEmpty)
         #expect(report.evaluations[0].disposition == .rejected)
         #expect(report.evaluations[0].rejections.contains(
-            .implementationOutputResourceNotPlanned(0)
+            .implementationResourceNotPlanned(.output(0))
         ))
     }
 
