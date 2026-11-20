@@ -1,17 +1,20 @@
 \section{Cross-phase acceptance matrix}
 
-The following matrix prevents a provider from being declared complete on the basis of a successful build alone.
+The following matrix prevents an implementation or provider from being declared complete on the basis of a successful build alone.
 \begin{longtable}{@{}L{0.22\textwidth}L{0.16\textwidth}L{0.16\textwidth}p{0.35\textwidth}@{}}
 \toprule
-\textbf{Evidence} & \textbf{Protocol phase} & \textbf{Provider phase} & \textbf{Required proof} \\
+\textbf{Evidence} & \textbf{Core phase} & \textbf{Package phase} & \textbf{Required proof} \\
 \midrule
-API/compile compatibility & 1--3 & Every provider & Public contracts compile and expose no backend-native types. \\
-Semantic operation tests & 1, 3, 5 & Every operation adapter & Inputs, outputs, numerical rules, and edge cases satisfy the operation specification. \\
-Generic lifecycle tests & 2, 4 & Every provider & Resource ownership, completion, synchronization, failure, cancellation, and release are correct. \\
-Qualification tests & 1, 3, 6 & Every candidate & Correct acceptance/rejection with explainable reasons; invalid implementations never execute. \\
-Image transaction tests & 1, 3, 5--6 & Every provider & New-image and replacement semantics, identity, revisions, and failure atomicity are preserved. \\
-Real-device tests & N/A & GPU providers & Actual device execution, data movement, precision, synchronization, and error paths verified. \\
-Performance tests & 4--7, 12 & Every optimized path & End-to-end benefit measured with transfer, allocation, warm-up, and synchronization included. \\
+API/compile compatibility & 1--3 & Every package & Public contracts compile; one operation type can have multiple typed implementation classes; no backend-native types leak. \\
+Semantic operation tests & 1, 3 & Every operation implementation & Inputs, outputs, numerical rules, layer semantics, and edge cases satisfy the operation specification. \\
+Generic lifecycle tests & 2, 4, 6 & Every provider & Resource ownership, completion, synchronization, failure, cancellation, reservation, and release are correct. \\
+Specification tests & 1, 3, 4 & Every operation implementation & Declared support matches actual tested behavior; unsupported modes and version ranges are rejected. \\
+Policy-construction tests & 1, 3 & Core protocol/runtime & Contradictory requirements are rejected at construction/composition with provenance-rich diagnostics. \\
+Resolver tests & 4--5 & Every implementation candidate & Correct eligibility and ranking using operation, implementation spec, environment state, and policy; no invalid candidate is selected. \\
+Dynamic-state tests & 2, 4--6 & Every observable provider & Busy/unavailable devices, memory pressure, stale telemetry, and reservation races are handled safely. \\
+Image transaction tests & 1, 3, 6 & Every operation implementation & New-image and replacement semantics, identity, revisions, and failure atomicity are preserved. \\
+Real-device tests & N/A & GPU providers & Actual device execution, resource sharing, precision, synchronization, and errors are verified. \\
+Performance tests & 5--8 & Optimized packages & End-to-end benefit is measured with queueing, transfer, allocation, warm-up, and synchronization included. \\
 \bottomrule
 \end{longtable}
 
@@ -19,14 +22,16 @@ Performance tests & 4--7, 12 & Every optimized path & End-to-end benefit measure
 
 The first supported operation set should be intentionally small. The suggested order is:
 \begin{enumerate}
-  \item \textbf{Descriptor-preserving conversion:} explicit pixel/component format conversion, channel mapping, and numeric conversion. This is foundational for every backend; conversions must state loss and range behavior.
+  \item \textbf{Descriptor-preserving conversion:} explicit pixel/component format conversion, channel mapping, and numeric conversion. Conversions state loss and range behavior.
   \item \textbf{Resize:} specifies interpolation, coordinate convention, border handling, and label-aware restrictions.
-  \item \textbf{Gaussian filtering:} specifies kernel generation, sigma/radius relationship, border extension, precision, and channel/alpha behavior.
+  \item \textbf{Gaussian filtering:} specifies kernel generation, sigma/radius relationship, border extension, computation/accumulation/output precision, and channel/alpha behavior.
   \item \textbf{Color correction:} specifies color space, transfer function, numeric range, and whether input is color data rather than scientific intensity.
   \item \textbf{Compositing/blending:} specifies blend modes, alpha convention, working space, opacity, and layer ordering.
 \end{enumerate}
 
-Annotation is initially a typed layer and rendering concern, not an excuse to treat all annotations as raster pixels. Tracking is a stateful/temporal operation family and should follow the establishment of sequence inputs, state ownership, reset behavior, and temporal error semantics. It should not block the first raster-operation milestone.
+The first end-to-end resolver demonstration should use one operation with multiple implementation classes. Gaussian blur is a suitable vertical slice because its border behavior, kernel parameters, precision, and numerical tolerances expose meaningful implementation differences.
+
+Annotation is initially a typed layer and rendering concern, not an excuse to treat all annotations as raster pixels. Tracking is a stateful/temporal operation family and should follow explicit sequence inputs, state ownership, reset behavior, and temporal error semantics.
 
 \section{Release strategy and support claims}
 
@@ -35,13 +40,14 @@ A release is a tested matrix, not a list of compiled adapters. For every release
   \item supported OS, architecture, compiler/toolchain, and runtime versions;
   \item provider/device combinations actually tested;
   \item operation/implementation combinations that pass conformance tests;
-  \item supported precision, format, layout, and semantic constraints;
+  \item supported precision, format, layout, parameter, and semantic constraints;
   \item known unsupported cases and fallback behavior;
+  \item which execution-state metrics are available, estimated, or unknown;
   \item build/test commands and required SDKs/drivers;
   \item benchmark methodology and measured workloads, without generalizing one device's result to all devices.
 \end{itemize}
 
-A provider can be experimental while its protocol implementation is being validated. It must not be labeled stable because a basic sample ran once. Similarly, an algorithm library adapter may support only a subset of operation parameters. Qualification and the published support matrix must reflect that subset.
+A provider can be experimental while its protocol implementation is being validated. It must not be labeled stable because a basic sample ran once. An algorithm adapter may support only a subset of operation parameters. Implementation specifications, resolver diagnostics, and the published support matrix must reflect that subset.
 
 \section{Risks, stop conditions, and scope control}
 
@@ -49,14 +55,19 @@ A provider can be experimental while its protocol implementation is being valida
 \toprule
 \textbf{Risk / stop condition} & \textbf{Required response} \\
 \midrule
-The generic execution protocol begins accumulating image terms & Stop and move the image-specific rule into \IPP{}. Keep generic resource/submit/sync concepts only. \\
-The image protocol exposes native Metal/CUDA/OpenCV types & Stop and redesign the boundary around semantic descriptors plus opaque generic resources. \\
-Operation semantics cannot be expressed precisely & Do not implement multiple backends. Specify the operation and reference test first. \\
-A provider cannot satisfy the required numerical contract & Reject it for that operation/precision; do not silently lower precision. \\
-A provider requires hidden copies or materialization & Make the transition explicit in qualification/planning and measure the cost. \\
-Backend-specific behavior leaks into callers & Add a capability/qualification reason or a legitimate operation parameter; do not add platform checks throughout application code. \\
-Optimization work has no measured end-to-end benefit & Defer it. Keep the simpler execution path. \\
-A proposed provider lacks real hardware CI & Keep it experimental; do not claim production support. \\
+The generic execution protocol begins accumulating image terms & Stop and move the image-specific rule into \IPP{}. Keep generic resource, provider, capability, state-observation, submit, and synchronization concepts only. \\
+The image protocol exposes native Metal/CUDA/OpenCV types & Stop and redesign around semantic descriptors plus opaque generic resources. \\
+An operation specification is too vague to compare implementations & Do not register multiple implementations. Specify semantics and reference tests first. \\
+An implementation spec overstates actual support & Reject registration or qualification until declaration and conformance evidence agree. \\
+The resolver embeds one-off provider/platform branches & Replace them with declarative implementation requirements and generic environment capabilities. \\
+Unknown device telemetry is treated as idle & Represent unknown explicitly and use other measurements without claiming certainty. \\
+A provider cannot satisfy required numerical semantics & Reject it for that operation/mode; do not silently lower precision. \\
+A provider requires hidden copies or materialization & Make the transition explicit in qualification/planning and measure its cost. \\
+A required provider is unavailable & Report an unsatisfied requirement; do not silently fall back. \\
+A preference conflict is silently resolved by declaration order & Reject ambiguous same-scope objective configuration or require an explicit priority/weight model. \\
+Backend-specific behavior leaks into callers & Add declarative capability/qualification information or a legitimate operation parameter; do not scatter platform checks through application code. \\
+Optimization has no measured end-to-end benefit & Defer it. Keep the simpler execution path. \\
+A provider lacks real hardware CI & Keep it experimental; do not claim production support. \\
 Scope expands into training, UI, or unrelated workflow orchestration & Keep those concerns outside the core library unless a concrete integration contract is approved. \\
 \bottomrule
 \end{longtable}
@@ -74,10 +85,8 @@ Each phase should be closed with a short record containing:
   \item explicit approval to start the next phase.
 \end{enumerate}
 
-This prevents an implementation from appearing complete merely because its code exists. The evidence, limits, and remaining work remain visible.
-
 \section{Final implementation principle}
 
-Build the domain contract first; implement its generic execution dependency without allowing that dependency to redefine the domain; then build the runtime that qualifies and selects operation implementations. Establish CPU semantics before GPU acceleration. Add providers only through conformance-tested adapters. Optimize only measured end-to-end workloads.
+Build the operation/domain contracts first; implement the generic execution dependency without allowing it to redefine the domain; then build the registry, environment discovery, common resolver, and execution coordinator. Keep concrete providers and operation algorithms in external packages selected by the application. Establish conformance on a small reference workload, and optimize only measured end-to-end behavior.
 
-The objective is not to support the largest number of APIs. It is to preserve one stable image-processing meaning across the implementations that the project can actually qualify, test, and maintain.
+The objective is not to support the largest number of APIs. It is to preserve one image-processing meaning across independently supplied implementations that the resolver can qualify, rank, and execute safely.
