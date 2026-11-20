@@ -38,3 +38,15 @@ From the repository root, run:
     latexmk -pdf -interaction=nonstopmode -halt-on-error docs/research/architecture/ImageProcessing-Architecture.tex
 
 The generated PDF is a build artifact; the committed `.tex` source is canonical.
+
+## Implementation plan
+
+The phase-gated implementation roadmap is:
+
+- [Implementation Plan — Phases, Deliverables, and Acceptance Gates](docs/project_management/Implementation-Plan.tex)
+
+The plan covers Phase 0 (architecture decisions) through Phase 12 (planner optimization and production hardening). Each phase defines deliverables, exit criteria, and constraints on what must not be started prematurely.
+
+Build the PDF locally with:
+
+    latexmk -pdf -interaction=nonstopmode -halt-on-error docs/project_management/Implementation-Plan.tex
