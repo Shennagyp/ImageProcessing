@@ -46,7 +46,8 @@ This file records actual repository state. The architecture and implementation p
 
 - Image and layer identifiers, with layer identity scoped to an image through LayerReference.
 - Monotonic ImageRevision with explicit overflow detection.
-- Immutable ImageDocumentSnapshot with canvas extent, ordered typed layers, duplicate-ID validation, and foreign-reference rejection.
+- Immutable ImageDocumentSnapshot with canvas extent, ordered typed layers, duplicate-ID validation, foreign-reference rejection, and layer-to-canvas extent validation.
+- LayerSpatialMapping with a checked invertible 4x4 affine map from layer sample-centre indices to canvas sample-centre indices. Same-grid layers use identity; different extents require an explicit map.
 - Raster, mask, label-map, and annotation content descriptors with distinct semantic validation.
 - PixelDataDescriptor with component precision, channel identities/roles, explicit color channel models (gray, RGB, YCbCr, custom), scientific interpretation, alpha mode, and optional channel value ranges.
 - Interleaved and planar storage planes with byte offsets, row/pixel/slice strides, subsampling, channel mappings, checked minimum-capacity computation, and overflow rejection.
@@ -54,18 +55,19 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, label/mask/annotation semantics, capacity validation, and overflow.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 43 tests in 7 suites on Linux x86_64.
+- swift test — passed, 50 tests in 8 suites on Linux x86_64.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The new image-domain descriptor tests are locally verified (43 tests); cross-platform CI for the 43-test revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain and spatial-registration suite is locally verified (50 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
 - Mutable Image handle/actor, revision-checked replacement commits, and concurrent image-state ownership.
+- Non-affine spatial deformation fields and calibrated world-coordinate transform model.
 - Pixel-resource binding from semantic PixelDataDescriptor values to one or more generic ExecutionResource handles and plane-resource lifetime.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
@@ -85,7 +87,7 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
 | 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
-| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, and pixel semantic descriptors are implemented; mutable Image ownership, resource binding, composition, policy builder, and type-erased registry remain. |
+| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, and affine layer-to-canvas registration are implemented; mutable Image ownership, resource binding, composition, policy builder, and type-erased registry remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
