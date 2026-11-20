@@ -116,6 +116,9 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
     public let transferFunctions: Set<TransferFunction>?
     public let colorSpaces: Set<ColorSpaceIdentifier>?
     public let channelRoles: Set<PixelChannelRole>?
+    public let channelOrders: Set<[PixelChannelRole]>?
+    public let subsamplingFactors: Set<PixelSubsampling>?
+    public let sampleOrigins: Set<PixelGridCoordinate>?
     public let measurementUnits: Set<MeasurementUnitIdentifier>?
 
     public init(
@@ -126,6 +129,9 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
         transferFunctions: Set<TransferFunction>? = nil,
         colorSpaces: Set<ColorSpaceIdentifier>? = nil,
         channelRoles: Set<PixelChannelRole>? = nil,
+        channelOrders: Set<[PixelChannelRole]>? = nil,
+        subsamplingFactors: Set<PixelSubsampling>? = nil,
+        sampleOrigins: Set<PixelGridCoordinate>? = nil,
         measurementUnits: Set<MeasurementUnitIdentifier>? = nil
     ) {
         self.layouts = layouts
@@ -135,6 +141,9 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
         self.transferFunctions = transferFunctions
         self.colorSpaces = colorSpaces
         self.channelRoles = channelRoles
+        self.channelOrders = channelOrders
+        self.subsamplingFactors = subsamplingFactors
+        self.sampleOrigins = sampleOrigins
         self.measurementUnits = measurementUnits
     }
 
@@ -154,6 +163,10 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
             && optionalSetIsValid(transferFunctions)
             && optionalSetIsValid(colorSpaces)
             && optionalSetIsValid(channelRoles)
+            && optionalSetIsValid(channelOrders)
+            && optionalSetIsValid(channelOrders?.filter { !$0.isEmpty })
+            && optionalSetIsValid(subsamplingFactors)
+            && optionalSetIsValid(sampleOrigins)
             && optionalSetIsValid(measurementUnits)
     }
 
@@ -168,6 +181,9 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
             && optionalSetIsSubset(transferFunctions, of: operationDomain.transferFunctions)
             && optionalSetIsSubset(colorSpaces, of: operationDomain.colorSpaces)
             && optionalSetIsSubset(channelRoles, of: operationDomain.channelRoles)
+            && optionalSetIsSubset(channelOrders, of: operationDomain.channelOrders)
+            && optionalSetIsSubset(subsamplingFactors, of: operationDomain.subsamplingFactors)
+            && optionalSetIsSubset(sampleOrigins, of: operationDomain.sampleOrigins)
             && optionalSetIsSubset(measurementUnits, of: operationDomain.measurementUnits)
     }
 
