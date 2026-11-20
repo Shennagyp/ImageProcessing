@@ -27,6 +27,12 @@ public struct OperationValueIdentifier: RawRepresentable, Hashable, Sendable, Cu
 /// Stable semantic identity for a value that can flow into or out of an operation.
 public protocol OperationValue: Sendable {
     static var typeIdentifier: OperationValueIdentifier { get }
+    /// Instance-level identity for values crossing a type-erased runtime boundary.
+    var valueTypeIdentifier: OperationValueIdentifier { get }
+}
+
+public extension OperationValue {
+    var valueTypeIdentifier: OperationValueIdentifier { Self.typeIdentifier }
 }
 
 public enum OperationQualificationDimension: String, Hashable, Sendable {
