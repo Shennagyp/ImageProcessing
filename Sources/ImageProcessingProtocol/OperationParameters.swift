@@ -151,7 +151,7 @@ public enum OperationParameterSupportValidation {
             supportByID[support.identifier] = support
         }
 
-        let operationIDs = Set(operationSpecifications.map(\\.identifier))
+        let operationIDs = Set(operationSpecifications.map(\.identifier))
         for support in implementationSupport where !operationIDs.contains(support.identifier) {
             throw OperationParameterSupportValidationError.unknownParameter(support.identifier)
         }
