@@ -255,6 +255,10 @@ public struct PixelDataDescriptor: Hashable, Sendable {
     public let channels: [PixelChannelDescriptor]
     public let interpretation: PixelDataInterpretation
     public let layout: PixelStorageLayout
+    /// Minimum storage capacity required for each plane when its byte offsets
+    /// are interpreted relative to the resource bound to that plane.
+    public let minimumRequiredStorageBytesByPlane: [UInt64]
+    /// Minimum capacity for one allocation containing every plane.
     public let minimumRequiredStorageBytes: UInt64
 
     public init(
@@ -275,7 +279,7 @@ public struct PixelDataDescriptor: Hashable, Sendable {
             }
         }
         try Self.validateInterpretation(interpretation, channels: channels)
-        let requiredBytes = try Self.validateLayout(
+        let planeRequiredBytes = try Self.validateLayout(
             layout,
             extent: extent,
             componentType: componentType,
@@ -287,7 +291,8 @@ public struct PixelDataDescriptor: Hashable, Sendable {
         self.channels = channels
         self.interpretation = interpretation
         self.layout = layout
-        self.minimumRequiredStorageBytes = requiredBytes
+        self.minimumRequiredStorageBytesByPlane = planeRequiredBytes
+        self.minimumRequiredStorageBytes = planeRequiredBytes.max() ?? 0
     }
 
     public func validateStorageCapacity(_ capacityBytes: UInt64) throws {
@@ -352,7 +357,7 @@ public struct PixelDataDescriptor: Hashable, Sendable {
         extent: ImageExtent,
         componentType: PixelComponentType,
         channelCount: Int
-    ) throws -> UInt64 {
+    ) throws -> [UInt64] {
         let planes: [PixelPlaneLayout]
         switch layout {
         case let .interleaved(plane):
@@ -363,7 +368,7 @@ public struct PixelDataDescriptor: Hashable, Sendable {
         guard !planes.isEmpty else { throw PixelDataDescriptorError.noPlanes }
 
         var mappedChannels = Set<Int>()
-        var minimumStorageBytes: UInt64 = 0
+        var minimumStorageBytesByPlane: [UInt64] = []
         for (planeIndex, plane) in planes.enumerated() {
             guard !plane.channelIndices.isEmpty else {
                 throw PixelDataDescriptorError.emptyPlaneChannelMapping
@@ -422,13 +427,13 @@ public struct PixelDataDescriptor: Hashable, Sendable {
             end = try checkedAdd(end, lastRow)
             end = try checkedAdd(end, lastPixel)
             end = try checkedAdd(end, bytesPerPixel)
-            minimumStorageBytes = max(minimumStorageBytes, end)
+            minimumStorageBytesByPlane.append(end)
         }
 
         for channelIndex in 0..<channelCount where !mappedChannels.contains(channelIndex) {
             throw PixelDataDescriptorError.missingChannelMapping(channelIndex)
         }
-        return minimumStorageBytes
+        return minimumStorageBytesByPlane
     }
 
     private static func ceilDivide(_ value: UInt64, by divisor: UInt64) -> UInt64 {
