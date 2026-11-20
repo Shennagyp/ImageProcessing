@@ -991,7 +991,7 @@ The following rules are the compact invariants that future API and implementatio
   \item An operation implementation is registered for an operation and an execution environment; it does not own the operation's meaning.
   \item \texttt{ImageProcessingProtocol} is the primary image-domain contract library and owns operation semantics, implementation contracts, and image-specific qualification.
   \item \texttt{GeneralExecutionProtocol} is a lower-level, image-agnostic dependency that describes generic compute providers, devices, resources, submission, completion, and synchronization; it MUST NOT depend on \texttt{ImageProcessingProtocol}.
-  \item Concrete CPU, Metal, CUDA, OpenCL, Direct3D 12, or Vulkan providers implement \texttt{GeneralExecutionProtocol}; image-operation adapters implement \texttt{ImageProcessingProtocol} and use those providers.
+  \item CPU, Metal, CUDA, OpenCL, Direct3D 12, and Vulkan providers implement the general execution contract. Image-operation adapters implement the image-processing contract.
   \item A general compute-provider protocol represents common execution/resource responsibilities while optional capabilities preserve native differences.
   \item A library such as OpenCV or a runtime such as ONNX Runtime may be an implementation adapter; it is not automatically equivalent to a low-level compute provider.
   \item Qualification determines correctness and feasibility. Selection optimizes only among qualified candidates.
@@ -1007,7 +1007,7 @@ The following rules are the compact invariants that future API and implementatio
 
 The design should not imitate one existing framework wholesale. OpenCV contributes mature image algorithms and practical array/storage lessons; PyTorch demonstrates a common numerical object and dispatch architecture; ONNX Runtime demonstrates capability-based execution-provider partitioning; Core Image demonstrates useful deferred image evaluation; and native compute APIs demonstrate why resources, command submission, and synchronization require provider-specific implementations.
 
-The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, an \texttt{ImageProcessingProtocol} domain contract, a lower-level and image-agnostic \texttt{GeneralExecutionProtocol}, operation-specific implementations, qualification, and selection. Concrete CPU/Metal/CUDA/OpenCL/Direct3D 12 providers implement the general execution protocol; image-processing adapters implement the image-processing operation contracts. The runtime joins the two without collapsing their responsibilities.
+The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, the domain-facing \texttt{ImageProcessingProtocol}, and the lower-level, image-agnostic \texttt{GeneralExecutionProtocol}. Native providers implement the general contract; operation adapters implement the image-processing contract. The runtime joins them without collapsing their responsibilities.
 
 The most consequential boundary is the separation between \emph{what an operation means} and \emph{which implementation executes it}. The most consequential data boundary is the separation between \emph{logical image/layer identity} and \emph{physical pixel storage}. Preserving both boundaries is the foundation for portability, numerical consistency, safe mutation, and efficient heterogeneous execution.
 
