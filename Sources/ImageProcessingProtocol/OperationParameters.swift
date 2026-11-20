@@ -173,9 +173,14 @@ public enum OperationParameterSupportValidation {
         _ values: [OperationParameterValueRecord],
         implementationSupport: [OperationParameterSupport]
     ) -> Bool {
-        let supportByID = Dictionary(
-            uniqueKeysWithValues: implementationSupport.map { ($0.identifier, $0.domain) }
-        )
+        var supportByID: [OperationParameterIdentifier: OperationParameterDomain] = [:]
+        for support in implementationSupport {
+            guard support.domain.isValid,
+                  supportByID[support.identifier] == nil else {
+                return false
+            }
+            supportByID[support.identifier] = support.domain
+        }
         return values.allSatisfy { supportByID[$0.identifier]?.accepts($0.value) ?? false }
     }
 }
