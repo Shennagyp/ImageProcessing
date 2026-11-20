@@ -23,7 +23,10 @@ This file records actual repository state. The architecture and implementation p
 - Private type-erased entries preserve the associated implementation type in a checked async dispatch closure; operation and input values are downcast at the boundary, and output type identity is checked.
 - Registered metadata and statically compatible candidates can be enumerated in deterministic order by operation specification or concrete operation step; this does not rank candidates or inspect the provider environment.
 - The erased execution entry is module-internal and requires an explicit key. It is reserved for later resolver use, preventing application callers from bypassing hard-policy and environment qualification.
-- Provider registry/discovery, environment snapshots, common resolution, and execution planning are not implemented.
+- Actor-backed ExecutionProviderRegistry independently stores selected provider packages by provider identifier and rejects duplicate registrations.
+- Provider discovery assembles an ExecutionEnvironmentSnapshot from provider/device descriptors and state observations. Partial failures are retained alongside the snapshot; failed observations are represented as unknown rather than available or zero load.
+- Provider/device ownership violations and duplicate device identifiers are reported as structured provider contract failures; a provider with no discovered devices remains valid for opaque managed execution.
+- The registry does not track runtime-owned outstanding work, prepare contexts, qualify operation candidates, rank providers, or execute functions.
 
 ### GeneralExecutionProtocol foundation
 
@@ -95,7 +98,6 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 - Non-affine spatial deformation fields and calibrated world-coordinate transform model.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
-- Provider discovery aggregation and runtime registry.
 - Common environment-aware resolver and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
 - CPU provider and numerical reference image operations.
@@ -109,13 +111,12 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 1 — Operation/implementation contracts | In progress | Typed operation schemas, parameter validation, precision/numerical/effect/layer/pixel semantics, implementation support subsets, static resource requirements, and compatibility validation are implemented. Qualification result vocabulary and representative multi-implementation operation examples remain. |
 | 2 — GeneralExecutionProtocol | In progress | Generic resource/work lifecycle contracts, structured provider failure categories/recovery guidance, and a reusable test-only conformance harness are implemented and exercised against an in-memory provider; a production provider and hardware conformance remain. |
 | 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, validated QualificationPolicy, and static operation/implementation conformance contracts are implemented; end-to-end image function execution remains. |
-| 4 — Environment discovery and registries | In progress | Initial operation implementation registry supports typed registration, static compatibility enumeration, and private checked dispatch; provider registry/discovery and environment snapshot assembly remain. |
+| 4 — Environment discovery and registries | In progress | Operation and provider registries plus partial provider/device environment discovery are implemented and tested; runtime-owned work accounting, snapshot identity/freshness policy, context preparation, and operation/provider binding qualification remain. |
 | 5–9 | Not started | Depend on provider discovery, resolver, planning, and execution coordination. |
 
 ## Next implementation order
 
-1. Implement the provider registry and discovery layer independently of the operation implementation registry; validate provider/device ownership, opaque targets, versions, and duplicate registrations.
-2. Assemble immutable environment snapshots from provider/device descriptors and state observations, with explicit freshness and runtime-owned outstanding-work accounting.
-3. Implement the common resolver: static specification eligibility first, candidate context preparation/validation second, then ranking of eligible candidates using fresh state and whole-path cost.
-4. Implement the execution planner and coordinator, including resource request construction, reservation/revalidation, synchronization, cancellation, structured failure recovery, and transactional result publication.
-5. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice; only then add GPU and managed-runtime adapters.
+1. Add runtime-owned outstanding-work/resource accounting and define immutable environment snapshot identity/freshness semantics without changing the provider-reported observation meaning.
+2. Implement the common resolver: operation/implementation static eligibility first, provider/device binding and capability checks second, context preparation/validation third, then ranking of eligible candidates using fresh state and whole-path cost.
+3. Implement the execution planner and coordinator, including resource request construction, reservation/revalidation, synchronization, cancellation, structured failure recovery, and transactional result publication.
+4. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice; only then add GPU and managed-runtime adapters.
