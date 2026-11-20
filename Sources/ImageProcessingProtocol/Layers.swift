@@ -129,17 +129,28 @@ public struct LayerDescriptor: Hashable, Sendable {
     public let identifier: LayerIdentifier
     public let properties: LayerProperties
     public let content: LayerContentDescriptor
+    /// Required when raster/mask/label-map sample extents differ from the image
+    /// canvas extent. A nil mapping means identical sample grids.
+    public let spatialMapping: LayerSpatialMapping?
 
     public var kind: LayerKind { content.kind }
+
+    /// The transform used after the containing snapshot has validated that an
+    /// omitted transform is valid (pixel extent equals canvas extent).
+    public var effectiveSpatialMapping: LayerSpatialMapping {
+        spatialMapping ?? .identity
+    }
 
     public init(
         identifier: LayerIdentifier,
         properties: LayerProperties = .defaultValue,
-        content: LayerContentDescriptor
+        content: LayerContentDescriptor,
+        spatialMapping: LayerSpatialMapping? = nil
     ) {
         self.identifier = identifier
         self.properties = properties
         self.content = content
+        self.spatialMapping = spatialMapping
     }
 
     public func reference(in imageID: ImageIdentifier) -> LayerReference {
@@ -150,6 +161,11 @@ public struct LayerDescriptor: Hashable, Sendable {
 public enum ImageDocumentSnapshotError: Error, Equatable, Sendable {
     case duplicateLayerIdentifier(LayerIdentifier)
     case foreignLayerReference(expectedImage: ImageIdentifier, actualImage: ImageIdentifier)
+    case layerExtentMismatch(
+        layer: LayerIdentifier,
+        expectedCanvas: ImageExtent,
+        actualLayer: ImageExtent
+    )
 }
 
 /// Immutable revision of a logical image document. Mutating Image ownership and
@@ -170,6 +186,28 @@ public struct ImageDocumentSnapshot: Hashable, Sendable {
         for layer in layers {
             guard seen.insert(layer.identifier).inserted else {
                 throw ImageDocumentSnapshotError.duplicateLayerIdentifier(layer.identifier)
+            }
+
+            let pixelExtent: ImageExtent?
+            switch layer.content {
+            case let .raster(pixels):
+                pixelExtent = pixels.extent
+            case let .mask(mask):
+                pixelExtent = mask.pixels.extent
+            case let .labelMap(labelMap):
+                pixelExtent = labelMap.pixels.extent
+            case .annotation:
+                pixelExtent = nil
+            }
+
+            if let pixelExtent,
+               pixelExtent != canvas.extent,
+               layer.spatialMapping == nil {
+                throw ImageDocumentSnapshotError.layerExtentMismatch(
+                    layer: layer.identifier,
+                    expectedCanvas: canvas.extent,
+                    actualLayer: pixelExtent
+                )
             }
         }
         self.identifier = identifier
