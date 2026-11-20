@@ -190,11 +190,9 @@ public struct QualificationPolicy: Hashable, Sendable {
 
             switch declaration.requirement {
             case .precision(_, _), .allowedPrecisions(_, _):
-                try validatePrecisionApplicability(
-                    declaration.origin,
-                    stepsByID: stepsByID,
-                    steps: steps
-                )
+                try validateApplicability(.precision, for: declaration.origin, stepsByID: stepsByID, steps: steps)
+            case .deterministicResults:
+                try validateApplicability(.deterministicResults, for: declaration.origin, stepsByID: stepsByID, steps: steps)
             default:
                 break
             }
@@ -208,6 +206,14 @@ public struct QualificationPolicy: Hashable, Sendable {
             if case let .step(identifier) = declaration.origin.scope,
                stepsByID[identifier] == nil {
                 throw QualificationPolicyValidationError.unknownStep(identifier, declaration.origin)
+            }
+            if declaration.objective == .deterministicResults {
+                try validateApplicability(
+                    .deterministicResults,
+                    for: declaration.origin,
+                    stepsByID: stepsByID,
+                    steps: steps
+                )
             }
         }
 
@@ -327,26 +333,27 @@ public struct QualificationPolicy: Hashable, Sendable {
         }
     }
 
-    private func validatePrecisionApplicability(
-        _ origin: PolicyDeclarationOrigin,
+    private func validateApplicability(
+        _ dimension: OperationQualificationDimension,
+        for origin: PolicyDeclarationOrigin,
         stepsByID: [OperationStepIdentifier: AnyImageOperationStep],
         steps: [AnyImageOperationStep]
     ) throws {
         switch origin.scope {
         case .pipeline:
             guard steps.contains(where: {
-                $0.specification.qualificationDimensions.contains(.precision)
+                $0.specification.qualificationDimensions.contains(dimension)
             }) else {
-                throw QualificationPolicyValidationError.noApplicableStep(.precision, origin)
+                throw QualificationPolicyValidationError.noApplicableStep(dimension, origin)
             }
         case let .step(identifier):
             guard let step = stepsByID[identifier] else {
                 throw QualificationPolicyValidationError.unknownStep(identifier, origin)
             }
-            guard step.specification.qualificationDimensions.contains(.precision) else {
+            guard step.specification.qualificationDimensions.contains(dimension) else {
                 throw QualificationPolicyValidationError.inapplicableDimension(
                     identifier,
-                    .precision,
+                    dimension,
                     origin
                 )
             }
