@@ -52,6 +52,8 @@ This file records actual repository state. The architecture and implementation p
 - PixelDataDescriptor with component precision, channel identities/roles, explicit color channel models (gray, RGB, YCbCr, custom), scientific interpretation, alpha mode, and optional channel value ranges.
 - PixelStorageBinding assigns every pixel plane exactly once to one or more generic execution resources; it supports one shared allocation or separate per-plane allocations, validates each resource capacity, and retains all handles.
 - ImageStorageBindingSet associates plane storage with layer references for one exact ImageIdentifier/ImageRevision, verifies descriptor identity, and reports unbound layers without rejecting non-resident document content.
+- Image is a thread-safe reference-type state owner; synchronous snapshots pair immutable document state with its exact binding set.
+- Image.replace performs candidate validation outside its short lock and commits document plus binding set atomically with revision compare-and-swap. Stale concurrent replacements fail explicitly.
 - Interleaved and planar storage planes with byte offsets, row/pixel/slice strides, subsampling, explicit per-plane sample origin/chroma siting, plane-to-layer coordinate conversion, channel mappings, checked minimum-capacity computation, and overflow rejection.
 - Mask semantics (binary, coverage, probability), integer label identifiers, and explicit annotation coordinate spaces.
 
@@ -61,14 +63,12 @@ The current test suite covers identifiers/capabilities, provider/device/context 
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
-- swift build — passed.
-- swift test — passed, 66 tests in 11 suites on Linux x86_64.
+- The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain, spatial-registration, chroma-siting, and resource-binding suite is locally verified (66 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current 75-test suite (12 suites) includes pixel resource binding, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
-- Mutable Image handle/actor, revision-checked replacement commits, and concurrent image-state ownership.
 - Non-affine spatial deformation fields and calibrated world-coordinate transform model.
 - Resource replacement, copy-on-write, and lifetime across derived or replaced image revisions.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
@@ -78,7 +78,7 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 - QualificationPolicy, fluent policy builder, scope composition, and conflict diagnostics.
 - Common environment-aware resolver and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
-- Transactional image result publication and replacement.
+- Resource replacement, copy-on-write, and resource sharing across derived/replaced image revisions.
 - CPU provider and numerical reference image operations.
 - Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, Accelerate, or model-runtime implementation packs.
 
@@ -89,14 +89,14 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
 | 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
-| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, affine layer-to-canvas registration, and pixel-plane resource binding are implemented; mutable Image ownership, atomic revision/resource-set replacement, composition, policy builder, and type-erased registry remain. |
+| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, affine layer-to-canvas registration, and pixel-plane resource binding are implemented; Image identity, immutable snapshots, and atomic revision/resource-set replacement are implemented; typed composition, policy builder, and type-erased registry remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
 
 1. Build a reusable test-only provider conformance harness for allocation/import, access retention, dependencies, completion, cancellation, and synchronization.
 2. Bind PixelDataDescriptor/LayerDescriptor values to generic execution resources with explicit plane ownership and lifetime.
-3. Resolve the mutable Image actor/revision-commit API and complete typed function composition.
+3. Complete typed function composition.
 4. Add immutable qualification-policy values and construction/composition conflict validation.
 5. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
 6. Add a CPU provider and one small operation vertical slice before GPU providers.
