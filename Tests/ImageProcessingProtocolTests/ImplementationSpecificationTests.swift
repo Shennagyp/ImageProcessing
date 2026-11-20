@@ -728,3 +728,64 @@ extension ImplementationSpecificationTests {
         try implementation.validate(implements: operation.erased)
     }
 }
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func concreteNumericalModesSatisfyImplementationDefinedOperationModes() throws {
+        let base = BlurOperation.specification
+        let operation = OperationSpecification<BlurInput, BlurOutput>(
+            identifier: base.identifier,
+            semanticVersion: base.semanticVersion,
+            parameterSpecifications: base.parameterSpecifications,
+            precisionContract: base.precisionContract,
+            numericalContract: OperationNumericalContract(
+                rounding: .implementationDefined,
+                overflow: .implementationDefined,
+                outputRange: .preserve,
+                determinism: .implementationSelectable
+            ),
+            layerContract: base.layerContract,
+            pixelDataContract: base.pixelDataContract
+        )
+        let implementation = BlurImplementationFixture.specification(
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve],
+                maximumAbsoluteError: 0.00005
+            )
+        )
+
+        try implementation.validate(implements: operation.erased)
+    }
+
+    @Test
+    func operationToleranceMayLeaveImplementationErrorUnreported() throws {
+        let base = BlurOperation.specification
+        let operation = OperationSpecification<BlurInput, BlurOutput>(
+            identifier: base.identifier,
+            semanticVersion: base.semanticVersion,
+            parameterSpecifications: base.parameterSpecifications,
+            precisionContract: base.precisionContract,
+            numericalContract: OperationNumericalContract(
+                rounding: .nearestEven,
+                overflow: .saturate,
+                absoluteErrorTolerance: nil,
+                relativeErrorTolerance: nil,
+                determinism: .implementationSelectable
+            ),
+            layerContract: base.layerContract,
+            pixelDataContract: base.pixelDataContract
+        )
+        let implementation = BlurImplementationFixture.specification(
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve]
+            )
+        )
+
+        try implementation.validate(implements: operation.erased)
+    }
+}
