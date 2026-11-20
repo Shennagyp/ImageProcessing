@@ -114,6 +114,62 @@ public struct OperationResourcePlan: Hashable, Sendable {
     }
 }
 
+public enum OperationOutputValidationError: Error, Equatable, Sendable {
+    case outputValueTypeIdentifierMismatch(
+        expected: OperationValueIdentifier,
+        actual: OperationValueIdentifier
+    )
+    case inputConcreteTypeMismatch
+    case outputConcreteTypeMismatch
+    case imageOutputDescriptorRequired
+    case producedLayersRequired
+    case duplicateProducedLayer(LayerReference)
+    case foreignProducedLayer(LayerReference)
+    case unknownProducedLayer(LayerReference)
+    case producedLayerKindUnsupported(LayerReference, LayerKind)
+    case pixelOutputLayerRequired
+    case operationPixelRepresentationUnsupported(LayerReference)
+    case implementationPixelRepresentationUnsupported(LayerReference)
+    case operationOutputStoragePrecisionUnsupported(LayerReference, PixelComponentType)
+    case implementationOutputStoragePrecisionUnsupported(LayerReference, PixelComponentType)
+    case outputChannelValueRangeMissing(LayerReference, ChannelIdentifier)
+    case outputChannelValueRangeOutsideContract(LayerReference, ChannelIdentifier)
+    case operationPostconditionFailed(String)
+}
+
+/// Identifies the concrete layers produced or replaced by one operation.
+/// The document may also contain preserved, unrelated layers.
+public struct ImageOperationOutputDescriptor: Hashable, Sendable {
+    public let document: ImageDocumentSnapshot
+    public let producedLayers: [LayerReference]
+
+    public init(
+        document: ImageDocumentSnapshot,
+        producedLayers: [LayerReference]
+    ) throws {
+        var seen = Set<LayerReference>()
+        for reference in producedLayers {
+            guard seen.insert(reference).inserted else {
+                throw OperationOutputValidationError.duplicateProducedLayer(reference)
+            }
+            guard reference.imageID == document.identifier else {
+                throw OperationOutputValidationError.foreignProducedLayer(reference)
+            }
+            guard document.layers.contains(where: { $0.identifier == reference.layerID }) else {
+                throw OperationOutputValidationError.unknownProducedLayer(reference)
+            }
+        }
+        self.document = document
+        self.producedLayers = producedLayers
+    }
+}
+
+/// An image-producing operation value exposes its immutable document
+/// descriptor and explicitly identifies which layers it produced or replaced.
+public protocol ImageOperationOutputValue: OperationValue {
+    var imageOperationOutputDescriptor: ImageOperationOutputDescriptor { get }
+}
+
 public enum OperationQualificationDimension: String, Hashable, Sendable {
     /// Input pixels may have implementation-selectable storage component types.
     case inputStoragePrecision
@@ -365,6 +421,10 @@ public struct AnyImageOperationStep: Sendable {
     public let specification: AnyOperationSpecification
     public let parameterValues: [OperationParameterValueRecord]
     private let resourcePlanner: @Sendable (any OperationValue) throws -> OperationResourcePlan
+    private let outputPostconditionValidator: @Sendable (
+        any OperationValue,
+        any OperationValue
+    ) throws -> Void
 
     public init<Operation: ImageOperation>(
         operation: Operation,
@@ -381,6 +441,23 @@ public struct AnyImageOperationStep: Sendable {
             }
             return try operation.resourcePlan(for: typedInput)
         }
+        self.outputPostconditionValidator = { inputValue, outputValue in
+            guard let typedInput = inputValue as? Operation.Input else {
+                throw OperationOutputValidationError.inputConcreteTypeMismatch
+            }
+            guard let typedOutput = outputValue as? Operation.Output else {
+                throw OperationOutputValidationError.outputConcreteTypeMismatch
+            }
+            do {
+                try operation.validateOutput(typedOutput, for: typedInput)
+            } catch let error as OperationOutputValidationError {
+                throw error
+            } catch {
+                throw OperationOutputValidationError.operationPostconditionFailed(
+                    String(describing: error)
+                )
+            }
+        }
     }
 
     func reidentifiedForComposition() -> Self {
@@ -390,7 +467,8 @@ public struct AnyImageOperationStep: Sendable {
             operation: operation,
             specification: specification,
             parameterValues: parameterValues,
-            resourcePlanner: resourcePlanner
+            resourcePlanner: resourcePlanner,
+            outputPostconditionValidator: outputPostconditionValidator
         )
     }
 
@@ -400,7 +478,11 @@ public struct AnyImageOperationStep: Sendable {
         operation: any ImageOperation,
         specification: AnyOperationSpecification,
         parameterValues: [OperationParameterValueRecord],
-        resourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationResourcePlan
+        resourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationResourcePlan,
+        outputPostconditionValidator: @escaping @Sendable (
+            any OperationValue,
+            any OperationValue
+        ) throws -> Void
     ) {
         self.identifier = identifier
         self.sourceIdentifier = sourceIdentifier
@@ -408,6 +490,7 @@ public struct AnyImageOperationStep: Sendable {
         self.specification = specification
         self.parameterValues = parameterValues
         self.resourcePlanner = resourcePlanner
+        self.outputPostconditionValidator = outputPostconditionValidator
     }
 
     /// Derives invocation-specific output and temporary requirements from the
@@ -416,6 +499,149 @@ public struct AnyImageOperationStep: Sendable {
         for input: any OperationValue
     ) throws -> OperationResourcePlan {
         try resourcePlanner(input)
+    }
+
+    /// Validates a concrete returned value against the operation and selected
+    /// implementation's declared output semantics before the result is published.
+    public func validateOutput(
+        _ output: any OperationValue,
+        for input: any OperationValue,
+        implementation: ImplementationSpecification
+    ) throws {
+        guard input.valueTypeIdentifier == specification.inputType else {
+            throw OperationOutputValidationError.inputConcreteTypeMismatch
+        }
+        guard output.valueTypeIdentifier == specification.outputType else {
+            throw OperationOutputValidationError.outputValueTypeIdentifierMismatch(
+                expected: specification.outputType,
+                actual: output.valueTypeIdentifier
+            )
+        }
+
+        try validateImageOutputDescriptor(
+            output,
+            implementation: implementation
+        )
+        try outputPostconditionValidator(input, output)
+    }
+
+    private func validateImageOutputDescriptor(
+        _ output: any OperationValue,
+        implementation: ImplementationSpecification
+    ) throws {
+        let expectsImageOutput = !specification.layerContract.producedOutputKinds.isEmpty
+            || specification.pixelDataContract.output != nil
+            || !specification.precisionContract.outputStorage.isEmpty
+        guard expectsImageOutput else { return }
+
+        guard let imageOutput = output as? any ImageOperationOutputValue else {
+            throw OperationOutputValidationError.imageOutputDescriptorRequired
+        }
+        let descriptor = imageOutput.imageOperationOutputDescriptor
+        guard !descriptor.producedLayers.isEmpty else {
+            throw OperationOutputValidationError.producedLayersRequired
+        }
+
+        let operation = specification
+        let implementationKinds = implementation.layerSupport.outputKinds
+        let operationPixelDomain = operation.pixelDataContract.output
+        let implementationPixelDomain = implementation.pixelDataSupport.output
+        let outputStoragePrecisions = operation.precisionContract.outputStorage
+        let implementationOutputPrecisions = implementation.precisionSupport.outputStorage
+        var containsPixelOutput = false
+
+        for reference in descriptor.producedLayers {
+            guard reference.imageID == descriptor.document.identifier else {
+                throw OperationOutputValidationError.foreignProducedLayer(reference)
+            }
+            guard let layer = try descriptor.document.layer(for: reference) else {
+                throw OperationOutputValidationError.unknownProducedLayer(reference)
+            }
+
+            if !operation.layerContract.producedOutputKinds.isEmpty,
+               !operation.layerContract.producedOutputKinds.contains(layer.kind) {
+                throw OperationOutputValidationError.producedLayerKindUnsupported(
+                    reference,
+                    layer.kind
+                )
+            }
+            if !implementationKinds.isEmpty,
+               !implementationKinds.contains(layer.kind) {
+                throw OperationOutputValidationError.producedLayerKindUnsupported(
+                    reference,
+                    layer.kind
+                )
+            }
+
+            let pixels: PixelDataDescriptor?
+            switch layer.content {
+            case let .raster(descriptor):
+                pixels = descriptor
+            case let .mask(mask):
+                pixels = mask.pixels
+            case let .labelMap(labelMap):
+                pixels = labelMap.pixels
+            case .annotation:
+                pixels = nil
+            }
+            guard let pixels else { continue }
+            containsPixelOutput = true
+
+            if let operationPixelDomain,
+               !operationPixelDomain.supports(pixels) {
+                throw OperationOutputValidationError.operationPixelRepresentationUnsupported(
+                    reference
+                )
+            }
+            if let implementationPixelDomain,
+               !implementationPixelDomain.supports(pixels) {
+                throw OperationOutputValidationError.implementationPixelRepresentationUnsupported(
+                    reference
+                )
+            }
+            if !outputStoragePrecisions.isEmpty,
+               !outputStoragePrecisions.contains(pixels.componentType) {
+                throw OperationOutputValidationError.operationOutputStoragePrecisionUnsupported(
+                    reference,
+                    pixels.componentType
+                )
+            }
+            if !implementationOutputPrecisions.isEmpty,
+               !implementationOutputPrecisions.contains(pixels.componentType) {
+                throw OperationOutputValidationError.implementationOutputStoragePrecisionUnsupported(
+                    reference,
+                    pixels.componentType
+                )
+            }
+
+            if let numericalContract = operation.numericalContract {
+                switch numericalContract.outputRange {
+                case .preserve:
+                    break
+                case let .clip(minimum, maximum), let .normalize(minimum, maximum):
+                    for channel in pixels.channels {
+                        guard let valueRange = channel.valueRange else {
+                            throw OperationOutputValidationError.outputChannelValueRangeMissing(
+                                reference,
+                                channel.identifier
+                            )
+                        }
+                        guard valueRange.isContained(in: minimum, maximum) else {
+                            throw OperationOutputValidationError.outputChannelValueRangeOutsideContract(
+                                reference,
+                                channel.identifier
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if operationPixelDomain != nil || !outputStoragePrecisions.isEmpty {
+            guard containsPixelOutput else {
+                throw OperationOutputValidationError.pixelOutputLayerRequired
+            }
+        }
     }
 
     public func validateParameters() throws {
@@ -438,6 +664,10 @@ public protocol ImageOperation: Sendable {
 
     /// Describes output and temporary resource sizes for this exact operation/input pair.
     func resourcePlan(for input: Input) throws -> OperationResourcePlan
+
+    /// Operation-owned, typed postcondition for the actual returned value.
+    /// The runtime invokes this after generic output descriptor checks.
+    func validateOutput(_ output: Output, for input: Input) throws
 }
 
 public extension ImageOperation {
@@ -447,4 +677,6 @@ public extension ImageOperation {
     func resourcePlan(for input: Input) throws -> OperationResourcePlan {
         .empty
     }
+
+    func validateOutput(_ output: Output, for input: Input) throws {}
 }

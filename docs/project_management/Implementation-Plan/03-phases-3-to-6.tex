@@ -130,7 +130,7 @@
   \item A first pipeline planner that considers operation adjacency, provider transitions, data residency, conversion requirements, and complete estimated cost.
   \item Explicit handling of managed runtimes whose internal scheduling is opaque; the outer runtime treats them as one implementation candidate unless reliable partition/resource facts are exposed.
   \item Cancellation, error propagation, device-loss handling, and resource cleanup.
-  \item New-image result creation and transactional replacement: output is validated before publishing a new image revision.
+  \item New-image result creation and transactional replacement: output descriptors and typed operation postconditions are validated before publishing a new image revision.
   \item Diagnostics recording operation/implementation/provider/device, environment snapshot, candidate ranking, transfers, conversions, fallback, and execution outcome.
 \end{enumerate}
 

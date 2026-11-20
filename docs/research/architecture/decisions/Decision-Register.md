@@ -993,6 +993,41 @@ Qualification no longer labels an output/temporary resource path eligible merely
 
 ---
 
+## ADR-033 — Returned image values expose produced layers and typed postconditions
+
+**Status:** Dispatch-boundary descriptor validation and typed operation postconditions implemented; resource binding/publication pending
+
+### Decision
+
+An operation that declares image output semantics returns an `ImageOperationOutputValue`. The value exposes an `ImageOperationOutputDescriptor` composed of the immutable output `ImageDocumentSnapshot` and explicit `LayerReference` values identifying the layers this operation produced or replaced. The document may contain unrelated preserved layers; those are not interpreted as operation output.
+
+Before returning a dispatched result, the runtime validates that every produced-layer reference belongs to the output document and resolves uniquely. Each produced layer kind must satisfy the operation's `producedOutputKinds` and the selected implementation's `layerSupport.outputKinds`. Pixel-bearing produced layers must satisfy both the operation and implementation output `PixelRepresentationDomain` and output storage precision contracts. Where the numerical output-range contract is `clip` or `normalize`, declared channel value ranges must be present and contained in the required interval.
+
+After generic descriptor checks, the runtime invokes the exact typed operation's `validateOutput(output, for: input)` method. This method belongs to operation semantics and may enforce input-dependent postconditions such as dimension relationships that cannot be expressed as a static format domain. The default implementation is a no-op for operations with no additional typed postconditions.
+
+### Invariants
+
+- An operation declaring image output kinds, output pixel representation, or output storage precision must return an `ImageOperationOutputValue`.
+- The output descriptor identifies produced/replaced layers explicitly; preserved layers are not treated as produced output.
+- Produced output layer kinds, pixel representation, and output storage precision must be supported by both the operation and selected implementation.
+- Clip/normalize output-range metadata must be known and contained in the declared range.
+- Typed operation postconditions run against the exact input and output values captured by dispatch.
+- Output validation failure is an execution failure; the result must not be published.
+- Descriptor validation does not prove the output's underlying resource handles are bound, resident, synchronized, or retained correctly.
+
+### Consequence
+
+Output contracts are no longer only static declarations. The runtime checks the actual returned logical descriptors at the dispatch boundary, while operation-specific input/output relationships remain owned by the typed operation rather than backend-specific validation code.
+
+### Deferred
+
+- Mapping allocated resource-plan roles to concrete layer storage bindings in the returned value.
+- Verifying actual storage bindings, capacity, alignment, residency, import, and synchronization against the descriptor and execution context.
+- Coordinator-owned transactional Image publication and old-resource release.
+- Numerical pixel-content conformance beyond descriptor metadata, covered by implementation/reference algorithm conformance tests.
+
+---
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.

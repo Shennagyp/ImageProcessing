@@ -38,6 +38,7 @@ public enum OperationImplementationRegistryError: Error, Equatable, Sendable {
     case typedDispatchMismatch(OperationImplementationKey)
     case registrationChanged(OperationImplementationKey)
     case candidateContextTargetMismatch(expected: ExecutionTargetReference, actual: ExecutionTargetReference)
+    case outputValidationFailed(String)
 }
 
 private struct AnyRegisteredOperationImplementation: Sendable {
@@ -264,6 +265,17 @@ public actor OperationImplementationRegistry {
             throw OperationImplementationRegistryError.outputTypeMismatch(
                 expected: specification.outputType,
                 actual: output.valueTypeIdentifier
+            )
+        }
+        do {
+            try step.validateOutput(
+                output,
+                for: input,
+                implementation: specification
+            )
+        } catch {
+            throw OperationImplementationRegistryError.outputValidationFailed(
+                String(describing: error)
             )
         }
         return output
