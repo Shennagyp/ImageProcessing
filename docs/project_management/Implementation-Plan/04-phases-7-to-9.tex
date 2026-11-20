@@ -1,65 +1,92 @@
-\phase{7 --- Apple execution and algorithm implementations}
+\phase{7 --- Independent implementation packs and reference application}
 
-\textbf{Objective.} Deliver a production-quality Apple path without changing the public image-processing contract.
+\textbf{Objective.} Prove that the core is genuinely implementation-independent by supplying provider and operation implementations from separate packages and consuming them from an application.
 
-\deliverables
-\begin{enumerate}
-  \item CPU acceleration adapters using Accelerate/vImage where they satisfy the operation contract.
-  \item Core Image adapters for appropriate image operations, with explicit handling of its context, color management, deferred evaluation, and materialization boundaries.
-  \item A native Metal provider implementing \GEP{} on supported Apple devices.
-  \item Metal operation implementations for the initial operation set where a native kernel offers a measured advantage or an essential capability.
-  \item Safe interoperation among CPU memory, Core Image representations, and Metal resources where documented and supported; otherwise use explicit copy/materialization adapters.
-  \item Headless command-line build/test scripts. The workflow must not require an Xcode project or the Xcode IDE; native Metal compilation still requires a compatible Apple SDK/toolchain and must be validated on the actual target environment.
-\end{enumerate}
+This is an integration phase for the first supported reference combination, not a vendor roadmap. The provider and operation packages remain independently buildable and independently versioned. Other packs may be developed in parallel or later according to target requirements.
 
-\exitcriteria
+\subsection{Package families}
+
+\textbf{Execution-provider packs} implement \GEP{} and own provider/device/resource lifecycle:
 \begin{itemize}
-  \item CPU and Apple implementations pass the same operation conformance tests.
-  \item Resource lifetimes and synchronization are verified under repeated asynchronous execution.
-  \item No unintended CPU/GPU round trip is present in a same-device sequence, as demonstrated by instrumentation.
-  \item Core Image's deferred results are not reported as materialized outputs before the public completion contract is met.
-  \item The public operation and image APIs do not expose Core Image or Metal types.
+  \item CPU execution provider;
+  \item Metal provider for supported Apple systems;
+  \item CUDA provider for supported NVIDIA systems;
+  \item OpenCL provider where required hardware/runtime coverage justifies it;
+  \item Direct3D 12 provider for supported Windows targets;
+  \item Vulkan provider only when a concrete portability/support requirement justifies its maintenance cost.
 \end{itemize}
 
-\phase{8 --- OpenCV and C/C++ interoperability adapters}
+\textbf{Operation-implementation packs} implement \IPP{} operation contracts. Examples include \texttt{CPUGaussianBlur}, \texttt{CUDAGaussianBlur}, and \texttt{MetalGaussianBlur}; resize, color correction, and blending can have their own independently available implementation classes. Accelerate/vImage, Core Image, and OpenCV can supply algorithm adapters when their actual behavior satisfies the relevant operation specification. ONNX Runtime and Core ML are higher-level model-runtime adapters, not automatically low-level execution providers.
 
-\textbf{Objective.} Reuse OpenCV's mature algorithms without making OpenCV the library's semantic or storage model.
+An operation pack may depend on a provider pack, a higher-level library, or a managed runtime. A provider pack does not promise any particular set of image operations. The core protocol and runtime must not import these implementation packages.
 
-\deliverables
+\subsection{Reference integration deliverables}
+
 \begin{enumerate}
-  \item A narrow interop boundary for calling C++ implementations from the public library (a C ABI or an appropriate platform bridge, chosen after validating supported toolchains).
-  \item Explicit adapters for wrapping/copying image memory, including lifetime, stride, alignment, ownership, and mutability.
-  \item OpenCV CPU operation implementations registered as \IPP{} candidates only when their semantics match the operation contract.
-  \item Optional OpenCV CUDA/OpenCL adapters treated as algorithm implementations, not as replacements for the general provider protocols.
-  \item Diagnostics that disclose when an adapter copies, converts, or changes residency.
+  \item A separate reference CPU provider package implementing \GEP{}; it is not part of the core runtime dependency.
+  \item At least two independent implementation classes for one operation, registered under the same operation identity and semantic version. A deterministic test implementation may be used to prove dispatch before a second real hardware backend is available.
+  \item At least one numerical reference implementation for the initial operation suite and a reusable conformance harness.
+  \item A sample consumer application that imports the core protocols/runtime and explicitly selects/registers provider and operation packages.
+  \item Demonstration that adding or removing an implementation package changes candidate availability without modifying core source or operation definitions.
+  \item Package metadata and compatibility checks for operation semantic version, implementation version, and provider requirements.
+  \item Separate provider and operation conformance suites with real-device tests for any claimed hardware backend.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
-  \item No C++ type such as \texttt{cv::Mat}, \texttt{cv::UMat}, or \texttt{cv::cuda::GpuMat} leaks into the public semantic API.
-  \item External buffer lifetime and ownership are tested, including asynchronous use.
-  \item OpenCV implementations pass the same operation conformance suite; unsupported semantic modes are rejected.
-  \item Tests demonstrate whether the chosen adapter path shares storage or performs a copy.
+  \item The sample application runs one operation using the runtime's normal resolution path.
+  \item Multiple implementations of that operation are registered simultaneously and evaluated by the common resolver.
+  \item The same operation value can execute through different compatible implementations without caller-side backend branching.
+  \item Every registered real implementation passes the same operation conformance suite for its declared support subset.
+  \item The core package dependency graph contains no concrete implementation package.
+  \item Unsupported combinations are rejected with structured diagnostics rather than stubbed or silently approximated.
 \end{itemize}
 
-\phase{9 --- CUDA and OpenCL native providers}
+\textbf{Workstream rule.} CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, and Accelerate are not sequential core phases. Select them based on supported platforms, application workloads, hardware access, maintenance cost, and conformance evidence.
 
-\textbf{Objective.} Add direct implementations of the general execution contract for NVIDIA CUDA and OpenCL, then register operation kernels independently.
+\phase{8 --- Measured optimization}
+
+\textbf{Objective.} Improve complete workloads only after correct resolution, execution, and resource accounting exist.
 
 \deliverables
 \begin{enumerate}
-  \item CUDA provider: device discovery, contexts/streams as applicable, resource allocation/import, submission, events/completion, and safe release.
-  \item OpenCL provider: platform/device discovery, contexts, queues, memory objects, event dependencies, and safe release.
-  \item Native operation implementations for a subset selected by benchmark evidence.
-  \item Interop contracts for OpenCV CUDA/OpenCL adapters only where real sharing and synchronization guarantees exist.
-  \item CI/test plans using actual supported NVIDIA and OpenCL hardware; mock-only qualification is insufficient.
+  \item Benchmarks for operation compute time, queue delay, allocation, conversion, transfer, synchronization, materialization, and end-to-end pipeline latency.
+  \item Cost-model calibration per implementation/device/input-size class, with confidence and sample freshness.
+  \item Residency-aware segment planning that avoids unnecessary host/device transitions.
+  \item Bounded resource pooling/cache policy with safe eviction and synchronization.
+  \item Batching or operation fusion only where numerical and layer semantics remain conformant.
+  \item Measurement of memory pressure, throughput, tail latency, energy/power where available, and routing stability under concurrent workloads.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
-  \item Both providers pass the generic \GEP{} conformance suite.
-  \item Every registered operation implementation passes the \IPP{} operation suite.
-  \item Provider switching preserves output semantics and reports transfers/conversions accurately.
-  \item Device loss, allocation failure, cancellation, and synchronization errors do not corrupt image state.
-  \item CPU fallback occurs only when it is qualified and allowed by request constraints.
+  \item Optimizations demonstrate measured end-to-end benefit on named workloads.
+  \item The resolver does not treat stale/unknown telemetry as certain measurements.
+  \item No optimization changes operation semantics or violates required precision.
+  \item Memory use is bounded and resource lifetime remains correct under cancellation/failure.
+  \item Performance decisions are observable and reproducible from recorded configuration, device, and environment information.
+\end{itemize}
+
+\phase{9 --- Production readiness}
+
+\textbf{Objective.} Make the protocols, runtime, and independently versioned implementation ecosystem dependable for consumer applications.
+
+\deliverables
+\begin{enumerate}
+  \item Versioned package distribution and compatibility policy for \IPP{}, \GEP{}, \IPR{}, provider packs, and operation-implementation packs.
+  \item Documented platform/provider/device/operation/implementation support matrix based on actual CI and hardware evidence.
+  \item Stable diagnostics for configuration conflicts, unsatisfied requirements, unavailable providers, stale state, failed reservations, and execution failures.
+  \item API documentation, examples, migration policy, and application integration guide.
+  \item Security/safety review of external package loading and provider/runtime dependencies before enabling dynamic loading.
+  \item Clean consumer-project build and run instructions using supported command-line toolchains.
+  \item Release checklist, semantic-version policy, deprecation policy, and reproducible benchmark/test records.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item A clean consumer application can install selected packages, register them, build, and run with documented commands.
+  \item Advertised implementation support is limited to combinations passing conformance and relevant real-device tests.
+  \item Package version incompatibility and missing provider dependencies fail clearly.
+  \item No undocumented backend dependency or platform-specific branch has leaked into the core public API.
+  \item The release record contains build/test evidence, tested hardware, supported precision/format modes, known limitations, and benchmark methodology.
 \end{itemize}
