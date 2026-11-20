@@ -609,7 +609,7 @@ These contracts are intentionally capability-based. A provider may support alloc
 
 \textbf{Context capabilities.} Each \texttt{ExecutionContext} exposes its own generic \texttt{ExecutionCapabilities} in addition to the provider/device descriptors. Standard capability identifiers cover buffer/texture resources, allocation/import, work submission/dependencies, synchronization, and peer-resource transfer. The \texttt{ExecutionCapabilityScope} can target provider, device, provider-or-device, or the created context. Context capability reports are the exact execution target's facts; they may be narrower than the device's static capabilities.
 
-A context MUST report a standard capability only when it actually supports the corresponding optional context protocol and operation. The optional protocol conformance is the executable proof; the capability descriptor is the declarative fact used by implementation qualification. A context that does not expose capability reporting receives an empty descriptor by default, so it cannot accidentally satisfy a required context capability.
+A context MUST report a standard capability only when it actually supports the corresponding optional context protocol and operation. The optional protocol conformance is the executable proof; the capability descriptor is the declarative fact used by implementation qualification. A context that does not expose capability reporting receives an empty descriptor by default, so it cannot accidentally satisfy a required context capability. Standard identifiers are namespaced under the generic execution capability vocabulary, so implementation packages do not invent incompatible strings for common requirements. The descriptor may also include provider-defined capability identifiers for features not standardized by \GEP{}.
 
 The resolver first evaluates provider/device requirements against the environment snapshot. When a concrete candidate context is prepared, it evaluates any context-scoped requirements against that context's capability descriptor and verifies the required optional protocol conformance before submitting work. A context-level mismatch rejects that binding before the operation executes; the runtime may then consider another eligible candidate within the original hard constraints.
 
@@ -708,7 +708,7 @@ The caller configures a function/pipeline declaratively. The runtime invokes one
 
 Conceptually:
 \[
-  R(o, x, s_o, s_i, e, p) \longrightarrow
+  R(o, x, s_o, s_i, e, k, p) \longrightarrow
   \text{ranked candidate evaluations and an execution choice},
 \]
 where:
@@ -718,13 +718,15 @@ where:
   \item $s_o$ is the operation specification and its semantic requirements;
   \item $s_i$ is a candidate implementation specification;
   \item $e$ is the execution-environment snapshot, including provider/device capabilities and current state observations;
+  \item $k$ is the candidate-specific execution-context capability descriptor, obtained when the candidate context is prepared;
   \item $p$ is the immutable qualification policy attached to the function/pipeline.
 \end{itemize}
 
 The public architecture has one resolution entry point. Internally, it must preserve two logically distinct stages:
 \begin{enumerate}
-  \item \textbf{Eligibility:} determine whether a candidate can satisfy every hard semantic, numerical, input/output, provider, and resource requirement.
-  \item \textbf{Ranking:} compare only eligible candidates using the applicable preferences, current state, and estimated complete execution cost.
+  \item \textbf{Static eligibility:} reject candidates that fail operation semantics, implementation support, input/output, precision, provider/device, or hard-policy requirements using the environment snapshot.
+  \item \textbf{Context validation:} prepare a candidate context for remaining bindings, then check context-scoped capability requirements and the corresponding optional protocol conformance before any operation work is submitted.
+  \item \textbf{Ranking:} compare only fully eligible candidates using preferences, current state, and estimated complete execution cost.
 \end{enumerate}
 This distinction is not an invitation for each backend to implement its own qualifier and selector. It is an internal structure of one shared, data-driven resolver. A score can never make an ineligible candidate eligible.
 
@@ -736,7 +738,7 @@ This distinction is not an invitation for each backend to implement its own qual
 \midrule
 Operation specification & \texttt{ImageProcessing\allowbreak Protocol} & Semantic meaning, valid parameters/inputs, required guarantees, and permitted implementation variation. \\
 Implementation specification & Concrete operation implementation package & Static, tested support for the operation, provider requirements, precision behavior, modes, limits, and resource characteristics. \\
-Execution environment & \texttt{GeneralExecution\allowbreak Protocol} providers plus runtime observations & Actual platform, loaded providers, discovered devices, hardware capabilities, resource availability, residency, queue pressure, and state freshness. \\
+Execution environment & \texttt{GeneralExecution\allowbreak Protocol} providers plus runtime observations & Actual platform, loaded providers, discovered devices, provider/device capabilities, resource availability, residency, queue pressure, state freshness, and prepared candidate-context capabilities. \\
 Pipeline policy & Immutable policy attached through the functional API & Caller requirements and optimization preferences, globally or scoped to an operation/step. \\
 \bottomrule
 \end{longtable}
@@ -801,6 +803,8 @@ The resolver must consider more than whether a GPU exists. It evaluates:
 
 A busy GPU is not automatically semantically unqualified. It may remain an eligible candidate with a worse cost estimate. If the pipeline prioritizes latency and an eligible CPU route is predicted to finish sooner, the resolver can select CPU. If the pipeline requires CUDA, the CPU route is ineligible regardless of its speed. If the GPU is unavailable, lost, or cannot satisfy a mandatory resource requirement, the candidate is temporarily unavailable or rejected with a structured reason.
 
+\textbf{Context-level requirements.} Provider/device capabilities are not sufficient when an operation implementation requires a context interface such as resource allocation, work submission, dependency handling, or explicit synchronization. The runtime prepares a candidate context only after static provider/device checks pass, then verifies the context-scoped capability constraints against \texttt{context.capabilities} and verifies that the corresponding optional context protocols are actually implemented. This is part of the common resolver's eligibility process, not a backend-specific qualifier. If context creation or capability verification fails, the candidate is rejected with a structured reason before any operation work is submitted.
+
 The runtime must not infer that a GPU is idle because no global utilization metric is available. It uses the best reliable observations: its own queue/outstanding-work accounting, provider-reported state, available memory, measured latency, and telemetry freshness. Every dynamic observation SHOULD include an observation timestamp and, where practical, a confidence or source quality.
 
 \subsection{Conflict prevention and policy composition}
@@ -833,6 +837,7 @@ For each eligible candidate, the resolver estimates complete cost rather than co
   C_{\mathrm{transfer}} +
   C_{\mathrm{conversion}} +
   C_{\mathrm{allocation}} +
+  C_{\mathrm{context}} +
   C_{\mathrm{compute}} +
   C_{\mathrm{synchronization}} +
   C_{\mathrm{materialization}}.
