@@ -17,7 +17,17 @@ private struct PrecisionAwareOperation: ImageOperation {
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "policy.precision-aware")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
-        qualificationDimensions: [.inputStoragePrecision, .computationPrecision, .accumulationPrecision, .outputPrecision, .deterministicResults]
+        precisionContract: OperationPrecisionContract(
+            inputStorage: [.uint8, .uint16, .float16, .float32],
+            computation: [.float16, .float32, .float64],
+            accumulation: [.float32, .float64],
+            outputStorage: [.uint8, .uint16, .float16, .float32]
+        ),
+        numericalContract: OperationNumericalContract(
+            rounding: .nearestEven,
+            overflow: .saturate,
+            determinism: .implementationSelectable
+        )
     )
 }
 
@@ -38,7 +48,13 @@ private struct ComputationOnlyOperation: ImageOperation {
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "policy.computation-only")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
-        qualificationDimensions: [.computationPrecision]
+        precisionContract: OperationPrecisionContract(
+            computation: [.float32]
+        ),
+        numericalContract: OperationNumericalContract(
+            rounding: .nearestEven,
+            overflow: .saturate
+        )
     )
 }
 
