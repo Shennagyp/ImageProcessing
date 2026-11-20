@@ -29,6 +29,11 @@ public protocol OperationValue: Sendable {
     static var typeIdentifier: OperationValueIdentifier { get }
 }
 
+public enum OperationQualificationDimension: String, Hashable, Sendable {
+    /// The operation has a meaningful numerical precision contract.
+    case precision
+}
+
 /// A typed operation specification. Input/output identifiers are derived from
 /// the associated Swift types and therefore cannot drift from the public type contract.
 public struct OperationSpecification<Input: OperationValue, Output: OperationValue>: Hashable, Sendable {
@@ -36,15 +41,18 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
     public let semanticVersion: SemanticVersion
     public let inputType: OperationValueIdentifier
     public let outputType: OperationValueIdentifier
+    public let qualificationDimensions: Set<OperationQualificationDimension>
 
     public init(
         identifier: OperationIdentifier,
-        semanticVersion: SemanticVersion
+        semanticVersion: SemanticVersion,
+        qualificationDimensions: Set<OperationQualificationDimension> = []
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = Input.typeIdentifier
         self.outputType = Output.typeIdentifier
+        self.qualificationDimensions = qualificationDimensions
     }
 
     public var erased: AnyOperationSpecification {
@@ -52,7 +60,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             identifier: identifier,
             semanticVersion: semanticVersion,
             inputType: inputType,
-            outputType: outputType
+            outputType: outputType,
+            qualificationDimensions: qualificationDimensions
         )
     }
 }
@@ -63,17 +72,20 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let semanticVersion: SemanticVersion
     public let inputType: OperationValueIdentifier
     public let outputType: OperationValueIdentifier
+    public let qualificationDimensions: Set<OperationQualificationDimension>
 
     public init(
         identifier: OperationIdentifier,
         semanticVersion: SemanticVersion,
         inputType: OperationValueIdentifier,
-        outputType: OperationValueIdentifier
+        outputType: OperationValueIdentifier,
+        qualificationDimensions: Set<OperationQualificationDimension> = []
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = inputType
         self.outputType = outputType
+        self.qualificationDimensions = qualificationDimensions
     }
 }
 
