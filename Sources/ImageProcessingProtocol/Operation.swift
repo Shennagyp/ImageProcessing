@@ -50,17 +50,20 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
     public let inputType: OperationValueIdentifier
     public let outputType: OperationValueIdentifier
     public let qualificationDimensions: Set<OperationQualificationDimension>
+    public let parameterSpecifications: [OperationParameterSpecification]
 
     public init(
         identifier: OperationIdentifier,
         semanticVersion: SemanticVersion,
-        qualificationDimensions: Set<OperationQualificationDimension> = []
+        qualificationDimensions: Set<OperationQualificationDimension> = [],
+        parameterSpecifications: [OperationParameterSpecification] = []
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = Input.typeIdentifier
         self.outputType = Output.typeIdentifier
         self.qualificationDimensions = qualificationDimensions
+        self.parameterSpecifications = parameterSpecifications
     }
 
     public var erased: AnyOperationSpecification {
@@ -69,7 +72,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             semanticVersion: semanticVersion,
             inputType: inputType,
             outputType: outputType,
-            qualificationDimensions: qualificationDimensions
+            qualificationDimensions: qualificationDimensions,
+            parameterSpecifications: parameterSpecifications
         )
     }
 }
@@ -81,19 +85,22 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let inputType: OperationValueIdentifier
     public let outputType: OperationValueIdentifier
     public let qualificationDimensions: Set<OperationQualificationDimension>
+    public let parameterSpecifications: [OperationParameterSpecification]
 
     public init(
         identifier: OperationIdentifier,
         semanticVersion: SemanticVersion,
         inputType: OperationValueIdentifier,
         outputType: OperationValueIdentifier,
-        qualificationDimensions: Set<OperationQualificationDimension> = []
+        qualificationDimensions: Set<OperationQualificationDimension> = [],
+        parameterSpecifications: [OperationParameterSpecification] = []
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = inputType
         self.outputType = outputType
         self.qualificationDimensions = qualificationDimensions
+        self.parameterSpecifications = parameterSpecifications
     }
 }
 
@@ -120,6 +127,7 @@ public struct AnyImageOperationStep: Sendable {
     public let sourceIdentifier: OperationStepIdentifier
     public let operation: any ImageOperation
     public let specification: AnyOperationSpecification
+    public let parameterValues: [OperationParameterValueRecord]
 
     public init<Operation: ImageOperation>(
         operation: Operation,
@@ -129,6 +137,7 @@ public struct AnyImageOperationStep: Sendable {
         self.sourceIdentifier = identifier
         self.operation = operation
         self.specification = Operation.specification.erased
+        self.parameterValues = operation.parameterValues
     }
 
     func reidentifiedForComposition() -> Self {
@@ -136,7 +145,8 @@ public struct AnyImageOperationStep: Sendable {
             identifier: .generate(),
             sourceIdentifier: sourceIdentifier,
             operation: operation,
-            specification: specification
+            specification: specification,
+            parameterValues: parameterValues
         )
     }
 
@@ -144,12 +154,21 @@ public struct AnyImageOperationStep: Sendable {
         identifier: OperationStepIdentifier,
         sourceIdentifier: OperationStepIdentifier,
         operation: any ImageOperation,
-        specification: AnyOperationSpecification
+        specification: AnyOperationSpecification,
+        parameterValues: [OperationParameterValueRecord]
     ) {
         self.identifier = identifier
         self.sourceIdentifier = sourceIdentifier
         self.operation = operation
         self.specification = specification
+        self.parameterValues = parameterValues
+    }
+
+    public func validateParameters() throws {
+        try OperationParameterValidation.validate(
+            specifications: specification.parameterSpecifications,
+            values: parameterValues
+        )
     }
 }
 
@@ -160,4 +179,9 @@ public protocol ImageOperation: Sendable {
     associatedtype Output: OperationValue
 
     static var specification: OperationSpecification<Input, Output> { get }
+    var parameterValues: [OperationParameterValueRecord] { get }
+}
+
+public extension ImageOperation {
+    var parameterValues: [OperationParameterValueRecord] { [] }
 }
