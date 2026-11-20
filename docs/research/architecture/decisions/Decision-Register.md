@@ -920,38 +920,38 @@ Qualification preserves reliable evidence for later ranking without coupling sem
 
 ---
 
-## ADR-031 — Output allocation requirements combine operation data with implementation support
+## ADR-031 — Invocation resource plans combine operation data with implementation support
 
-**Status:** Operation-derived output resource planning and candidate matching implemented; provider allocation and output validation pending
+**Status:** Operation-derived output/temporary resource planning and candidate matching implemented; provider allocation and output validation pending
 
 ### Decision
 
-ImageOperation may derive an OperationOutputResourcePlan from the exact typed input and immutable operation parameters for one invocation. The plan identifies unique output resource slots and their data-derived minimum byte capacity and required alignment. Its default is empty for operations that do not require runtime-allocated generic output resources.
+ImageOperation may derive an OperationResourcePlan from the exact typed input and immutable operation parameters for one invocation. The plan identifies unique output and temporary resource roles and their data-derived minimum byte capacity and required alignment. Its default is empty for operations that do not require runtime-allocated generic output or temporary resources.
 
-ImplementationSpecification remains the owner of implementation-specific constraints for each output slot: generic resource kind, allowed memory domains, minimum capacity/alignment, access mode, and provider requirements. The common resolver requires a one-to-one match between operation-planned output slots and the implementation's declared output resource roles. It combines the operation's data-derived capacity/alignment with the implementation's lower bounds using the maximum of each; kind, allowed domains, and access come from the implementation. A candidate with a missing or undeclared slot is rejected before context preparation.
+ImplementationSpecification remains the owner of implementation-specific constraints for each output and temporary role: generic resource kind, allowed memory domains, minimum capacity/alignment, access mode, and provider requirements. The common resolver requires a one-to-one match between operation-planned resource roles and implementation-declared output/temporary roles. It combines the operation's data-derived capacity/alignment with the implementation's lower bounds using the maximum of each; kind, allowed domains, and access come from the implementation. A candidate with a missing or undeclared slot is rejected before context preparation.
 
 This is an operation-semantic planning seam, not a custom implementation qualification hook. It does not select a provider memory domain, allocate a physical resource, or assert current memory availability.
 
 ### Invariants
 
-- The operation derives invocation-specific output capacity/alignment from its exact typed input and parameters; the runtime does not guess output size from input byte count.
+- The operation derives invocation-specific output and temporary capacity/alignment from its exact typed input and parameters; the runtime does not guess resource size from input byte count.
 - The implementation declares the concrete resource kind, admissible memory domains, minimum bounds, and access contract.
-- Every planned output slot matches exactly one implementation output resource role.
-- An implementation output role without an operation-derived size plan is not considered executable.
-- An operation output slot not declared by an implementation rejects that implementation.
-- Qualified output requirements are not memory reservations and do not prove allocation or residency.
-- Resource imports apply to bound inputs; output and temporary resources are allocated in the selected execution context.
+- Every planned output or temporary role matches exactly one implementation resource role.
+- An implementation output/temporary role without an operation-derived size plan is not considered executable.
+- An operation resource role not declared by an implementation rejects that implementation.
+- Qualified resource requirements are not memory reservations and do not prove allocation or residency.
+- Resource import/remapping follows the implementation's explicit resource-role contract and the prepared context's import capability; the plan does not impose an additional role restriction.
 
 ### Consequence
 
-The resolver can produce a candidate-bound, data-derived output allocation requirement without embedding provider or algorithm-specific branches. A later coordinator can translate this into provider allocation requests, validate returned generic resource descriptors, and retain handles through submission/completion.
+The resolver can produce candidate-bound, data-derived output and temporary allocation requirements without embedding provider or algorithm-specific branches. A later coordinator can translate this into provider allocation requests, validate returned generic resource descriptors, and retain handles through submission/completion.
 
 ### Deferred
 
 - Provider-backed allocation and actual returned-resource validation (target, kind, capacity, alignment, memory domain).
 - Selection among allowed memory domains and capability verification for resource kind/domain.
 - Output resource binding into the typed output value and validation of output descriptors/postconditions.
-- Temporary resource sizing and lifecycle.
+- Temporary resource lifecycle and cleanup after their sizes/alignment are represented by the operation-derived plan.
 - Residency transitions, imported-input remapping, and provider allocation failure/re-resolution behavior.
 - Quality-aware ranking and complete cost estimation.
 
