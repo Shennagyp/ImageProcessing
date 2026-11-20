@@ -528,6 +528,39 @@ The origin must be finite and lie within the corresponding subsampling cell. Thi
 A YCbCr descriptor cannot silently treat all 4:2:0 or 4:2:2 layouts as having the same chroma-centre convention. Conversion and resampling operations receive enough information to implement the declared sampling geometry.
 
 ---
+---
+
+## ADR-020 — Pixel plane storage is bound explicitly to generic execution resources
+
+**Status:** Baseline for the initial storage-binding model
+
+### Decision
+
+Keep PixelDataDescriptor as the semantic/layout description and PixelStorageBinding as the association to existing generic execution allocations.
+
+PixelStorageBinding maps each descriptor plane exactly once to a generic ExecutionResource. A binding record may assign several planes to one shared allocation, or a plane may have its own independent resource. Plane byte offsets are relative to the resource assigned to that plane. Per-plane required byte capacities are computed independently; a shared resource must satisfy the maximum required end offset among its assigned planes.
+
+The binding retains every resource handle for its lifetime and exposes ExecutionResourceAccess declarations for downstream work submissions. It does not allocate/import resources, perform transfers, synchronize, or select an execution provider.
+
+### Invariants
+
+- Every plane has exactly one resource assignment.
+- Every resource assignment must meet the byte capacity required by all planes assigned to it.
+- A repeated logical resource handle is represented by one binding group, not split across groups.
+- One resource may contain multiple planes at descriptor-relative byte offsets; separate resources may each begin their plane at byte offset zero.
+- Resource lifetime is retained by the binding and later by each submitted work item that accesses it.
+- Pixel descriptor semantics remain in ImageProcessingProtocol; allocation ownership and execution remain in GeneralExecutionProtocol.
+
+### Consequence
+
+Logical pixel layout can be independent of its physical storage topology. Providers can expose one contiguous allocation, separate plane allocations, or imported resources without changing color/channel semantics.
+
+### Deferred
+
+- Binding a complete set of layer resources to a specific ImageIdentifier/ImageRevision.
+- Resource replacement, copy-on-write, and lifetime across derived/replaced image revisions.
+- Transfer/import orchestration when a selected implementation requires another resource domain or execution target.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
