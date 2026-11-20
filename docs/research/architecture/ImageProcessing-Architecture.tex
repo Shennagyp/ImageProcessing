@@ -813,7 +813,7 @@ The public architecture has one resolution entry point. Internally, it must pres
   \item \textbf{Context validation:} prepare a candidate context for remaining bindings, then check context-scoped capability requirements and the corresponding optional protocol conformance before any operation work is submitted.
   \item \textbf{Ranking:} compare only fully eligible candidates using preferences, current state, and estimated complete execution cost.
 \end{enumerate}
-This distinction is not an invitation for each backend to implement its own qualifier and selector. It is an internal structure of one shared, data-driven resolver. A score can never make an ineligible candidate eligible.
+This distinction is not an invitation for each backend to implement its own qualifier and selector. It is an internal structure of one shared, data-driven resolver. A score can never make an ineligible candidate eligible. Qualification establishes resource-kind and memory-domain support and produces data-derived allocation requirements; it MUST NOT physically allocate output/temporary resources for every candidate before ranking. After ranking selects a candidate and memory-domain option, the Phase 6 coordinator acquires the required resources, validates the returned descriptors, reserves access, and submits work. An allocation or reservation failure causes safe re-resolution/fallback within the original hard constraints or a structured failure; it does not weaken qualification requirements.
 
 \subsection{The four complementary inputs}
 

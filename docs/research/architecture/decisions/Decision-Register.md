@@ -977,6 +977,7 @@ A qualified output allocation requirement retains both its implementation-allowe
 - Missing resource-kind or memory-domain evidence cannot be treated as support.
 - Available-memory telemetry is not a resource capability and is not a capacity reservation.
 - Output/temporary feasibility is checked after context preparation; physical allocation remains in the execution lifecycle.
+- Qualification records resource support and requirements only; it never allocates physical resources for every candidate before ranking. The selected candidate/domain is allocated by the Phase 6 coordinator, which may safely re-resolve after allocation/reservation failure without relaxing hard constraints.
 
 ### Consequence
 
