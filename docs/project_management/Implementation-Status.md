@@ -26,7 +26,10 @@ This file records actual repository state. The architecture and implementation p
 - Actor-backed ExecutionProviderRegistry independently stores selected provider packages by provider identifier and rejects duplicate registrations.
 - Provider discovery assembles an ExecutionEnvironmentSnapshot from provider/device descriptors and state observations. Partial failures are retained alongside the snapshot; failed observations are represented as unknown rather than available or zero load.
 - Provider/device ownership violations and duplicate device identifiers are reported as structured provider contract failures; a provider with no discovered devices remains valid for opaque managed execution.
-- The registry does not track runtime-owned outstanding work, prepare contexts, qualify operation candidates, rank providers, or execute functions.
+- RuntimeWorkLedger tracks per-target reserved and submitted work leases. A submitted lease remains active until provider completion is observed; a cancellation request alone does not release it.
+- RuntimeEnvironmentSnapshotCoordinator composes provider discovery with runtime-owned workload state into uniquely identified snapshots with monotonically increasing generations.
+- Provider-reported queue/load observations remain separate from runtime-owned reserved/submitted counts.
+- The runtime does not yet track resource reservation details, prepare candidate contexts, qualify operation candidates, rank providers, or execute functions.
 
 ### GeneralExecutionProtocol foundation
 
@@ -91,14 +94,14 @@ Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 171 tests across 13 Swift test files, plus one shared provider-conformance support file. Coverage includes generic resource lifecycle and provider conformance, structured provider failures, typed function composition, operation/implementation support compatibility, numerical/effect/pixel contracts, qualification-policy validation, revision-scoped layer bindings, and mutable Image concurrency. GitHub Actions passed swift build and all 108 tests across 15 suites on ubuntu-24.04 at source commit f036e11bc6253708d9c12d5d74e60760a94f1649. The corresponding macOS job had not completed at that source revision. The current 161-test suite adds parameter-domain, operation semantic-contract, implementation support, numerical conformance, pixel-representation, and resource/capability validation tests. The 153-test predecessor compiled but exposed three test-fixture mismatches; those fixtures and subsequent edge cases have been corrected. The current 171-test revision, including the provider conformance harness and structured failure tests, is awaiting CI. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 194 tests across 16 Swift test files, plus one shared provider-conformance support file. Coverage includes generic resource lifecycle and provider conformance, structured provider failures, typed operation implementation registration, provider discovery/partial failure handling, runtime work lease transitions, identity-bearing environment snapshots, operation/implementation support compatibility, numerical/effect/pixel contracts, qualification-policy validation, image storage bindings, and mutable Image concurrency. GitHub Actions passed swift build and all 108 tests across 15 suites on ubuntu-24.04 at source commit f036e11bc6253708d9c12d5d74e60760a94f1649. The corresponding macOS job had not completed at that source revision. The current 161-test suite adds parameter-domain, operation semantic-contract, implementation support, numerical conformance, pixel-representation, and resource/capability validation tests. The 153-test predecessor compiled but exposed three test-fixture mismatches; those fixtures and subsequent edge cases have been corrected. The current 194-test revision, including both runtime registries and snapshot/workload accounting, is awaiting CI. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
 - Non-affine spatial deformation fields and calibrated world-coordinate transform model.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
-- Common environment-aware resolver and end-to-end cost ranking.
+- Runtime-owned resource reservation/revalidation, context preparation, common environment-aware resolver, and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
 - CPU provider and numerical reference image operations.
 - Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, Accelerate, or model-runtime implementation packs.
@@ -111,12 +114,12 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 1 — Operation/implementation contracts | In progress | Typed operation schemas, parameter validation, precision/numerical/effect/layer/pixel semantics, implementation support subsets, static resource requirements, and compatibility validation are implemented. Qualification result vocabulary and representative multi-implementation operation examples remain. |
 | 2 — GeneralExecutionProtocol | In progress | Generic resource/work lifecycle contracts, structured provider failure categories/recovery guidance, and a reusable test-only conformance harness are implemented and exercised against an in-memory provider; a production provider and hardware conformance remain. |
 | 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, validated QualificationPolicy, and static operation/implementation conformance contracts are implemented; end-to-end image function execution remains. |
-| 4 — Environment discovery and registries | In progress | Operation and provider registries plus partial provider/device environment discovery are implemented and tested; runtime-owned work accounting, snapshot identity/freshness policy, context preparation, and operation/provider binding qualification remain. |
+| 4 — Environment discovery and registries | In progress | Operation/provider registries, partial provider/device discovery, structured discovery failures, per-target reserved/submitted work accounting, and identity-bearing snapshot generations are implemented; resource reservation, provider/context binding qualification, and freshness policy remain. |
 | 5–9 | Not started | Depend on provider discovery, resolver, planning, and execution coordination. |
 
 ## Next implementation order
 
-1. Add runtime-owned outstanding-work/resource accounting and define immutable environment snapshot identity/freshness semantics without changing the provider-reported observation meaning.
+1. Define snapshot refresh/freshness policy and add runtime-owned resource reservation/revalidation alongside the existing reserved/submitted work ledger.
 2. Implement the common resolver: operation/implementation static eligibility first, provider/device binding and capability checks second, context preparation/validation third, then ranking of eligible candidates using fresh state and whole-path cost.
-3. Implement the execution planner and coordinator, including resource request construction, reservation/revalidation, synchronization, cancellation, structured failure recovery, and transactional result publication.
+3. Implement the execution planner and coordinator, including synchronization, cancellation, structured failure recovery, and transactional result publication.
 4. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice; only then add GPU and managed-runtime adapters.
