@@ -36,8 +36,8 @@ public enum ImageError: Error, Equatable, Sendable {
 /// Reads capture an immutable ImageStateSnapshot under a short lock. Processing
 /// must happen after that read returns, never while this lock is held. A
 /// replacement builds and validates its candidate state outside the lock, then
-/// publishes document plus resource bindings atomically using revision compare-
-and-swap. Old snapshots keep their resources alive until their own lifetimes end.
+/// publishes document plus resource bindings atomically using revision compare-and-swap.
+/// Old snapshots keep their resources alive until their own lifetimes end.
 public final class Image: @unchecked Sendable {
     public let identifier: ImageIdentifier
 
