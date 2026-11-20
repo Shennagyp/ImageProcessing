@@ -144,6 +144,32 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let numericalContract: OperationNumericalContract?
     public let effectContract: OperationEffectContract
 
+    public func validateContract() throws {
+        for dimension in qualificationDimensions {
+            switch dimension {
+            case .inputStoragePrecision, .computationPrecision,
+                 .accumulationPrecision, .outputPrecision:
+                guard precisionContract.qualificationDimensions.contains(dimension) else {
+                    throw OperationSpecificationValidationError.undeclaredPrecisionDomain(dimension)
+                }
+            case .deterministicResults:
+                guard numericalContract?.determinism == .implementationSelectable else {
+                    throw OperationSpecificationValidationError.deterministicDimensionRequiresSelectableContract
+                }
+            }
+        }
+
+        if let numericalContract, !numericalContract.isValid {
+            throw OperationSpecificationValidationError.invalidNumericalContract
+        }
+
+        do {
+            try OperationParameterValidation.validateSpecifications(parameterSpecifications)
+        } catch let error as OperationParameterValidationError {
+            throw OperationSpecificationValidationError.invalidParameterSchema(error)
+        }
+    }
+
     public init(
         identifier: OperationIdentifier,
         semanticVersion: SemanticVersion,
@@ -230,6 +256,7 @@ public struct AnyImageOperationStep: Sendable {
     }
 
     public func validateParameters() throws {
+        try specification.validateContract()
         try OperationParameterValidation.validate(
             specifications: specification.parameterSpecifications,
             values: parameterValues
