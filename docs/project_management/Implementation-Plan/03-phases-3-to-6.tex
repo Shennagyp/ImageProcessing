@@ -62,7 +62,8 @@
 \deliverables
 \begin{enumerate}
   \item One resolver entry point operating across all registered implementation classes; no mandatory custom qualification method on each implementation.
-  \item Eligibility evaluation over operation identity/version, validated parameters, input/output semantics, implementation support, required provider capabilities, and hard pipeline constraints.
+  \item Static eligibility evaluation over operation identity/version, validated parameters, input/output semantics, implementation support, provider/device capabilities, and hard pipeline constraints.
+  \item Candidate-context preparation for statically eligible bindings, followed by context-scoped capability evaluation and verification of the corresponding optional context protocol conformance before any operation work is submitted.
   \item Structured result categories distinguishing semantically rejected, requirement-incompatible, temporarily unavailable, and eligible candidates.
   \item Ranking of eligible candidates according to pipeline preferences and the best reliable current environment observations.
   \item Initial cost estimates covering queue delay, transfers, conversions, allocation, compute, synchronization, and output materialization.
@@ -78,6 +79,7 @@
   \item The resolver rejects unsupported border modes, precision, formats, or provider capabilities for the correct reason.
   \item With FP32 computation required, no FP16-only candidate is selected.
   \item With FP32 preferred, only candidates permitted by the operation's numerical contract can be ranked as alternatives.
+  \item A context-scoped allocation/submission requirement is not satisfied by a provider/device declaration alone; the created context must report the capability and conform to the corresponding optional protocol.
   \item A busy/unavailable GPU routes to CPU only when CPU is registered, qualified, and fallback is permitted.
   \item A required CUDA request never silently falls back to CPU.
   \item An unavailable provider is reported as an unsatisfied environmental requirement, not as a contradictory pipeline policy.
