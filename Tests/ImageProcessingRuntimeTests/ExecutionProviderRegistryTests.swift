@@ -219,7 +219,7 @@ struct ExecutionProviderRegistryTests {
         #expect(result.environment.providers[0].devices.isEmpty)
         #expect(result.environment.providers[1].devices.count == 1)
         #expect(result.failures.count == 1)
-        #expect(result.failures[0].kind == .providerUnavailable)
+        #expect(result.failures[0].kind == .deviceDiscoveryFailed)
     }
 
     @Test
