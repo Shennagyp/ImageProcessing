@@ -7,7 +7,8 @@
   \item Stable ImageIdentifier and document-scoped LayerIdentifier/LayerReference; monotonic ImageRevision; immutable ImageDocumentSnapshot with duplicate-layer and foreign-reference validation.
   \item ImageExtent/ImageCanvasDescriptor and tagged LayerDescriptor content for raster, mask, label map, and annotation layers.
   \item LayerSpatialMapping: validated invertible 4x4 affine transform from layer sample-centre index coordinates to canvas sample-centre index coordinates; equal extents may omit it (identity), differing pixel extents must declare it.
-  \item PixelDataDescriptor with component precision, channel identity/role/order, color or scientific interpretation, alpha mode, interleaved/planar layouts, plane subsampling, checked stride/offset arithmetic, and minimum-storage-capacity validation.
+  \item PixelDataDescriptor with component precision, channel identity/role/order, color or scientific interpretation, alpha mode, interleaved/planar layouts, plane subsampling, explicit sample-origin/chroma siting for subsampled planes, checked stride/offset arithmetic, and minimum-storage-capacity validation.
+  \item PixelPlaneLayout maps plane sample indices to layer-grid coordinates using sample origin plus subsampling factors; LayerSpatialMapping then maps layer-grid coordinates to canvas-grid coordinates.
   \item The generic associated-type implementation protocol and public specification descriptors.
   \item Typed sequential function composition with stable operation/step identity for policy scope and diagnostics.
   \item A fluent \texttt{qualifying} builder that produces an immutable normalized \texttt{QualificationPolicy}.
@@ -22,7 +23,7 @@
 \exitcriteria
 \begin{itemize}
   \item Identity tests prove layer identifiers are scoped by image identity, revisions never wrap, snapshots reject duplicate layer IDs, and foreign layer references cannot resolve.
-  \item Pixel descriptor tests cover UInt8/UInt16/UInt32, Int16/Int32, FP16/FP32/FP64, RGB/grayscale/YCbCr/custom color models, scientific channels/units, alpha, interleaved BGR, planar subsampled planes, volumetric strides, buffer-capacity checks, and arithmetic overflow.
+  \item Pixel descriptor tests cover UInt8/UInt16/UInt32, Int16/Int32, FP16/FP32/FP64, RGB/grayscale/YCbCr/custom color models, scientific channels/units, alpha, interleaved BGR, planar subsampled planes, centered versus co-sited chroma, volumetric strides, buffer-capacity checks, and arithmetic overflow.
   \item Layer-content tests prove masks, integer label maps, and annotations retain distinct semantics and validation.
   \item Spatial-registration tests reject mismatched layer/canvas extents without a mapping, accept explicit affine mappings, reject singular/non-affine/non-finite mappings, and verify coordinate transformation. Mapping does not perform resampling.
   \item Operation tests prove immutable parameters and versioned semantic identity.
