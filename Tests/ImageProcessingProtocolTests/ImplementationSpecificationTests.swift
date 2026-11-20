@@ -235,7 +235,7 @@ struct ImplementationSpecificationTests {
     @Test
     func rejectsNondeterministicImplementationWhenOperationRequiresDeterminism() throws {
         let operation = OperationSpecification<BlurInput, BlurOutput>(
-            identifier: OperationIdentifier(rawValue: "image.deterministic-transform")!,
+            identifier: OperationIdentifier(rawValue: "image.gaussian-blur")!,
             semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
             numericalContract: OperationNumericalContract(
                 rounding: .nearestEven,
@@ -243,11 +243,20 @@ struct ImplementationSpecificationTests {
                 determinism: .required
             )
         )
-        let implementation = BlurImplementationFixture.specification(
+        let implementation = ImplementationSpecification(
+            identifier: OperationImplementationIdentifier(rawValue: "image.gaussian-blur.nondeterministic")!,
+            version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            operationIdentifier: operation.identifier,
+            supportedOperationVersions: SemanticVersionRange(
+                lowerBound: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+                upperBound: SemanticVersion(major: 2, minor: 0, patch: 0)!
+            )!,
+            inputType: BlurInput.typeIdentifier,
+            outputType: BlurOutput.typeIdentifier,
             determinism: .nondeterministic
         )
 
-        #expect(throws: ImplementationSpecificationValidationError.operationIdentityMismatch) {
+        #expect(throws: ImplementationSpecificationValidationError.determinismMismatch) {
             try implementation.validate(implements: operation.erased)
         }
     }
