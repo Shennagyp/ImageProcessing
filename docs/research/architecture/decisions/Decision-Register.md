@@ -370,6 +370,57 @@ The resolver can be useful early and improve with workload evidence without maki
 
 ---
 
+---
+
+## ADR-015 — Generic resource ownership and asynchronous execution lifecycle
+
+**Status:** Baseline
+
+### Decision
+
+Model generic provider allocations as reference-counted opaque ExecutionResource handles with target-scoped identity. Resource descriptors contain generic kind, capacity, alignment, memory domain, and owning execution target. Image dimensions, pixel formats, color semantics, tensor layouts, and scientific units remain in ImageProcessingProtocol.
+
+Allocation and import are optional context capabilities. An imported handle retains its source handle. Work items declare resource accesses and completion dependencies. A submitting context returns a typed submission handle whose successful completion guarantees that its output is valid.
+
+### Invariants
+
+- Resource identifiers are scoped by the execution target; identity is the target/resource pair.
+- A provider validates allocation requests against its returned resource descriptor.
+- An imported handle retains the source allocation for the complete import lifetime.
+- A provider retains submitted work and all declared resource handles until completion, even if the caller drops its local references.
+- Dependencies must complete successfully before dependent work starts.
+- Cancellation is best-effort. Requesting cancellation does not permit early resource release.
+- Explicit context/resource synchronization is optional; per-submission completion is the preferred narrow boundary.
+- Native command buffers, streams, queues, events, and fences remain provider-owned.
+
+### Consequence
+
+The generic execution contract expresses resource and completion semantics without becoming a false common wrapper over native command APIs. Image-specific storage interpretation remains outside this package.
+
+---
+
+## ADR-016 — Context capabilities are evaluated on the prepared execution context
+
+**Status:** Baseline
+
+### Decision
+
+Keep provider, device, and context capabilities distinct. ExecutionContext exposes a context-local ExecutionCapabilities descriptor. Standard generic capability identifiers cover resource allocation/import, work submission/dependencies, and synchronization. Capability requirements may target provider, device, provider-or-device, or context.
+
+The common resolver first checks provider/device facts from the environment snapshot. It then prepares candidate contexts for remaining bindings and checks context-scoped requirements against the actual context descriptor and its optional protocol conformance before submitting operation work.
+
+### Invariants
+
+- A provider/device capability cannot satisfy a context-scoped requirement.
+- A context must not advertise a standard capability unless it supports the corresponding optional context protocol.
+- Optional protocol conformance is the executable proof; the capability descriptor is the declarative fact used during qualification.
+- A context with no capability reporting defaults to an empty descriptor and cannot accidentally satisfy required context capabilities.
+- Context preparation or capability mismatch is a structured candidate rejection before operation execution, not a custom per-backend qualification hook.
+
+### Consequence
+
+An implementation can require work submission or resource allocation without assuming every context created by the same provider exposes that capability. Different contexts from one provider/device may advertise different capabilities.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
