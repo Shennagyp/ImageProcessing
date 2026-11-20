@@ -97,12 +97,19 @@ private struct BlurImplementationFixture {
         ],
         precision: OperationPrecisionContract = .init(computation: [.float32]),
         determinism: ImplementationDeterminism = .deterministic,
+        numericalSupport: ImplementationNumericalSupport? = .init(
+            roundingModes: [.nearestEven],
+            overflowBehaviors: [.saturate],
+            outputRangeBehaviors: [.preserve],
+            maximumAbsoluteError: 0.00005
+        ),
         effects: OperationEffectContract = .pure,
         layerSupport: ImplementationLayerSupport = .init(
             inputKinds: [.raster],
             outputKinds: [.raster]
         ),
         pixelSupport: OperationPixelDataContract = BlurFixture.implementationPixelSupport,
+        capabilities: [ExecutionCapabilityConstraint] = [],
         resources: [ImplementationResourceRequirement] = [
             .init(
                 role: .input(0),
@@ -131,9 +138,11 @@ private struct BlurImplementationFixture {
             inputType: BlurInput.typeIdentifier,
             outputType: BlurOutput.typeIdentifier,
             requiredProviderID: provider,
+            requiredCapabilities: capabilities,
             parameterSupport: parameterSupport,
             precisionSupport: precision,
             determinism: determinism,
+            numericalSupport: numericalSupport,
             effectContract: effects,
             layerSupport: layerSupport,
             pixelDataSupport: pixelSupport,
@@ -285,7 +294,12 @@ struct ImplementationSpecificationTests {
             )!,
             inputType: BlurInput.typeIdentifier,
             outputType: BlurOutput.typeIdentifier,
-            determinism: .nondeterministic
+            determinism: .nondeterministic,
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve]
+            )
         )
 
         #expect(throws: ImplementationSpecificationValidationError.determinismMismatch) {
@@ -327,6 +341,12 @@ struct ImplementationSpecificationTests {
             ],
             precisionSupport: .init(computation: [.float32]),
             determinism: .deterministic,
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve],
+                maximumAbsoluteError: 0.00005
+            ),
             layerSupport: .init(inputKinds: [.raster], outputKinds: [.raster]),
             performanceHints: invalidHints
         )
@@ -389,6 +409,168 @@ extension ImplementationSpecificationTests {
 
         #expect(throws: OperationSpecificationValidationError.invalidPixelDataContract) {
             try operation.validateContract()
+        }
+    }
+}
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func rejectsRoundingAndOverflowModesOutsideOperationNumericalContract() throws {
+        let wrongRounding = BlurImplementationFixture.specification(
+            numericalSupport: .init(
+                roundingModes: [.towardZero],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve],
+                maximumAbsoluteError: 0.00005
+            )
+        )
+        #expect(throws: ImplementationSpecificationValidationError.numericalSupportMismatch) {
+            try wrongRounding.validate(implements: BlurOperation.specification.erased)
+        }
+
+        let wrongOverflow = BlurImplementationFixture.specification(
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.wrap],
+                outputRangeBehaviors: [.preserve],
+                maximumAbsoluteError: 0.00005
+            )
+        )
+        #expect(throws: ImplementationSpecificationValidationError.numericalSupportMismatch) {
+            try wrongOverflow.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func implementationErrorBoundMustMeetOperationTolerance() throws {
+        let implementation = BlurImplementationFixture.specification(
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve],
+                maximumAbsoluteError: 0.001
+            )
+        )
+        #expect(throws: ImplementationSpecificationValidationError.numericalSupportMismatch) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func numericalSupportIsRequiredWhenOperationDeclaresNumericalContract() throws {
+        let implementation = BlurImplementationFixture.specification(numericalSupport: nil)
+        #expect(throws: ImplementationSpecificationValidationError.missingNumericalSupport) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func operationRequiredEffectsMustBeImplementedButOptionalPermittedEffectsMayBeOmitted() throws {
+        let operation = OperationSpecification<BlurInput, BlurOutput>(
+            identifier: BlurOperation.specification.identifier,
+            semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            effectContract: OperationEffectContract(
+                requiredEffects: [.randomness],
+                permittedEffects: [.randomness, .deviceState]
+            ),
+            layerContract: BlurOperation.specification.layerContract,
+            pixelDataContract: BlurOperation.specification.pixelDataContract
+        )
+        let valid = BlurImplementationFixture.specification(
+            effects: OperationEffectContract(
+                requiredEffects: [.randomness],
+                permittedEffects: [.randomness]
+            )
+        )
+        try valid.validate(implements: operation.erased)
+
+        let missingRequired = BlurImplementationFixture.specification(effects: .pure)
+        #expect(throws: ImplementationSpecificationValidationError.effectContractMismatch) {
+            try missingRequired.validate(implements: operation.erased)
+        }
+
+        let forbiddenExtraEffect = BlurImplementationFixture.specification(
+            effects: OperationEffectContract(
+                requiredEffects: [.randomness, .externalIO],
+                permittedEffects: [.randomness, .externalIO]
+            )
+        )
+        #expect(throws: ImplementationSpecificationValidationError.effectContractMismatch) {
+            try forbiddenExtraEffect.validate(implements: operation.erased)
+        }
+    }
+
+    @Test
+    func rejectsPixelRepresentationMismatchOnOutputIndependently() throws {
+        let unsupportedOutput = PixelRepresentationDomain(
+            layouts: [.planar],
+            interpretations: [.color],
+            colorModels: [.rgb],
+            alphaModes: [.none],
+            transferFunctions: [.sRGB],
+            colorSpaces: [BlurFixture.srgb],
+            channelRoles: [.red, .green, .blue]
+        )
+        let implementation = BlurImplementationFixture.specification(
+            pixelSupport: OperationPixelDataContract(
+                input: BlurFixture.implementationPixelDomain,
+                output: unsupportedOutput
+            )
+        )
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "output")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func resourceRequirementsNeedPositiveCapacityAndValidKind() throws {
+        let zeroCapacity = BlurImplementationFixture.specification(resources: [
+            .init(
+                role: .input(0),
+                kind: .buffer,
+                allowedMemoryDomains: [.host],
+                minimumCapacityBytes: 0,
+                access: .read
+            )
+        ])
+        #expect(throws: ImplementationSpecificationValidationError.invalidResourceRequirement(.input(0))) {
+            try zeroCapacity.validate(implements: BlurOperation.specification.erased)
+        }
+
+        let emptyOpaqueKind = BlurImplementationFixture.specification(resources: [
+            .init(
+                role: .temporary("scratch"),
+                kind: .opaque(""),
+                allowedMemoryDomains: [.deviceLocal],
+                minimumCapacityBytes: 1024,
+                access: .readWrite
+            )
+        ])
+        #expect(throws: ImplementationSpecificationValidationError.invalidResourceRequirement(.temporary("scratch"))) {
+            try emptyOpaqueKind.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func duplicateResourceRolesAndMalformedCapabilitiesAreRejected() throws {
+        let duplicateRole = BlurImplementationFixture.specification(resources: [
+            .init(role: .input(0), kind: .buffer, allowedMemoryDomains: [.host], access: .read),
+            .init(role: .input(0), kind: .buffer, allowedMemoryDomains: [.shared], access: .read)
+        ])
+        #expect(throws: ImplementationSpecificationValidationError.duplicateResourceRequirement(.input(0))) {
+            try duplicateRole.validate(implements: BlurOperation.specification.erased)
+        }
+
+        let capabilityID = ExecutionCapabilityID(rawValue: "execution.maximum-value")!
+        let malformedCapability = BlurImplementationFixture.specification(capabilities: [
+            .init(
+                scope: .device,
+                requirement: .decimalAtLeast(capabilityID, .nan)
+            )
+        ])
+        #expect(throws: ImplementationSpecificationValidationError.invalidRequiredCapability) {
+            try malformedCapability.validate(implements: BlurOperation.specification.erased)
         }
     }
 }
