@@ -337,11 +337,11 @@ PixelResource
   OwnershipAndLifetime
 \end{lstlisting}
 
-The initial Swift domain surface uses immutable value descriptors: \texttt{ImageIdentifier}, \texttt{ImageRevision}, \texttt{ImageCanvasDescriptor}, \texttt{LayerIdentifier}, \texttt{LayerDescriptor}, and \texttt{ImageDocumentSnapshot}. These descriptors establish identity and semantic invariants without prematurely fixing the mutable public \Image{} handle or its actor/transaction implementation.
+The initial Swift domain surface includes immutable value descriptors—\texttt{ImageIdentifier}, \texttt{ImageRevision}, \texttt{ImageCanvasDescriptor}, \texttt{LayerIdentifier}, \texttt{LayerDescriptor}, and \texttt{ImageDocumentSnapshot}—plus a mutable public \Image{} state owner. The value descriptors establish semantic invariants; the reference-type owner controls revisioned mutation and resource-binding lifetime.
 
 An \texttt{ImageIdentifier} identifies one logical document. A \texttt{LayerIdentifier} is unique within that document; an external layer reference is the pair \texttt{(ImageIdentifier, LayerIdentifier)}. Two derived documents may retain the same local layer identifier for unchanged logical layers because their image identifiers differ. A \texttt{PixelResource} identity is separate again: two layer references may share one immutable allocation, and one logical layer may refer to a replacement allocation in a later revision.
 
-\texttt{ImageRevision} is monotonically increasing and detects exhaustion rather than wrapping. \texttt{ImageDocumentSnapshot} is an immutable value containing document identity, revision, canvas extent, and ordered layer descriptors. It rejects duplicate layer identifiers and refuses to resolve a layer reference belonging to another image. This snapshot is the input boundary for processing; mutable image ownership, optimistic replacement commit, and concurrency control remain a separate decision recorded in the Architecture Decision Register.
+\texttt{ImageRevision} is monotonically increasing and detects exhaustion rather than wrapping. \texttt{ImageDocumentSnapshot} is an immutable value containing document identity, revision, canvas extent, and ordered layer descriptors. It rejects duplicate layer identifiers and refuses to resolve a layer reference belonging to another image. This snapshot is the immutable document boundary for processing. The public \texttt{Image} object captures it together with the matching resource-binding set in an \texttt{ImageStateSnapshot}.
 
 \subsection{Layer kinds and semantics}
 
@@ -949,7 +949,11 @@ Per-submission waiting is the narrow completion mechanism. Context-wide or resou
 
 This contract does not promise preemption. Cancellation is best-effort: the provider reports whether work was stopped before execution, cancellation was requested after work may have begun, or cancellation was too late. Resources remain retained until completion is observed. A device-loss or native execution failure must produce a failed completion and release retained resources only when the provider knows they are no longer in use.
 
-The image document's mutation policy also needs a concurrency rule. Concurrent reads may share immutable resource snapshots. Concurrent writes to the same logical image revision must be serialized, rejected, or resolved through an explicitly defined conflict policy. The initial implementation SHOULD serialize commits per image and use revision checks to reject stale replacement attempts. The precise Swift synchronization mechanism (actor, lock-protected handle, or another approach) remains open.
+The mutable image owner is a \texttt{final class Image} with stable \texttt{ImageIdentifier}, protected by a short \texttt{NSLock} critical section. \texttt{Image.snapshot()} synchronously captures an immutable \texttt{ImageStateSnapshot}; no actor hop is needed for ordinary reads. The state snapshot contains both \texttt{ImageDocumentSnapshot} and its exact revision-scoped \texttt{ImageStorageBindingSet}.
+
+Replacement constructs and validates the next document and resource-binding set outside the lock. It then locks, compares the current revision with the expected revision, and publishes the pair in one state assignment. The lock is never held across provider calls, resource operations, processing, or \texttt{await}. A stale writer receives a revision-conflict error. Concurrent writers based on the same revision therefore cannot silently overwrite one another.
+
+Old captured snapshots retain their resource handles after a newer revision is committed. Those handles can be released only after every snapshot and submitted work item that retains them has completed and been released. A failed candidate validation or stale commit leaves the current image state unchanged.
 
 \subsection{Execution completion and public asynchrony}
 
@@ -1163,8 +1167,6 @@ The current status of each foundational decision is tracked in the \href{https:/
 \subsection{Decisions that must be resolved before freezing public API}
 
 \begin{enumerate}
-  \item \textbf{Image identity and concurrency:} whether the public handle is a Swift reference type, value wrapper around a shared document state, actor, or another model. The required semantics are stable identity, controlled mutation, snapshots, and safe asynchronous commits.
-  \item \textbf{Layer identity policy:} whether layer IDs are globally unique or scoped to an image/document. This must be decided before serialization or long-lived external references are added.
   \item \textbf{Resource handle ABI:} the boundary between Swift, C/C++, and provider adapters. A narrow C ABI may be useful for stable cross-language interoperability, but it must not leak native implementation handles into the semantic API.
   \item \textbf{Cross-platform language surface:} a Swift-first API is natural for Apple platforms, but a universal Swift application/runtime surface across every target operating system must be validated rather than assumed. The semantic core and provider ABI should be designed independently of a promise that Swift tooling is identical on all platforms.
   \item \textbf{Lazy versus eager result contract:} internal deferred execution is desirable, but the public completion/materialization boundary must be explicit. The initial async apply API should return only after its promised output state is valid.
