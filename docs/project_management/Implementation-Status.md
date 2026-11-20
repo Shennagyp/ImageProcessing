@@ -59,18 +59,17 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, explicit centered/co-sited chroma origins, plane-to-layer coordinate conversion, pixel-resource topology/capacity binding, resource-handle retention, revision-scoped image/layer binding sets, partial-binding diagnostics, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, explicit centered/co-sited chroma origins, plane-to-layer coordinate conversion, pixel-resource topology/capacity binding, resource-handle retention, revision-scoped image/layer binding sets, partial-binding diagnostics, stable Image identity, atomic revision replacement, validation failure atomicity, concurrent writer conflict, captured-snapshot resource retention, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current 75-test suite (12 suites) includes pixel resource binding, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 75 tests across 12 suites, including pixel resource binding, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
 - Non-affine spatial deformation fields and calibrated world-coordinate transform model.
-- Resource replacement, copy-on-write, and lifetime across derived or replaced image revisions.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
@@ -78,7 +77,6 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 - QualificationPolicy, fluent policy builder, scope composition, and conflict diagnostics.
 - Common environment-aware resolver and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
-- Resource replacement, copy-on-write, and resource sharing across derived/replaced image revisions.
 - CPU provider and numerical reference image operations.
 - Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, Accelerate, or model-runtime implementation packs.
 
