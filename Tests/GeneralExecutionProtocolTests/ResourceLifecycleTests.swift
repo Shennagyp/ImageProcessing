@@ -399,7 +399,7 @@ private struct TestExecutionProvider: ExecutionProvider {
 
     func makeContext(for target: ExecutionTargetReference) async throws -> any ExecutionContext {
         guard target.providerID == descriptor.identifier,
-              target.deviceID == device.descriptor.identifier else {
+              target.deviceID == nil || target.deviceID == device.descriptor.identifier else {
             throw TestProviderError.invalidTarget
         }
         return TestAllocatingContext(target: target)
@@ -501,4 +501,82 @@ extension ResourceLifecycleTests {
             try await provider.makeContext(for: ExecutionTargetReference(providerID: foreignProvider))
         }
     }
+}
+
+
+extension ResourceLifecycleTests {
+    @Test
+    func providerConformanceHarnessValidatesDiscoveryAndContextTargets() async throws {
+        let provider = try TestExecutionProvider()
+        let contexts = try await ExecutionProviderConformanceHarness.makeValidatedContexts(
+            from: provider
+        )
+
+        #expect(contexts.count == 1)
+        #expect(contexts[0].target.providerID == provider.descriptor.identifier)
+        #expect(contexts[0].target.deviceID == provider.device.descriptor.identifier)
+    }
+
+    @Test
+    func providerConformanceHarnessSupportsOpaqueProviderManagedTargets() async throws {
+        let provider = try TestExecutionProvider()
+        let contexts = try await ExecutionProviderConformanceHarness.makeValidatedContexts(
+            from: provider,
+            includeOpaqueProviderTarget: true
+        )
+
+        #expect(contexts.count == 2)
+        #expect(contexts.contains { $0.target.deviceID == nil })
+    }
+
+    @Test
+    func providerConformanceHarnessChecksAllocationAndImportDescriptors() async throws {
+        let provider = try TestExecutionProvider()
+        let contexts = try await ExecutionProviderConformanceHarness.makeValidatedContexts(
+            from: provider
+        )
+        let context = try #require(contexts.first)
+        let request = try #require(ExecutionResourceRequest(
+            kind: .buffer,
+            minimumCapacityBytes: 4096,
+            minimumAlignmentBytes: 256,
+            memoryDomain: .deviceLocal
+        ))
+
+        let source = try await ExecutionProviderConformanceHarness.allocate(
+            request,
+            using: context
+        )
+        let imported = try await ExecutionProviderConformanceHarness.importResource(
+            source,
+            into: context,
+            access: .readWrite
+        )
+
+        #expect(imported.descriptor.target == context.target)
+        #expect(imported.descriptor.kind == source.descriptor.kind)
+        #expect(imported.descriptor.capacityBytes >= source.descriptor.capacityBytes)
+        #expect(imported.descriptor.alignmentBytes >= source.descriptor.alignmentBytes)
+    }
+
+    @Test
+    func providerConformanceHarnessRejectsCapabilityClaimsWithoutOptionalProtocols() throws {
+        let providerID = try #require(ExecutionProviderID(rawValue: "provider.overclaim"))
+        let target = ExecutionTargetReference(providerID: providerID)
+        let capabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .workSubmission, value: .boolean(true))
+        ])
+        let context = CapabilityOnlyContext(target: target, capabilities: capabilities)
+
+        #expect(throws: ExecutionProviderConformanceError.contextAdvertisesCapabilityWithoutProtocol(
+            .workSubmission
+        )) {
+            try ExecutionProviderConformanceHarness.validate(context: context, for: target)
+        }
+    }
+}
+
+private struct CapabilityOnlyContext: ExecutionContext {
+    let target: ExecutionTargetReference
+    let capabilities: ExecutionCapabilities
 }
