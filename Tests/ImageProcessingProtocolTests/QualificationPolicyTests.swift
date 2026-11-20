@@ -310,8 +310,8 @@ extension QualificationPolicyTests {
         } catch let conflict as QualificationPolicyConflict {
             #expect(conflict.dimension == .provider)
             #expect(conflict.priorDeclarations.count == 2)
-            #expect(conflict.priorDeclarations.map(\\.source).contains("set A"))
-            #expect(conflict.priorDeclarations.map(\\.source).contains("set B"))
+            #expect(conflict.priorDeclarations.map(\.source).contains("set A"))
+            #expect(conflict.priorDeclarations.map(\.source).contains("set B"))
             #expect(conflict.incomingDeclaration.source == "set C")
         }
     }
