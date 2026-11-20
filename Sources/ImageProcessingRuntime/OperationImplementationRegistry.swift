@@ -1,3 +1,4 @@
+import Foundation
 import GeneralExecutionProtocol
 import ImageProcessingProtocol
 
@@ -21,6 +22,8 @@ public struct OperationImplementationKey: Hashable, Sendable, CustomStringConver
 /// Public immutable metadata for one implementation registered by the runtime.
 public struct RegisteredOperationImplementation: Hashable, Sendable {
     public let key: OperationImplementationKey
+    /// Distinguishes separate registrations that reuse the same implementation key.
+    public let registrationIdentifier: UUID
     public let specification: ImplementationSpecification
 }
 
@@ -33,10 +36,14 @@ public enum OperationImplementationRegistryError: Error, Equatable, Sendable {
     case outputTypeMismatch(expected: OperationValueIdentifier, actual: OperationValueIdentifier)
     case unsupportedOperationStep(OperationImplementationKey)
     case typedDispatchMismatch(OperationImplementationKey)
+    case registrationChanged(OperationImplementationKey)
+    case candidateContextTargetMismatch(expected: ExecutionTargetReference, actual: ExecutionTargetReference)
 }
 
 private struct AnyRegisteredOperationImplementation: Sendable {
     typealias SupportsStep = @Sendable (AnyImageOperationStep) -> Bool
+    typealias MatchesOperationType = @Sendable (any ImageOperation) -> Bool
+    typealias MatchesInputType = @Sendable (any OperationValue) -> Bool
     typealias Execute = @Sendable (
         any ImageOperation,
         any OperationValue,
@@ -45,7 +52,17 @@ private struct AnyRegisteredOperationImplementation: Sendable {
 
     let descriptor: RegisteredOperationImplementation
     let supportsStep: SupportsStep
+    let matchesOperationType: MatchesOperationType
+    let matchesInputType: MatchesInputType
     let execute: Execute
+}
+
+enum OperationImplementationBindingCompatibility: Sendable {
+    case compatible
+    case registrationUnavailable
+    case registrationChanged
+    case operationConcreteTypeMismatch
+    case inputConcreteTypeMismatch
 }
 
 /// Thread-safe registry of heterogeneous operation implementations.
@@ -77,11 +94,18 @@ public actor OperationImplementationRegistry {
         let specification = implementation.specification
         let descriptor = RegisteredOperationImplementation(
             key: key,
+            registrationIdentifier: UUID(),
             specification: specification
         )
 
         let supportsStep: AnyRegisteredOperationImplementation.SupportsStep = {
             step in specification.supports(step)
+        }
+        let matchesOperationType: AnyRegisteredOperationImplementation.MatchesOperationType = {
+            operation in operation is Implementation.Operation
+        }
+        let matchesInputType: AnyRegisteredOperationImplementation.MatchesInputType = {
+            input in input is Implementation.Operation.Input
         }
         let execute: AnyRegisteredOperationImplementation.Execute = {
             operation, input, context in
@@ -99,6 +123,8 @@ public actor OperationImplementationRegistry {
         entries[key] = AnyRegisteredOperationImplementation(
             descriptor: descriptor,
             supportsStep: supportsStep,
+            matchesOperationType: matchesOperationType,
+            matchesInputType: matchesInputType,
             execute: execute
         )
     }
@@ -117,6 +143,30 @@ public actor OperationImplementationRegistry {
                 }
                 return lhs.key.version < rhs.key.version
             }
+    }
+
+    /// Confirms that a metadata candidate still refers to the exact registration
+    /// that was enumerated and that its erased Swift operation/input types match
+    /// the actual invocation values. Stable identifiers alone are insufficient:
+    /// two unrelated Swift types can accidentally reuse the same semantic ID.
+    func bindingCompatibility(
+        of registered: RegisteredOperationImplementation,
+        for step: AnyImageOperationStep,
+        input: any OperationValue
+    ) -> OperationImplementationBindingCompatibility {
+        guard let entry = entries[registered.key] else {
+            return .registrationUnavailable
+        }
+        guard entry.descriptor.registrationIdentifier == registered.registrationIdentifier else {
+            return .registrationChanged
+        }
+        guard entry.matchesOperationType(step.operation) else {
+            return .operationConcreteTypeMismatch
+        }
+        guard entry.matchesInputType(input) else {
+            return .inputConcreteTypeMismatch
+        }
+        return .compatible
     }
 
     /// Lists implementations whose static specification is compatible with the
@@ -151,18 +201,28 @@ public actor OperationImplementationRegistry {
             }
     }
 
-    /// Resolver-only dispatch for an explicitly qualified implementation. This
-    /// method performs checked type erasure; it does not discover providers or
-    /// select a candidate. It remains module-internal so callers cannot bypass
-    /// environment and hard-policy qualification.
+    /// Executes only the exact operation, typed input, registration, and context
+    /// captured by a qualified candidate. The call cannot substitute new values
+    /// after qualification.
     func execute(
-        _ step: AnyImageOperationStep,
-        input: any OperationValue,
-        using key: OperationImplementationKey,
-        context: any ExecutionContext
+        using candidate: QualifiedOperationImplementation
     ) async throws -> any OperationValue {
-        guard let entry = entries[key] else {
-            throw OperationImplementationRegistryError.registrationNotFound(key)
+        let registered = candidate.implementation
+        let step = candidate.operationStep
+        let input = candidate.input
+        let context = candidate.context
+
+        guard context.target == candidate.target else {
+            throw OperationImplementationRegistryError.candidateContextTargetMismatch(
+                expected: candidate.target,
+                actual: context.target
+            )
+        }
+        guard let entry = entries[registered.key] else {
+            throw OperationImplementationRegistryError.registrationNotFound(registered.key)
+        }
+        guard entry.descriptor.registrationIdentifier == registered.registrationIdentifier else {
+            throw OperationImplementationRegistryError.registrationChanged(registered.key)
         }
 
         let specification = entry.descriptor.specification
@@ -174,7 +234,7 @@ public actor OperationImplementationRegistry {
         }
         guard specification.supportedOperationVersions.contains(step.specification.semanticVersion) else {
             throw OperationImplementationRegistryError.unsupportedOperationVersion(
-                key,
+                registered.key,
                 step.specification.semanticVersion
             )
         }
@@ -185,14 +245,18 @@ public actor OperationImplementationRegistry {
                 actual: input.valueTypeIdentifier
             )
         }
+        guard entry.matchesInputType(input) else {
+            throw OperationImplementationRegistryError.typedDispatchMismatch(registered.key)
+        }
         guard specification.outputType == step.specification.outputType else {
             throw OperationImplementationRegistryError.outputTypeMismatch(
                 expected: specification.outputType,
                 actual: step.specification.outputType
             )
         }
-        guard entry.supportsStep(step) else {
-            throw OperationImplementationRegistryError.unsupportedOperationStep(key)
+        guard entry.matchesOperationType(step.operation),
+              entry.supportsStep(step) else {
+            throw OperationImplementationRegistryError.typedDispatchMismatch(registered.key)
         }
 
         let output = try await entry.execute(step.operation, input, context)
@@ -204,4 +268,5 @@ public actor OperationImplementationRegistry {
         }
         return output
     }
+
 }

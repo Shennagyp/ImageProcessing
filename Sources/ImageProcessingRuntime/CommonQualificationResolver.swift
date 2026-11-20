@@ -19,6 +19,7 @@ public actor CommonQualificationResolver {
 
     public func evaluate(
         step: AnyImageOperationStep,
+        input: any OperationValue,
         policy: QualificationPolicy,
         environment: RuntimeEnvironmentSnapshot,
         freshness: QualificationFreshnessPolicy,
@@ -34,6 +35,21 @@ public actor CommonQualificationResolver {
             try step.validateParameters()
         } catch let error as OperationParameterValidationError {
             throw OperationImplementationQualificationError.invalidOperationParameters(error)
+        }
+
+        guard input.valueTypeIdentifier == step.specification.inputType else {
+            throw OperationImplementationQualificationError.inputValueTypeMismatch(
+                expected: step.specification.inputType,
+                actual: input.valueTypeIdentifier
+            )
+        }
+
+        let imageInputContext = (input as? any ImageOperationInputValue)?.imageOperationInputContext
+        let inputResourceBindings = (input as? any OperationResourceInputValue)?.operationInputResourceBindings ?? []
+        let operationRequiresImageInput = !step.specification.layerContract.acceptedInputKinds.isEmpty
+            || step.specification.pixelDataContract.input != nil
+        guard !operationRequiresImageInput || imageInputContext != nil else {
+            throw OperationImplementationQualificationError.imageInputContextRequired
         }
 
         let implementationCandidates = await implementations.implementations(
@@ -57,6 +73,55 @@ public actor CommonQualificationResolver {
                         implementation,
                         target: nil,
                         rejections: [.implementationDoesNotSupportOperationStep],
+                        uncertainties: []
+                    )
+                )
+                continue
+            }
+
+            let bindingCompatibility = await implementations.bindingCompatibility(
+                of: implementation,
+                for: step,
+                input: input
+            )
+            let bindingRejection: CandidateQualificationRejection?
+            switch bindingCompatibility {
+            case .compatible:
+                bindingRejection = nil
+            case .registrationUnavailable:
+                bindingRejection = .implementationRegistrationUnavailable
+            case .registrationChanged:
+                bindingRejection = .implementationRegistrationChanged
+            case .operationConcreteTypeMismatch:
+                bindingRejection = .operationConcreteTypeMismatch
+            case .inputConcreteTypeMismatch:
+                bindingRejection = .inputConcreteTypeMismatch
+            }
+            if let bindingRejection {
+                evaluations.append(
+                    evaluation(
+                        implementation,
+                        target: nil,
+                        rejections: [bindingRejection],
+                        uncertainties: []
+                    )
+                )
+                continue
+            }
+
+            var inputSemanticRejections: [CandidateQualificationRejection] = []
+            evaluateImageInputSemantics(
+                imageInputContext,
+                operation: step.specification,
+                implementation: implementation.specification,
+                rejections: &inputSemanticRejections
+            )
+            if !inputSemanticRejections.isEmpty {
+                evaluations.append(
+                    evaluation(
+                        implementation,
+                        target: nil,
+                        rejections: inputSemanticRejections,
                         uncertainties: []
                     )
                 )
@@ -95,6 +160,21 @@ public actor CommonQualificationResolver {
             }
 
             for provider in providerSnapshots {
+                guard let providerRegistrationIdentifier =
+                    environment.providerRegistrationIdentifiers[provider.descriptor.identifier] else {
+                    evaluations.append(
+                        evaluation(
+                            implementation,
+                            target: nil,
+                            rejections: [],
+                            uncertainties: [
+                                .providerRegistrationIdentityMissing(provider.descriptor.identifier)
+                            ]
+                        )
+                    )
+                    continue
+                }
+
                 let targets = executionTargets(
                     for: provider,
                     failures: environment.failures
@@ -152,6 +232,14 @@ public actor CommonQualificationResolver {
                         rejections: &rejections
                     )
 
+                    let inputResourceAccesses = evaluateInputResourceRequirements(
+                        imageInputContext,
+                        resourceBindings: inputResourceBindings,
+                        implementation: implementation.specification,
+                        target: target,
+                        rejections: &rejections
+                    )
+
                     guard rejections.isEmpty, uncertainties.isEmpty else {
                         evaluations.append(
                             evaluation(
@@ -168,8 +256,26 @@ public actor CommonQualificationResolver {
                     do {
                         context = try await providers.makeContext(
                             for: target,
-                            expecting: provider.descriptor
+                            expecting: provider.descriptor,
+                            registrationIdentifier: providerRegistrationIdentifier
                         )
+                    } catch let error as ExecutionProviderRegistryError {
+                        let rejection: CandidateQualificationRejection
+                        switch error {
+                        case .providerNotRegistered, .providerRegistrationChanged, .providerDescriptorChanged:
+                            rejection = .providerRegistrationChanged(provider.descriptor.identifier)
+                        default:
+                            rejection = .contextCreationFailed(String(describing: error))
+                        }
+                        evaluations.append(
+                            evaluation(
+                                implementation,
+                                target: target,
+                                rejections: [rejection],
+                                uncertainties: []
+                            )
+                        )
+                        continue
                     } catch {
                         evaluations.append(
                             evaluation(
@@ -208,8 +314,13 @@ public actor CommonQualificationResolver {
                     if rejections.isEmpty {
                         let qualified = QualifiedOperationImplementation(
                             implementation: implementation,
+                            providerRegistrationIdentifier: providerRegistrationIdentifier,
+                            operationStep: step,
+                            input: input,
                             target: target,
-                            context: context
+                            context: context,
+                            imageInputContext: imageInputContext,
+                            inputResourceAccesses: inputResourceAccesses
                         )
                         evaluations.append(
                             OperationImplementationCandidateEvaluation(
@@ -240,6 +351,227 @@ public actor CommonQualificationResolver {
             environmentSnapshot: environment.identifier,
             evaluations: evaluations
         )
+    }
+
+    private func evaluateImageInputSemantics(
+        _ inputContext: ImageOperationInputContext?,
+        operation: AnyOperationSpecification,
+        implementation: ImplementationSpecification,
+        rejections: inout [CandidateQualificationRejection]
+    ) {
+        guard let inputContext else { return }
+
+        for input in inputContext.inputs {
+            for reference in input.target.layerReferences {
+                let resolvedLayer: LayerDescriptor?
+                do {
+                    resolvedLayer = try input.imageState.document.layer(for: reference)
+                } catch {
+                    rejections.append(.inputBindingMissing(input.inputIndex))
+                    continue
+                }
+                guard let layer = resolvedLayer else {
+                    rejections.append(.inputBindingMissing(input.inputIndex))
+                    continue
+                }
+
+                if !operation.layerContract.acceptedInputKinds.isEmpty,
+                   !operation.layerContract.acceptedInputKinds.contains(layer.kind) {
+                    rejections.append(
+                        .imageInputLayerKindUnsupported(input.inputIndex, reference, layer.kind)
+                    )
+                    continue
+                }
+                if !implementation.layerSupport.inputKinds.isEmpty,
+                   !implementation.layerSupport.inputKinds.contains(layer.kind) {
+                    rejections.append(
+                        .implementationInputLayerKindUnsupported(input.inputIndex, reference, layer.kind)
+                    )
+                    continue
+                }
+
+                let pixelDescriptor = Self.pixelDescriptor(for: layer.content)
+                if operation.pixelDataContract.input != nil, pixelDescriptor == nil {
+                    rejections.append(.inputPixelDescriptorMissing(input.inputIndex, reference))
+                    continue
+                }
+                guard let pixelDescriptor else { continue }
+
+                if let operationDomain = operation.pixelDataContract.input,
+                   !operationDomain.supports(pixelDescriptor) {
+                    rejections.append(
+                        .operationInputPixelRepresentationUnsupported(input.inputIndex, reference)
+                    )
+                }
+                if let implementationDomain = implementation.pixelDataSupport.input,
+                   !implementationDomain.supports(pixelDescriptor) {
+                    rejections.append(
+                        .implementationInputPixelRepresentationUnsupported(input.inputIndex, reference)
+                    )
+                }
+
+                if !operation.precisionContract.inputStorage.isEmpty,
+                   !operation.precisionContract.inputStorage.contains(pixelDescriptor.componentType) {
+                    rejections.append(
+                        .operationInputStoragePrecisionUnsupported(
+                            input.inputIndex,
+                            reference,
+                            pixelDescriptor.componentType
+                        )
+                    )
+                }
+                if !implementation.precisionSupport.inputStorage.isEmpty,
+                   !implementation.precisionSupport.inputStorage.contains(pixelDescriptor.componentType) {
+                    rejections.append(
+                        .implementationInputStoragePrecisionUnsupported(
+                            input.inputIndex,
+                            reference,
+                            pixelDescriptor.componentType
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private func evaluateInputResourceRequirements(
+        _ imageInputContext: ImageOperationInputContext?,
+        resourceBindings: [OperationInputResourceBinding],
+        implementation: ImplementationSpecification,
+        target: ExecutionTargetReference,
+        rejections: inout [CandidateQualificationRejection]
+    ) -> [ExecutionResourceAccess] {
+        let inputRequirements = implementation.resourceRequirements.compactMap {
+            requirement -> (index: Int, requirement: ImplementationResourceRequirement)? in
+            guard case let .input(index) = requirement.role else { return nil }
+            return (index, requirement)
+        }
+        guard !inputRequirements.isEmpty else { return [] }
+
+        var accesses: [ExecutionResourceAccess] = []
+        for (inputIndex, requirement) in inputRequirements {
+            let bindings = resourceBindings.filter { $0.inputIndex == inputIndex }
+            guard !bindings.isEmpty else {
+                if let imageInput = imageInputContext?.input(at: inputIndex) {
+                    let references = imageInput.target.layerReferences
+                    if references.isEmpty {
+                        rejections.append(.inputBindingMissing(inputIndex))
+                    }
+                    for reference in references {
+                        let storage: PixelStorageBinding?
+                        do {
+                            storage = try imageInput.imageState.storageBindings.binding(for: reference)
+                        } catch {
+                            rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                            continue
+                        }
+                        if storage == nil {
+                            rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                        }
+                    }
+                } else {
+                    rejections.append(.inputResourceContextMissing(inputIndex))
+                }
+                continue
+            }
+
+            for binding in bindings {
+                let descriptor = binding.resource.descriptor
+                let reference = descriptor.reference
+
+                if descriptor.kind != requirement.kind {
+                    rejections.append(
+                        .inputResourceKindMismatch(
+                            inputIndex,
+                            reference,
+                            expected: requirement.kind,
+                            actual: descriptor.kind
+                        )
+                    )
+                }
+                if descriptor.capacityBytes < requirement.minimumCapacityBytes {
+                    rejections.append(
+                        .inputResourceCapacityInsufficient(
+                            inputIndex,
+                            reference,
+                            required: requirement.minimumCapacityBytes,
+                            actual: descriptor.capacityBytes
+                        )
+                    )
+                }
+                if descriptor.alignmentBytes < requirement.minimumAlignmentBytes
+                    || !descriptor.alignmentBytes.isMultiple(of: requirement.minimumAlignmentBytes) {
+                    rejections.append(
+                        .inputResourceAlignmentInsufficient(
+                            inputIndex,
+                            reference,
+                            required: requirement.minimumAlignmentBytes,
+                            actual: descriptor.alignmentBytes
+                        )
+                    )
+                }
+                if !requirement.allowedMemoryDomains.contains(descriptor.memoryDomain) {
+                    rejections.append(
+                        .inputResourceMemoryDomainUnsupported(
+                            inputIndex,
+                            reference,
+                            descriptor.memoryDomain
+                        )
+                    )
+                }
+                if !Self.bindingAccess(binding.access, satisfies: requirement.access) {
+                    rejections.append(
+                        .inputResourceAccessInsufficient(
+                            inputIndex,
+                            reference,
+                            actual: binding.access,
+                            required: requirement.access
+                        )
+                    )
+                }
+                if descriptor.target != target && !requirement.requiresImport {
+                    rejections.append(
+                        .inputResourceNotAccessibleFromTarget(inputIndex, reference, target)
+                    )
+                }
+
+                accesses.append(
+                    ExecutionResourceAccess(
+                        resource: binding.resource,
+                        mode: requirement.access
+                    )
+                )
+            }
+        }
+        return accesses
+    }
+
+    private static func bindingAccess(
+        _ available: ExecutionResourceAccessMode,
+        satisfies required: ExecutionResourceAccessMode
+    ) -> Bool {
+        switch (available, required) {
+        case (.read, .read), (.write, .write), (.readWrite, .read),
+             (.readWrite, .write), (.readWrite, .readWrite):
+            true
+        default:
+            false
+        }
+    }
+
+    private static func pixelDescriptor(
+        for content: LayerContentDescriptor
+    ) -> PixelDataDescriptor? {
+        switch content {
+        case let .raster(descriptor):
+            descriptor
+        case let .mask(descriptor):
+            descriptor.pixels
+        case let .labelMap(descriptor):
+            descriptor.pixels
+        case .annotation:
+            nil
+        }
     }
 
     private func matchingProviders(
@@ -575,13 +907,16 @@ public actor CommonQualificationResolver {
         }
 
         for resource in implementation.resourceRequirements {
-            if case .temporary = resource.role {
+            switch resource.role {
+            case .temporary(_), .output(_):
                 requireContextProtocol(
                     context,
                     role: resource.role,
                     capability: .resourceAllocation,
                     rejections: &rejections
                 )
+            case .input(_):
+                break
             }
             if resource.requiresImport {
                 requireContextProtocol(

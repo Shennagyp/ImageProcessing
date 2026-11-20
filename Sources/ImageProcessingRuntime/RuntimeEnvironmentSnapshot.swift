@@ -489,6 +489,9 @@ public struct RuntimeEnvironmentSnapshot: Sendable {
 
     public var environment: ExecutionEnvironmentSnapshot { discovery.environment }
     public var failures: [ExecutionProviderFailure] { discovery.failures }
+    public var providerRegistrationIdentifiers: [ExecutionProviderID: UUID] {
+        discovery.providerRegistrationIdentifiers
+    }
 }
 
 public enum RuntimeEnvironmentSnapshotCoordinatorError: Error, Equatable, Sendable {

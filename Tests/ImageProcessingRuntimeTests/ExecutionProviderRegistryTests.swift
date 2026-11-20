@@ -276,6 +276,51 @@ struct ExecutionProviderRegistryTests {
     }
 
     @Test
+    func environmentSnapshotPinsProviderRegistrationIdentity() async throws {
+        let registry = ExecutionProviderRegistry()
+        let identifier = providerID("provider.replaceable")
+        let first = RegistryTestProvider(identifier: identifier.rawValue)
+        try await registry.register(first)
+
+        let firstRegistrations = await registry.registeredProviders()
+        let firstRegistration = try #require(firstRegistrations.first)
+        let firstSnapshot = try await registry.discoverEnvironment(platform: platform())
+        #expect(
+            firstSnapshot.providerRegistrationIdentifiers[identifier]
+                == firstRegistration.registrationIdentifier
+        )
+
+        #expect(await registry.unregister(identifier))
+        let replacement = RegistryTestProvider(identifier: identifier.rawValue)
+        try await registry.register(replacement)
+        let replacementRegistrations = await registry.registeredProviders()
+        let replacementRegistration = try #require(replacementRegistrations.first)
+        #expect(replacementRegistration.registrationIdentifier != firstRegistration.registrationIdentifier)
+
+        let secondSnapshot = try await registry.discoverEnvironment(platform: platform())
+        #expect(
+            secondSnapshot.providerRegistrationIdentifiers[identifier]
+                == replacementRegistration.registrationIdentifier
+        )
+
+        let target = ExecutionTargetReference(providerID: identifier)
+        await #expect(throws: ExecutionProviderRegistryError.providerRegistrationChanged(identifier)) {
+            try await registry.makeContext(
+                for: target,
+                expecting: first.descriptor,
+                registrationIdentifier: firstRegistration.registrationIdentifier
+            )
+        }
+
+        let context = try await registry.makeContext(
+            for: target,
+            expecting: replacement.descriptor,
+            registrationIdentifier: replacementRegistration.registrationIdentifier
+        )
+        #expect(context.target == target)
+    }
+
+    @Test
     func unregisterRemovesOnlyTheNamedProvider() async throws {
         let registry = ExecutionProviderRegistry()
         try await registry.register(RegistryTestProvider(identifier: "provider.a"))

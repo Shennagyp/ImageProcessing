@@ -231,6 +231,49 @@ private struct MetalBlurImplementation: ImageOperationImplementation {
 
 struct ImplementationSpecificationTests {
     @Test
+    func resourceAccessModesMustRespectOperationMutationSemantics() throws {
+        let inputWrite = BlurImplementationFixture.specification(
+            resources: [
+                .init(
+                    role: .input(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    access: .write
+                ),
+                .init(
+                    role: .output(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    access: .write
+                )
+            ]
+        )
+        #expect(throws: ImplementationSpecificationValidationError.resourceAccessContractMismatch(.input(0))) {
+            try inputWrite.validate(implements: BlurOperation.specification.erased)
+        }
+
+        let outputRead = BlurImplementationFixture.specification(
+            resources: [
+                .init(
+                    role: .input(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    access: .read
+                ),
+                .init(
+                    role: .output(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    access: .read
+                )
+            ]
+        )
+        #expect(throws: ImplementationSpecificationValidationError.resourceAccessContractMismatch(.output(0))) {
+            try outputRead.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
     func acceptsNarrowerParameterPrecisionAndLayerSupport() throws {
         let implementation = BlurImplementationFixture.specification()
         let operation = BlurOperation(radius: 2, border: BlurFixture.reflect)

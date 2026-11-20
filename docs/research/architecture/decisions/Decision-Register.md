@@ -682,7 +682,7 @@ Policy is declarative and travels with the typed function value. Runtime resolut
 
 ## ADR-024 — Operation semantics and implementation support are complementary validated contracts
 
-**Status:** Static contract baseline implemented; static and context qualification integrated partially; input-bound qualification and ranking pending
+**Status:** Static contract baseline and actual input-bound eligibility implemented partially; output-resource validation, dynamic feasibility, and ranking pending
 
 ### Decision
 
@@ -754,13 +754,13 @@ Recovery dispositions are advisory: retry the same target, refresh the environme
 
 ## ADR-026 — Operation implementation registration is a runtime concern with checked private type erasure
 
-**Status:** Registry and provider/context environment integration implemented partially; exact candidate-instance pinning and execution integration pending
+**Status:** Registry registration identity and candidate-bound dispatch implemented; reference-counted unregister/plugin lifetime and full execution integration pending
 
 ### Decision
 
 OperationImplementationRegistry lives in the separate ImageProcessingRuntime product. It depends on ImageProcessingProtocol and GeneralExecutionProtocol; neither protocol depends on the runtime. The registry is an actor because registration, removal, and metadata snapshots are mutable shared runtime state.
 
-An implementation is keyed by its implementation identifier and implementation version. Different versions of one implementation identity may coexist; an exact duplicate key is rejected. Registration validates the implementation specification against the associated operation's semantic specification before storing it.
+An implementation is keyed by its implementation identifier and implementation version. Different versions of one implementation identity may coexist; an exact duplicate key is rejected. Each registration also receives a unique registration identifier so removal and re-registration under the same stable key cannot inherit an earlier candidate identity. Registration validates the implementation specification against the associated operation's semantic specification before storing it.
 
 Public registry operations expose immutable registration metadata and enumerate implementations compatible with an operation specification or a concrete operation step. Enumeration is deterministic and checks static support only; it does not rank, select, or claim current executability.
 
@@ -773,7 +773,9 @@ Heterogeneous implementation storage uses a private type-erased entry. The publi
 - Implementation identity is the pair of stable identifier and implementation version.
 - Candidate enumeration is not routing and does not consult live provider/device state.
 - Type erasure is private; application-facing registration remains generic and typed.
-- The dispatch entry is not public until the common resolver can enforce provider, context, policy, and resource constraints.
+- Dispatch is module-internal and consumes a qualified candidate carrying the exact operation step, typed input, target, context, registration descriptor, and resource accesses.
+- Re-registering a stable implementation or provider identity never silently substitutes a new instance for a candidate/snapshot created from the old registration.
+- Runtime snapshots preserve the provider registration identity used during discovery, not merely the provider descriptor.
 - Removing one implementation version does not remove another version sharing the same implementation identifier.
 
 ### Consequence
@@ -783,15 +785,15 @@ Provider packages and operation implementation packages can be selected independ
 ### Deferred
 
 - Provider registry, discovery, and environment snapshot aggregation.
-- Common resolver and candidate outcome diagnostics.
-- Context preparation/validation and resource reservation.
+- Preference ranking, complete candidate cost evaluation, execution planning, and execution coordination.
+- Reference-counted retention/unloading policy for implementations removed while candidates are outstanding.
 - Cost ranking, execution planning, and execution coordination.
 - Persistent registry metadata and dynamic plug-in loading.
 ---
 
 ## ADR-027 — Provider registration and discovery preserve partial environment results
 
-**Status:** Provider registry and partial discovery implemented; runtime accounting is implemented separately; discovery timeouts and cancellation remain deferred
+**Status:** Provider registry, partial discovery, and provider registration identity in environment snapshots/context creation implemented; discovery timeouts and cancellation remain deferred
 
 ### Decision
 
@@ -819,7 +821,7 @@ A provider returning no devices is valid because it may represent an opaque mana
 - Unique environment snapshot IDs, refresh generations, and a defined freshness policy.
 - Concurrent discovery/cancellation and timeout policy for providers that do not return.
 - Provider health scoring and repeated failure/circuit-breaker behavior.
-- Candidate binding qualification and context preparation.
+- Input-bound candidate qualification is implemented in the first pass; output binding, physical resource feasibility, and candidate ranking remain deferred.
 ---
 
 ## ADR-028 — Runtime workload accounting and environment snapshot identity are separate from provider telemetry
@@ -850,6 +852,41 @@ RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery re
 - Freshness expiration policy, snapshot refresh scheduling, and policy for stale providers.
 - Atomic capture guarantees across registry updates and outstanding-work mutations.
 - Runtime accounting integration with actual submission/completion and cancellation paths.
+## ADR-029 — Operation input context binds typed inputs to explicit image revisions and generic resources
+
+**Status:** Implemented initial input-binding and qualification baseline; output planning and dynamic resource feasibility pending
+
+### Decision
+
+The runtime accepts an actual `OperationValue` during qualification. The core value protocol remains domain-neutral. Resource-bearing values may separately conform to `OperationResourceInputValue` and expose generic `ExecutionResource` bindings indexed by their logical input position.
+
+Image-backed values conform to `ImageOperationInputValue`, which extends the generic resource-input contract. Their `ImageOperationInputContext` explicitly maps logical input indices to one or more immutable `ImageStateSnapshot` values and an explicit `LayerReference` or ordered composite of references. Input indices are nonnegative and unique but need not be contiguous. The context validates image identity and layer existence; it never infers a target from layer order, visibility, or first-match behavior.
+
+The common resolver checks the concrete Swift operation/input types in addition to stable semantic type identifiers. For each selected image layer it validates operation and implementation layer-kind support, actual pixel representation, input storage component precision, and the exact revision-scoped storage binding. Generic input resource requirements are checked against actual resource kind, capacity, alignment, memory domain, access, and execution target. Cross-target resources require an explicit import requirement and a context that truthfully supports importing.
+
+Each implementation and provider registration receives a unique registration identifier in addition to its stable identity. Provider registration identifiers are captured in the runtime environment discovery snapshot, and context creation requires the exact identifier used during discovery. A qualified candidate carries the operation occurrence, typed input value, implementation and provider registration identities, target, context, exact image input snapshots, and required input resource accesses. Dispatch consumes that candidate as one unit. If an implementation registration was removed or replaced, dispatch fails rather than silently substituting a different implementation under the same key. A provider registration replaced after discovery cannot supply a context for the old snapshot.
+
+Input resource access declarations must also agree with operation semantics: writable input roles require both operation and implementation contracts to permit input mutation; output and temporary resource roles must be writable.
+
+### Invariants
+
+- Generic `OperationValue` remains valid for non-image computation; image metadata is supplied only through the optional image-input contract.
+- GEP remains image-agnostic. The generic input-resource contract is in IPP and describes only generic execution resources.
+- Each image target is bound to an exact immutable image identity/revision and explicit layer references.
+- A candidate cannot change its operation step, typed input, target, or prepared context between qualification and dispatch.
+- A re-registered implementation cannot inherit a previous candidate's identity.
+- Resource access declarations cannot silently contradict input-mutation semantics.
+
+### Deferred
+
+- Provider-backed physical memory reservation, residency and full interop feasibility.
+- Per-observation freshness/quality handling during ranking.
+- Output descriptor/resource planning.
+- Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
+- Preference ranking, complete cost estimates, whole-pipeline planning, and execution coordination.
+
+---
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.

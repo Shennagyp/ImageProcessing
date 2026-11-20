@@ -188,6 +188,64 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
             && (!implementationUsesScientificData || optionalSetIsSubset(measurementUnits, of: operationDomain.measurementUnits))
     }
 
+    /// Checks an actual runtime pixel descriptor against this declared domain.
+    /// Unlike isSubset(of:), this compares concrete layout and interpretation facts.
+    public func supports(_ descriptor: PixelDataDescriptor) -> Bool {
+        guard isValid else { return false }
+
+        let actualLayout: PixelStorageLayoutKind
+        switch descriptor.layout {
+        case .interleaved:
+            actualLayout = .interleaved
+        case .planar:
+            actualLayout = .planar
+        }
+        guard layouts.contains(actualLayout) else { return false }
+
+        let actualRoles = descriptor.channels.map(\.role)
+        if let channelRoles,
+           !Set(actualRoles).isSubset(of: channelRoles) {
+            return false
+        }
+
+        let actualChannelOrder: [PixelChannelRole] = descriptor.layout.planes
+            .flatMap(\.channelIndices)
+            .map { descriptor.channels[$0].role }
+        if let channelOrders, !channelOrders.contains(actualChannelOrder) {
+            return false
+        }
+
+        let actualSubsampling = Set(descriptor.layout.planes.map(\.subsampling))
+        if let subsamplingFactors,
+           !actualSubsampling.isSubset(of: subsamplingFactors) {
+            return false
+        }
+
+        let actualSampleOrigins = Set(descriptor.layout.planes.map { $0.sampleOrigin ?? .zero })
+        if let sampleOrigins,
+           !actualSampleOrigins.isSubset(of: sampleOrigins) {
+            return false
+        }
+
+        switch descriptor.interpretation {
+        case let .color(color):
+            guard interpretations.contains(.color) else { return false }
+            if let colorModels, !colorModels.contains(color.channelModel) { return false }
+            if let alphaModes, !alphaModes.contains(color.alphaMode) { return false }
+            if let transferFunctions, !transferFunctions.contains(color.transferFunction) { return false }
+            if let colorSpaces, !colorSpaces.contains(color.colorSpace) { return false }
+        case let .scientific(scientific):
+            guard interpretations.contains(.scientific) else { return false }
+            if let measurementUnits {
+                guard let unit = scientific.unit, measurementUnits.contains(unit) else {
+                    return false
+                }
+            }
+        }
+
+        return true
+    }
+
     private func optionalSetIsValid<Element>(_ values: Set<Element>?) -> Bool {
         values.map { !$0.isEmpty } ?? true
     }

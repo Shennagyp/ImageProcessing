@@ -148,6 +148,7 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case layerSupportMismatch
     case pixelRepresentationMismatch(inputOutput: String)
     case invalidResourceRequirement(ImplementationResourceRole)
+    case resourceAccessContractMismatch(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
     case invalidNumericalSupport
     case missingNumericalSupport
@@ -338,6 +339,31 @@ public struct ImplementationSpecification: Hashable, Sendable {
             }
             guard resourceRoles.insert(requirement.role).inserted else {
                 throw ImplementationSpecificationValidationError.duplicateResourceRequirement(requirement.role)
+            }
+
+            switch requirement.role {
+            case .input(_):
+                let mayWriteInput: Bool
+                switch requirement.access {
+                case .read:
+                    mayWriteInput = false
+                case .write, .readWrite:
+                    mayWriteInput = true
+                }
+                if mayWriteInput {
+                    guard operation.effectContract.inputMutation == .permitted,
+                          effectContract.inputMutation == .permitted else {
+                        throw ImplementationSpecificationValidationError.resourceAccessContractMismatch(
+                            requirement.role
+                        )
+                    }
+                }
+            case .output(_), .temporary(_):
+                guard requirement.access != .read else {
+                    throw ImplementationSpecificationValidationError.resourceAccessContractMismatch(
+                        requirement.role
+                    )
+                }
             }
         }
 

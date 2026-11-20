@@ -233,6 +233,7 @@ struct CommonQualificationResolverTests {
         )
         return try await resolver.evaluate(
             step: AnyImageOperationStep(operation: QualificationOperation()),
+            input: QualificationInput(),
             policy: policy,
             environment: environment,
             freshness: freshness ?? self.freshness(),
@@ -387,6 +388,48 @@ struct CommonQualificationResolverTests {
         #expect(report.evaluations[0].disposition == .rejected)
         #expect(report.evaluations[0].rejections.contains(
             .deviceCapabilityMissing(capability)
+        ))
+    }
+
+    @Test
+    func providerRegistrationReplacementInvalidatesSnapshotCandidateBinding() async throws {
+        let now = Date(timeIntervalSince1970: 50_750)
+        let provider = QualificationTestProvider(capturedAt: now)
+        let implementationRegistry = OperationImplementationRegistry()
+        try await implementationRegistry.register(QualificationImplementation())
+
+        let providerRegistry = ExecutionProviderRegistry()
+        try await providerRegistry.register(provider)
+        let coordinator = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providerRegistry,
+            workLedger: RuntimeWorkLedger()
+        )
+        let environment = try await coordinator.capture(
+            platform: platform(),
+            capturedAt: now
+        )
+
+        #expect(await providerRegistry.unregister(provider.descriptor.identifier))
+        let replacement = QualificationTestProvider(capturedAt: now)
+        try await providerRegistry.register(replacement)
+
+        let resolver = CommonQualificationResolver(
+            implementations: implementationRegistry,
+            providers: providerRegistry
+        )
+        let report = try await resolver.evaluate(
+            step: AnyImageOperationStep(operation: QualificationOperation()),
+            input: QualificationInput(),
+            policy: .unrestricted,
+            environment: environment,
+            freshness: freshness(),
+            now: now
+        )
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations.count == 1)
+        #expect(report.evaluations[0].rejections.contains(
+            .providerRegistrationChanged(provider.descriptor.identifier)
         ))
     }
 

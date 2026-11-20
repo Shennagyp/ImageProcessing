@@ -31,6 +31,27 @@ public enum CandidateQualificationDisposition: String, Hashable, Sendable {
 
 public enum CandidateQualificationRejection: Hashable, Sendable {
     case implementationDoesNotSupportOperationStep
+    case implementationRegistrationUnavailable
+    case implementationRegistrationChanged
+    case providerRegistrationChanged(ExecutionProviderID)
+    case operationConcreteTypeMismatch
+    case inputConcreteTypeMismatch
+    case imageInputLayerKindUnsupported(Int, LayerReference, LayerKind)
+    case implementationInputLayerKindUnsupported(Int, LayerReference, LayerKind)
+    case inputPixelDescriptorMissing(Int, LayerReference)
+    case operationInputPixelRepresentationUnsupported(Int, LayerReference)
+    case implementationInputPixelRepresentationUnsupported(Int, LayerReference)
+    case operationInputStoragePrecisionUnsupported(Int, LayerReference, PixelComponentType)
+    case implementationInputStoragePrecisionUnsupported(Int, LayerReference, PixelComponentType)
+    case inputBindingMissing(Int)
+    case inputResourceBindingMissing(Int, LayerReference)
+    case inputResourceContextMissing(Int)
+    case inputResourceKindMismatch(Int, ExecutionResourceReference, expected: ExecutionResourceKind, actual: ExecutionResourceKind)
+    case inputResourceCapacityInsufficient(Int, ExecutionResourceReference, required: UInt64, actual: UInt64)
+    case inputResourceAlignmentInsufficient(Int, ExecutionResourceReference, required: UInt64, actual: UInt64)
+    case inputResourceMemoryDomainUnsupported(Int, ExecutionResourceReference, ExecutionMemoryDomain)
+    case inputResourceAccessInsufficient(Int, ExecutionResourceReference, actual: ExecutionResourceAccessMode, required: ExecutionResourceAccessMode)
+    case inputResourceNotAccessibleFromTarget(Int, ExecutionResourceReference, ExecutionTargetReference)
     case requiredProviderNotDiscovered(ExecutionProviderID)
     case noExecutionProviderDiscovered
     case providerNotAllowed(ExecutionProviderID)
@@ -55,12 +76,23 @@ public enum CandidateQualificationUncertainty: Hashable, Sendable {
     case providerDiscoveryIncomplete(ExecutionProviderID)
     case deviceStateUnknown(ExecutionTargetReference, String)
     case deviceStateStale(ExecutionTargetReference)
+    case providerRegistrationIdentityMissing(ExecutionProviderID)
 }
 
 public struct QualifiedOperationImplementation: Sendable {
     public let implementation: RegisteredOperationImplementation
+    /// Exact provider package registration used to create the execution context.
+    public let providerRegistrationIdentifier: UUID
+    /// Exact operation occurrence qualified by the resolver.
+    public let operationStep: AnyImageOperationStep
+    /// Exact typed value whose descriptors and resources were qualified.
+    public let input: any OperationValue
     public let target: ExecutionTargetReference
     public let context: any ExecutionContext
+    /// Exact immutable image revisions and targets used during qualification.
+    public let imageInputContext: ImageOperationInputContext?
+    /// Source-resource accesses implied by the implementation's input roles.
+    public let inputResourceAccesses: [ExecutionResourceAccess]
 }
 
 public struct OperationImplementationCandidateEvaluation: Sendable {
@@ -109,4 +141,6 @@ public struct OperationImplementationQualificationReport: Sendable {
 public enum OperationImplementationQualificationError: Error, Equatable, Sendable {
     case invalidOperationSpecification(OperationSpecificationValidationError)
     case invalidOperationParameters(OperationParameterValidationError)
+    case inputValueTypeMismatch(expected: OperationValueIdentifier, actual: OperationValueIdentifier)
+    case imageInputContextRequired
 }

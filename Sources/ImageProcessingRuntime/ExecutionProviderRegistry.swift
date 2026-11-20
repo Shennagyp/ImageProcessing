@@ -3,6 +3,8 @@ import GeneralExecutionProtocol
 
 public struct RegisteredExecutionProvider: Hashable, Sendable {
     public let descriptor: ExecutionProviderDescriptor
+    /// Distinguishes separate registrations that reuse the same provider identity and descriptor.
+    public let registrationIdentifier: UUID
 }
 
 public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
@@ -10,6 +12,7 @@ public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
     case providerNotRegistered(ExecutionProviderID)
     case targetProviderMismatch(expected: ExecutionProviderID, actual: ExecutionProviderID)
     case providerDescriptorChanged(ExecutionProviderID)
+    case providerRegistrationChanged(ExecutionProviderID)
 }
 
 /// One discovery attempt can succeed partially. Provider/device failures are
@@ -18,18 +21,22 @@ public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
 public struct ExecutionEnvironmentDiscoverySnapshot: Sendable {
     public let environment: ExecutionEnvironmentSnapshot
     public let failures: [ExecutionProviderFailure]
+    public let providerRegistrationIdentifiers: [ExecutionProviderID: UUID]
 
     public init(
         environment: ExecutionEnvironmentSnapshot,
-        failures: [ExecutionProviderFailure]
+        failures: [ExecutionProviderFailure],
+        providerRegistrationIdentifiers: [ExecutionProviderID: UUID] = [:]
     ) {
         self.environment = environment
         self.failures = failures
+        self.providerRegistrationIdentifiers = providerRegistrationIdentifiers
     }
 }
 
 private struct RegisteredProviderEntry: Sendable {
     let descriptor: ExecutionProviderDescriptor
+    let registrationIdentifier: UUID
     let provider: any ExecutionProvider
 }
 
@@ -50,6 +57,7 @@ public actor ExecutionProviderRegistry {
         }
         entries[descriptor.identifier] = RegisteredProviderEntry(
             descriptor: descriptor,
+            registrationIdentifier: UUID(),
             provider: provider
         )
     }
@@ -61,7 +69,12 @@ public actor ExecutionProviderRegistry {
 
     public func registeredProviders() -> [RegisteredExecutionProvider] {
         entries.values
-            .map { RegisteredExecutionProvider(descriptor: $0.descriptor) }
+            .map {
+                RegisteredExecutionProvider(
+                    descriptor: $0.descriptor,
+                    registrationIdentifier: $0.registrationIdentifier
+                )
+            }
             .sorted { $0.descriptor.identifier.rawValue < $1.descriptor.identifier.rawValue }
     }
 
@@ -69,7 +82,8 @@ public actor ExecutionProviderRegistry {
     /// descriptor still matches the descriptor used by the environment snapshot.
     public func makeContext(
         for target: ExecutionTargetReference,
-        expecting expectedProvider: ExecutionProviderDescriptor
+        expecting expectedProvider: ExecutionProviderDescriptor,
+        registrationIdentifier: UUID
     ) async throws -> any ExecutionContext {
         guard target.providerID == expectedProvider.identifier else {
             throw ExecutionProviderRegistryError.targetProviderMismatch(
@@ -79,6 +93,9 @@ public actor ExecutionProviderRegistry {
         }
         guard let entry = entries[target.providerID] else {
             throw ExecutionProviderRegistryError.providerNotRegistered(target.providerID)
+        }
+        guard entry.registrationIdentifier == registrationIdentifier else {
+            throw ExecutionProviderRegistryError.providerRegistrationChanged(target.providerID)
         }
         guard entry.descriptor == expectedProvider,
               entry.provider.descriptor == expectedProvider else {
@@ -246,9 +263,15 @@ public actor ExecutionProviderRegistry {
             if lhsTarget != rhsTarget { return lhsTarget < rhsTarget }
             return $0.kind.rawValue < $1.kind.rawValue
         }
+        let registrationIdentifiers = Dictionary(
+            uniqueKeysWithValues: registered.map {
+                ($0.descriptor.identifier, $0.registrationIdentifier)
+            }
+        )
         return ExecutionEnvironmentDiscoverySnapshot(
             environment: environment,
-            failures: failures
+            failures: failures,
+            providerRegistrationIdentifiers: registrationIdentifiers
         )
     }
 

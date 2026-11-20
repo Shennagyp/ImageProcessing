@@ -1,3 +1,4 @@
+import Foundation
 import GeneralExecutionProtocol
 import ImageProcessingProtocol
 @testable import ImageProcessingRuntime
@@ -93,6 +94,25 @@ struct OperationImplementationRegistryTests {
         )
     }
 
+    private func qualifiedCandidate(
+        _ implementation: RegisteredOperationImplementation,
+        operationStep: AnyImageOperationStep? = nil,
+        input: any OperationValue,
+        context: RegistryContext? = nil
+    ) -> QualifiedOperationImplementation {
+        let selectedContext = context ?? self.context()
+        return QualifiedOperationImplementation(
+            implementation: implementation,
+            providerRegistrationIdentifier: UUID(),
+            operationStep: operationStep ?? step(),
+            input: input,
+            target: selectedContext.target,
+            context: selectedContext,
+            imageInputContext: nil,
+            inputResourceAccesses: []
+        )
+    }
+
     @Test
     func registersHeterogeneousImplementationsForOneOperation() async throws {
         let registry = OperationImplementationRegistry()
@@ -141,17 +161,14 @@ struct OperationImplementationRegistryTests {
             MultiplyImplementation(identifier: "registry.multiply.metal", factor: 3)
         )
 
+        let registrations = await registry.registeredImplementations()
+        let cpu = try #require(registrations.first { $0.key == key("registry.multiply.cpu") })
+        let metal = try #require(registrations.first { $0.key == key("registry.multiply.metal") })
         let cpuOutput = try await registry.execute(
-            step(),
-            input: RegistryInput(value: 7),
-            using: key("registry.multiply.cpu"),
-            context: context()
+            using: qualifiedCandidate(cpu, input: RegistryInput(value: 7))
         ) as? RegistryOutput
         let metalOutput = try await registry.execute(
-            step(),
-            input: RegistryInput(value: 7),
-            using: key("registry.multiply.metal"),
-            context: context()
+            using: qualifiedCandidate(metal, input: RegistryInput(value: 7))
         ) as? RegistryOutput
 
         #expect(cpuOutput?.value == 14)
@@ -164,14 +181,20 @@ struct OperationImplementationRegistryTests {
         try await registry.register(
             MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 2)
         )
-        let missing = key("registry.multiply.cuda")
+        let missingKey = key("registry.multiply.cuda")
+        let registered = try #require((await registry.registeredImplementations()).first)
+        let missing = RegisteredOperationImplementation(
+            key: missingKey,
+            registrationIdentifier: UUID(),
+            specification: registered.specification
+        )
 
-        await #expect(throws: OperationImplementationRegistryError.registrationNotFound(missing)) {
+        await #expect(throws: OperationImplementationRegistryError.registrationNotFound(missingKey)) {
             try await registry.execute(
-                step(),
-                input: RegistryInput(value: 4),
-                using: missing,
-                context: context()
+                using: qualifiedCandidate(
+                    missing,
+                    input: RegistryInput(value: 4)
+                )
             )
         }
     }
@@ -205,14 +228,15 @@ struct OperationImplementationRegistryTests {
         let implementation = MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 2)
         try await registry.register(implementation)
 
+        let registered = try #require((await registry.registeredImplementations()).first)
         await #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
             key("registry.multiply.cpu")
         )) {
             try await registry.execute(
-                step(),
-                input: ForeignRegistryInput(value: 7),
-                using: key("registry.multiply.cpu"),
-                context: context()
+                using: qualifiedCandidate(
+                    registered,
+                    input: ForeignRegistryInput(value: 7)
+                )
             )
         }
     }
@@ -224,14 +248,36 @@ struct OperationImplementationRegistryTests {
         try await registry.register(implementation)
         let alternativeStep = AnyImageOperationStep(operation: AlternativeRegistryOperation())
 
+        let registered = try #require((await registry.registeredImplementations()).first)
         await #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
             key("registry.multiply.cpu")
         )) {
             try await registry.execute(
-                alternativeStep,
-                input: RegistryInput(value: 7),
-                using: key("registry.multiply.cpu"),
-                context: context()
+                using: qualifiedCandidate(
+                    registered,
+                    operationStep: alternativeStep,
+                    input: RegistryInput(value: 7)
+                )
+            )
+        }
+    }
+
+    @Test
+    func staleCandidateCannotDispatchAfterSameKeyIsReregistered() async throws {
+        let registry = OperationImplementationRegistry()
+        try await registry.register(
+            MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 2)
+        )
+        let original = try #require((await registry.registeredImplementations()).first)
+        #expect(await registry.unregister(original.key))
+
+        try await registry.register(
+            MultiplyImplementation(identifier: "registry.multiply.cpu", factor: 3)
+        )
+
+        await #expect(throws: OperationImplementationRegistryError.registrationChanged(original.key)) {
+            try await registry.execute(
+                using: qualifiedCandidate(original, input: RegistryInput(value: 7))
             )
         }
     }
