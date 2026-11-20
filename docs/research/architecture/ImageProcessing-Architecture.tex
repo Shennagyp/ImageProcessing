@@ -361,11 +361,23 @@ This is a semantic classification, not a requirement to create a deep class-inhe
 
 Adjustment or procedural layers may be useful later, but they should not be part of the first implementation until evaluation order, parameter persistence, blending, and export semantics are specified.
 
+\subsection{Layer spatial registration}
+
+A raster, mask, or label-map layer has its own sample grid. Matching width/height/depth alone is not enough to prove that two layers refer to the same locations; conversely, different extents can describe the same canvas at different resolutions or through a crop/registration. The image snapshot therefore validates the relation between each pixel layer and the document canvas.
+
+If the layer's \texttt{PixelDataDescriptor.extent} equals the canvas extent and no mapping is supplied, the layer uses the identity mapping. If the extents differ, an explicit \texttt{LayerSpatialMapping} is mandatory. A mapping may also be supplied for equal extents when the layer is translated, rotated, sheared, or otherwise registered differently.
+
+The initial mapping is a validated, invertible 4-by-4 affine transform from layer sample-centre index coordinates to image-canvas sample-centre index coordinates. Coordinates use integer-valued sample centres (the sample at index $(0,0,0)$ is located at that coordinate); the transform is stored row-major and applied to column-coordinate vectors. A two-dimensional layer uses $z=0$. This supports different resolutions, crops, offsets, orientation, scale, and affine registration without assuming the grids coincide.
+
+The mapping describes geometry only. It does not move or interpolate pixel data, does not define a physical/world coordinate system, and does not authorize implicit resampling. An operation that samples one layer on another layer's grid must explicitly choose its interpolation, border, and output-grid semantics. Non-affine deformation fields and calibrated world-coordinate transforms are outside the initial descriptor and require their own explicit model; they must not be approximated by hiding behavior inside this affine mapping.
+
+A snapshot rejects a pixel layer whose extent differs from the canvas when no mapping is supplied. Annotation descriptors retain their own explicit coordinate-space declaration and are not required to have a pixel extent.
+
 \subsection{Layer properties and document composition}
 
 Properties common to renderable layers may include visibility, opacity, compositing mode, coordinate transform, and ordering. Not all properties apply to every content kind. For example, opacity and blend mode can be meaningful for rendered raster content but do not change the categorical identity of a label map. A property that does not apply to a layer kind must be rejected or explicitly defined, not silently ignored.
 
-The image's displayed composite is a rendering result. It is not a replacement for its source layers. Flattening is an explicit destructive or export operation, never an implicit consequence of applying an ordinary operation to a layered image.
+The image's displayed composite is a rendering result. It is not a replacement for its source layers. Flattening is an explicit destructive or export operation, never an implicit consequence of applying an ordinary operation to a layered image. A composite renderer must use each layer's validated mapping into the document canvas; it must not infer alignment from equal dimensions or silently resample a mismatched layer.
 
 \subsection{Pixel resource and data descriptor}
 
