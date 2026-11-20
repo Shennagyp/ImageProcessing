@@ -537,6 +537,7 @@ let pipeline = try correction
     }
 
 // The Image runtime/application API is still pending.
+// Image.applying and ImageProcessingRuntime are planned, not implemented yet.
 let result = try await source.applying(
     pipeline,
     to: .layer(sourceLayer.id)
