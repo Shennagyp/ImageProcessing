@@ -67,6 +67,9 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
         by operation: Next,
         stepIdentifier: OperationStepIdentifier = .generate()
     ) throws -> ImageFunction<Input, Next.Output> where Next.Input == Output {
+        guard !steps.contains(where: { $0.identifier == stepIdentifier }) else {
+            throw QualificationPolicyValidationError.duplicateStepIdentifier(stepIdentifier)
+        }
         let step = AnyImageOperationStep(
             operation: operation,
             identifier: stepIdentifier
