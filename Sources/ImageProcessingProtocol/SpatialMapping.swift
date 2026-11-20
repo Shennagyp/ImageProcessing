@@ -1,5 +1,21 @@
-/// A point expressed in the image document's canvas index coordinate system.
+/// A point expressed in a layer's base sample-grid index coordinates.
 /// Integer coordinates refer to sample centres, not pixel-cell corners.
+public struct PixelGridCoordinate: Hashable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let z: Double
+
+    public init?(x: Double, y: Double, z: Double = 0) {
+        guard x.isFinite, y.isFinite, z.isFinite else { return nil }
+        self.x = x
+        self.y = y
+        self.z = z
+    }
+
+    public static let zero = PixelGridCoordinate(x: 0, y: 0, z: 0)!
+}
+
+/// A point expressed in the image document's canvas index coordinate system.
 public struct CanvasIndexCoordinate: Hashable, Sendable {
     public let x: Double
     public let y: Double
@@ -74,7 +90,7 @@ public struct LayerSpatialMapping: Hashable, Sendable {
         0, 0, 0, 1
     ])
 
-    public func mapToCanvas(_ coordinate: CanvasIndexCoordinate) throws -> CanvasIndexCoordinate {
+    public func mapToCanvas(_ coordinate: PixelGridCoordinate) throws -> CanvasIndexCoordinate {
         let m = rowMajorValues
         let x = m[0] * coordinate.x + m[1] * coordinate.y + m[2] * coordinate.z + m[3]
         let y = m[4] * coordinate.x + m[5] * coordinate.y + m[6] * coordinate.z + m[7]
