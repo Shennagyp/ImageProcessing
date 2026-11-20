@@ -192,6 +192,9 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
         }
+        guard effectContract.isValid else {
+            throw OperationSpecificationValidationError.invalidEffectContract
+        }
         if !(pixelDataContract.input?.isValid ?? true)
             || !(pixelDataContract.output?.isValid ?? true) {
             throw OperationSpecificationValidationError.invalidPixelDataContract
