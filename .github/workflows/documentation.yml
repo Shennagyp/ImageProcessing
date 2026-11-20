@@ -1,0 +1,52 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "docs/**/*.tex"
+      - "docs/**/*.md"
+      - ".github/workflows/documentation.yml"
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/**/*.tex"
+      - "docs/**/*.md"
+      - ".github/workflows/documentation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-latex-documents:
+    name: Build architecture and implementation plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install LaTeX toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            latexmk \
+            lmodern \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-science
+
+      - name: Build architecture paper
+        run: |
+          latexmk -pdf -interaction=nonstopmode -halt-on-error \
+            docs/research/architecture/ImageProcessing-Architecture.tex
+
+      - name: Build implementation plan
+        working-directory: docs/project_management
+        run: |
+          latexmk -pdf -interaction=nonstopmode -halt-on-error \
+            Implementation-Plan.tex
