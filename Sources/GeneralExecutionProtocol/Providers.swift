@@ -40,6 +40,13 @@ public struct ExecutionDeviceDescriptor: Hashable, Sendable {
 /// protocol with native context access without exposing those types to the core.
 public protocol ExecutionContext: Sendable {
     var target: ExecutionTargetReference { get }
+    var capabilities: ExecutionCapabilities { get }
+}
+
+public extension ExecutionContext {
+    /// Context-specific capabilities default to empty for providers that do not
+    /// expose them. Optional context protocols remain the executable proof.
+    var capabilities: ExecutionCapabilities { .init() }
 }
 
 public protocol ExecutionDevice: Sendable {
