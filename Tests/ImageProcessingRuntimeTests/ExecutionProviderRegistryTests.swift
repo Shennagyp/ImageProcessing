@@ -1,3 +1,4 @@
+import Foundation
 import GeneralExecutionProtocol
 @testable import ImageProcessingRuntime
 import Testing
