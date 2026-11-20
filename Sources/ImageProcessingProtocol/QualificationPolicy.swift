@@ -262,7 +262,7 @@ public struct QualificationPolicy: Hashable, Sendable {
                     || declaration.origin.scope == effectiveScope
             }
 
-            try validateIntersection(
+            try validateIntersection<ExecutionProviderID>(
                 applicable,
                 dimension: .provider,
                 values: { allowedProviders($0) }
@@ -278,7 +278,7 @@ public struct QualificationPolicy: Hashable, Sendable {
                 }
             })
             for dimension in precisionDimensions {
-                try validateIntersection(
+                try validateIntersection<PixelComponentType>(
                     applicable,
                     dimension: .precision(dimension),
                     values: { requirement in
