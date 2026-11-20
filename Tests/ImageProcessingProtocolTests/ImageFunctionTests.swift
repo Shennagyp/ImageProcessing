@@ -150,3 +150,22 @@ struct ImageFunctionTests {
         #expect(OperationStepIdentifier(rawValue: "") == nil)
     }
 }
+
+
+extension ImageFunctionTests {
+    @Test
+    func appendingAnOperationCannotDuplicateAnExistingStepIdentifier() throws {
+        let identifier = try #require(OperationStepIdentifier(rawValue: "step.duplicate"))
+        let first = ImageFunction(
+            operation: AddNumberOperation(amount: 1),
+            stepIdentifier: identifier
+        )
+
+        #expect(throws: QualificationPolicyValidationError.duplicateStepIdentifier(identifier)) {
+            try first.followed(
+                by: AddNumberOperation(amount: 2),
+                stepIdentifier: identifier
+            )
+        }
+    }
+}
