@@ -96,6 +96,7 @@ public enum QualificationPolicyValidationError: Error, Hashable, Sendable {
     case unknownStep(OperationStepIdentifier, PolicyDeclarationOrigin)
     case inapplicableDimension(OperationStepIdentifier, OperationQualificationDimension, PolicyDeclarationOrigin)
     case noApplicableStep(OperationQualificationDimension, PolicyDeclarationOrigin)
+    case precisionUnsupportedByOperation(OperationStepIdentifier, PrecisionDimension, [PolicyDeclarationOrigin])
 }
 
 /// Immutable declarative policy. Requirements filter candidates; preferences
@@ -307,6 +308,35 @@ public struct QualificationPolicy: Hashable, Sendable {
                     dimension: .precision(dimension),
                     values: precisionValues
                 )
+
+                if case let .step(stepIdentifier) = effectiveScope,
+                   let step = steps.first(where: { $0.identifier == stepIdentifier }),
+                   step.specification.qualificationDimensions.contains(
+                    Self.operationQualificationDimension(for: dimension)
+                   ) {
+                    let declarations = applicable.filter {
+                        allowedPrecision($0.requirement)?.dimension == dimension
+                    }
+                    var policyAllowedValues: Set<PrecisionValue>?
+                    for declaration in declarations {
+                        guard let allowed = allowedPrecision(declaration.requirement) else { continue }
+                        if let current = policyAllowedValues {
+                            policyAllowedValues = current.intersection(allowed.values)
+                        } else {
+                            policyAllowedValues = allowed.values
+                        }
+                    }
+
+                    let operationAllowedValues = step.specification.precisionContract.values(for: dimension)
+                    if let policyAllowedValues,
+                       policyAllowedValues.isDisjoint(with: operationAllowedValues) {
+                        throw QualificationPolicyValidationError.precisionUnsupportedByOperation(
+                            stepIdentifier,
+                            dimension,
+                            declarations.map(\\.origin)
+                        )
+                    }
+                }
             }
         }
     }
