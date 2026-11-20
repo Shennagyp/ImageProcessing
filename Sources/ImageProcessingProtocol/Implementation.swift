@@ -16,6 +16,15 @@ public enum ImplementationDeterminism: String, Hashable, Sendable {
     case nondeterministic
 }
 
+public extension ExecutionResourceKind {
+    var isValid: Bool {
+        if case let .opaque(identifier) = self {
+            return !identifier.isEmpty
+        }
+        return true
+    }
+}
+
 public enum ImplementationResourceRole: Hashable, Sendable {
     case input(Int)
     case output(Int)
@@ -62,6 +71,7 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
 
     public var isValid: Bool {
         role.isValid
+            && kind.isValid
             && !allowedMemoryDomains.isEmpty
             && minimumCapacityBytes > 0
             && minimumAlignmentBytes > 0
@@ -337,7 +347,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
         satisfies operationTolerance: Double?
     ) -> Bool {
         guard let operationTolerance else {
-            return implementationBound == nil
+            return true
         }
         guard let implementationBound,
               implementationBound.isFinite,
