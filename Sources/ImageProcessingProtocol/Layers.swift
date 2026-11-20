@@ -135,12 +135,6 @@ public struct LayerDescriptor: Hashable, Sendable {
 
     public var kind: LayerKind { content.kind }
 
-    /// The transform used after the containing snapshot has validated that an
-    /// omitted transform is valid (pixel extent equals canvas extent).
-    public var effectiveSpatialMapping: LayerSpatialMapping {
-        spatialMapping ?? .identity
-    }
-
     public init(
         identifier: LayerIdentifier,
         properties: LayerProperties = .defaultValue,
@@ -224,5 +218,18 @@ public struct ImageDocumentSnapshot: Hashable, Sendable {
             )
         }
         return layers.first { $0.identifier == reference.layerID }
+    }
+
+    /// Returns the validated map from a pixel layer's sample grid to the canvas.
+    /// A nil result means the reference does not identify an existing pixel layer.
+    /// Snapshots guarantee that an omitted mapping is valid only for equal extents.
+    public func spatialMapping(for reference: LayerReference) throws -> LayerSpatialMapping? {
+        guard let layer = try layer(for: reference) else { return nil }
+        switch layer.content {
+        case .raster, .mask, .labelMap:
+            return layer.spatialMapping ?? .identity
+        case .annotation:
+            return nil
+        }
     }
 }
