@@ -25,8 +25,8 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
     }
 
     /// The identity function for any operation value type.
-    public static func identity<Value: OperationValue>() -> ImageFunction<Value, Value> {
-        ImageFunction<Value, Value>(steps: [])
+    public static func identity() -> Self where Input == Output {
+        Self(steps: [])
     }
 
     /// Compose this function followed by another function whose input type is
