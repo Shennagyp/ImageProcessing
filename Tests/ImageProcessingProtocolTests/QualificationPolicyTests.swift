@@ -371,3 +371,33 @@ extension QualificationPolicyTests {
         }
     }
 }
+
+
+extension QualificationPolicyTests {
+    @Test
+    func deterministicRequirementAndPreferenceNeedAnApplicableOperation() throws {
+        let function = ImageFunction(operation: NonNumericOperation())
+
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.require(.deterministicResults)
+            }
+        }
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.prefer(.deterministicResults)
+            }
+        }
+    }
+
+    @Test
+    func deterministicRequirementAndPreferenceAttachToAnApplicableOperation() throws {
+        let qualified = try numericFunction().qualifying {
+            $0.require(.deterministicResults)
+            $0.prefer(.deterministicResults, priority: 2)
+        }
+
+        #expect(qualified.qualificationPolicy.requirements.count == 1)
+        #expect(qualified.qualificationPolicy.preferences.count == 1)
+    }
+}
