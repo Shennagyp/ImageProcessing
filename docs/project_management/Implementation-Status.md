@@ -2,7 +2,7 @@
 
 **Architecture baseline:** 0.3  
 **Implementation plan:** 0.2  
-**Current state:** Initial SwiftPM protocol foundation; implementation is in progress.
+**Current state:** Initial SwiftPM protocol foundation plus image-domain identity and semantic descriptor layer; implementation is in progress.
 
 This file records actual repository state. The architecture and implementation plan remain normative for intended behavior; a listed design or deliverable is not considered complete merely because a related type exists.
 
@@ -42,20 +42,31 @@ This file records actual repository state. The architecture and implementation p
 - Declarative implementation specifications describe operation/version compatibility, optional provider binding, and scoped generic capability requirements.
 - The protocol has no per-implementation qualification hook.
 
+### ImageProcessingProtocol image semantics
+
+- Image and layer identifiers, with layer identity scoped to an image through LayerReference.
+- Monotonic ImageRevision with explicit overflow detection.
+- Immutable ImageDocumentSnapshot with canvas extent, ordered typed layers, duplicate-ID validation, and foreign-reference rejection.
+- Raster, mask, label-map, and annotation content descriptors with distinct semantic validation.
+- PixelDataDescriptor with component precision, channel identities/roles, explicit color channel models (gray, RGB, YCbCr, custom), scientific interpretation, alpha mode, and optional channel value ranges.
+- Interleaved and planar storage planes with byte offsets, row/pixel/slice strides, subsampling, channel mappings, checked minimum-capacity computation, and overflow rejection.
+- Mask semantics (binary, coverage, probability), integer label identifiers, and explicit annotation coordinate spaces.
+
 ### Tests
 
-The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, and typed implementation execution.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, label/mask/annotation semantics, capacity validation, and overflow.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 22 tests.
+- swift test — passed, 43 tests in 7 suites on Linux x86_64.
 
-GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688. Both jobs completed swift build and swift test successfully; the Swift Testing runner reported 22 tests in 4 suites. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The new image-domain descriptor tests are locally verified (43 tests); cross-platform CI for the 43-test revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
-- Image document, layer, image-specific pixel/data descriptors, and their mapping to generic execution resource handles.
+- Mutable Image handle/actor, revision-checked replacement commits, and concurrent image-state ownership.
+- Pixel-resource binding from semantic PixelDataDescriptor values to one or more generic ExecutionResource handles and plane-resource lifetime.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
@@ -74,13 +85,14 @@ GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at com
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
 | 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
-| 3 — ImageProcessingProtocol core | In progress | Operation contract exists; image/layer/resource and compositional function model remain. |
+| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, and pixel semantic descriptors are implemented; mutable Image ownership, resource binding, composition, policy builder, and type-erased registry remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
 
 1. Build a reusable test-only provider conformance harness for allocation/import, access retention, dependencies, completion, cancellation, and synchronization.
-2. Complete the image/layer semantic descriptors, numerical contracts, and operation-level input/output requirements.
-3. Add immutable qualification-policy values and construction/composition conflict validation.
-4. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
-5. Add a CPU provider and one small operation vertical slice before GPU providers.
+2. Bind PixelDataDescriptor/LayerDescriptor values to generic execution resources with explicit plane ownership and lifetime.
+3. Resolve the mutable Image actor/revision-commit API and complete typed function composition.
+4. Add immutable qualification-policy values and construction/composition conflict validation.
+5. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
+6. Add a CPU provider and one small operation vertical slice before GPU providers.
