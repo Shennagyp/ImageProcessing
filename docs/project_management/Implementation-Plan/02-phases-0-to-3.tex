@@ -1,106 +1,86 @@
-\section{Phase 0 --- Contract decisions and repository foundation}
+\phase{0 --- Architecture decisions and package boundaries}
 
-\textbf{Objective.} Remove architectural ambiguity before public APIs or native backends accumulate assumptions.
+\textbf{Objective.} Resolve the decisions that affect every protocol, implementation package, and application before freezing public API.
 
-\textbf{Why first.} The architecture establishes the broad boundaries, but several type, ownership, and portability decisions remain open. Implementing against unresolved semantics would create expensive rework in every backend.
+\textbf{Why first.} A mistake in operation identity, precision meaning, policy composition, or provider lifecycle propagates into every implementation. These are shared contracts, not implementation-specific details.
 
 \deliverables
 \begin{enumerate}
-  \item A decision register resolving or explicitly deferring: image identity, layer identity scope, image snapshot semantics, concurrent replacement, resource ownership, async completion, operation versioning, cross-language ABI, and supported initial platforms.
-  \item A package dependency diagram with import rules and an automated dependency-cycle check.
-  \item A repository layout for protocols, runtime, providers, operation adapters, samples, tests, benchmarks, and documentation.
-  \item Command-line build/test entry points and CI jobs for the platforms that can be supported immediately.
-  \item A contribution rule: no new provider or operation is registered without a contract and conformance tests.
+  \item A decision register for image/layer identity, resource ownership, snapshot/replacement concurrency, operation identity/versioning, and asynchronous completion.
+  \item A formal boundary among \IPP{}, \GEP{}, \IPR{}, external provider packs, and external operation-implementation packs.
+  \item A decision on typed public implementation protocols and private type erasure for the heterogeneous runtime registry.
+  \item A specification schema distinguishing operation semantics, implementation support, provider static capabilities, and dynamic execution state.
+  \item A precision vocabulary that distinguishes input/storage, computation, accumulation, and output precision.
+  \item A qualification-policy model distinguishing hard requirements from soft preferences, with explicit scopes and deterministic composition rules.
+  \item Conflict/error taxonomy: contradictory policy, unsupported semantic requirement, missing provider, temporary device unavailability, resource reservation failure, and implementation execution failure.
+  \item A platform/toolchain support baseline and an environment telemetry capability matrix. Record which state metrics are reliable, optional, estimated, or unavailable.
+  \item Repository/package boundaries, dependency-cycle checks, command-line build/test entry points, and CI for the initially supported targets.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
-  \item No unresolved decision blocks the first API implementation.
-  \item The package graph has no circular dependency.
-  \item CI builds the empty/minimal package skeleton and runs a trivial test on the declared baseline platform.
-  \item The phase-0 decision register identifies assumptions and deferred questions without presenting them as settled facts.
+  \item No unresolved decision blocks the first protocol implementation.
+  \item The dependency graph is acyclic: \IPP{} may depend on \GEP{}; the reverse dependency is forbidden.
+  \item No core package depends on a concrete CPU/GPU/algorithm implementation package.
+  \item The policy model can represent the required FP32 example without confusing storage and computation precision.
+  \item The design distinguishes contradictory policy from a valid requirement that cannot currently be satisfied by available hardware.
 \end{itemize}
 
-\textbf{Do not do yet:} write GPU kernels, add a large algorithm catalog, or define a general-purpose plugin loader.
+\textbf{Do not do yet:} write provider kernels, add a large operation catalog, or create a general-purpose dynamic plug-in loader.
 
-\phase{1 --- ImageProcessingProtocol domain contract}
+\phase{1 --- Image operation and implementation contracts}
 
-\textbf{Objective.} Specify the primary library first: the image-processing vocabulary and contracts that all operation implementations must obey.
-
-\textbf{Scope.} This phase produces the domain contract. It does not implement native compute providers and does not let generic execution types dictate image semantics.
+\textbf{Objective.} Specify the domain contracts that allow one operation to have many independent implementation classes.
 
 \deliverables
 \begin{enumerate}
-  \item \textbf{Image model:} logical image identity, revision, canvas/spatial descriptor, ordered layer references, metadata, and snapshot behavior.
-  \item \textbf{Layer model:} typed content categories for raster, mask, label map, and annotations; explicit layer properties and target selection.
-  \item \textbf{Pixel semantics:} descriptor fields for dimensions, components, precision, channels, strides, numerical range, color/transfer function, alpha interpretation, and scientific/non-color data.
-  \item \textbf{Operation object:} stable identifier, semantic version, immutable parameters, validation rules, input/output contract, numerical contract, alias/mutation declaration, and effect classification.
-  \item \textbf{Operation implementation contract:} declares supported operation identities/versions, input/output constraints, precision guarantees, access patterns, and required generic execution capabilities.
-  \item \textbf{Qualifying function contract:} defines structured eligible/rejected/preparation-required results and machine-readable reasons. The qualifier is owned by the image-processing domain contract.
-  \item \textbf{Composition contract:} defines typed sequential composition and the behavior of a composite operation. Multi-input operations use explicit typed input records; no public graph engine is introduced.
-  \item \textbf{Image result contract:} distinguishes producing a new logical image from atomically replacing an existing image's state. Neither promises physical in-place reuse.
+  \item \textbf{Operation identity:} stable identifier, semantic version, immutable parameters, parameter validation, and typed input/output contracts.
+  \item \textbf{Operation specification:} semantic requirements, permitted numerical variation, supported input/output categories, parameter domain, mutation/effect semantics, and precision dimensions.
+  \item \textbf{One generic implementation protocol:} \texttt{ImageOperationImplementation} with an associated \texttt{Operation} type, declarative specification, and typed execution entry point.
+  \item \textbf{Implementation specification:} operation identity/version, implementation identity/version, provider/runtime dependency, required generic capabilities, supported formats/layouts/precision modes, parameter limits, semantic options, resource requirements, and static cost hints.
+  \item \textbf{No per-implementation qualifier:} implementations declare support; they do not each implement independent \texttt{qualify()} code. The core resolver interprets their specifications.
+  \item \textbf{Qualification result vocabulary:} eligible, rejected, and temporarily unavailable outcomes with machine-readable reasons, requirements, and preparation/transfer details.
+  \item \textbf{Fluent policy contract:} immutable pipeline/operation-scoped configuration with explicit \texttt{require} and \texttt{prefer} semantics.
+  \item \textbf{Example contracts:} Gaussian blur, resize, and blending with enough detail to compare CPU, CUDA, Metal, and algorithm-library implementations without changing operation identity.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
-  \item Every public concept has one definition and one owner.
-  \item At least three worked operation contracts (for example, Gaussian blur, resize, and alpha-aware blend) demonstrate that numerical and layer semantics can be expressed without provider-specific names.
-  \item A qualification example proves that the same operation can be accepted by one implementation and rejected by another with a precise reason.
-  \item API usage sketches type-check conceptually and expose no Metal/CUDA/OpenCV types.
-  \item The protocol has no dependency on application UI or a specific algorithm library.
+  \item Two different implementation classes can declare support for the same \texttt{GaussianBlur} operation without defining separate operation types.
+  \item A third implementation can be added without modifying the operation type or generic implementation protocol.
+  \item Static implementation capability is distinguishable from runtime provider availability and transient load.
+  \item FP32 computation can be expressed separately from FP32 input/output storage and accumulation precision.
+  \item No public contract requires provider-native types or per-backend qualification functions.
 \end{itemize}
 
-\textbf{Gate.} Do not implement provider adapters until the operation and implementation contracts can express real differences in precision, format, border mode, resource access, and output guarantees.
+\textbf{Gate.} Do not begin concrete algorithm packages until an operation's semantics and the implementation-specification schema can express meaningful support differences.
 
-\phase{2 --- GeneralExecutionProtocol generic execution contract}
+\phase{2 --- GeneralExecutionProtocol}
 
-\textbf{Objective.} Implement the lower-level execution dependency required by \IPP{}, while keeping it independent of image-processing terminology.
+\textbf{Objective.} Define generic execution resources, provider lifecycle, static capabilities, and dynamic state observations without introducing image semantics.
 
 \textbf{Dependency constraint.} \GEP{} MUST NOT import \IPP{}, define Image/Layer/Pixel semantics, or know operation names such as blur, blend, resize, or segmentation.
 
 \deliverables
 \begin{enumerate}
-  \item Provider identity/version and device discovery.
-  \item Device and execution-context abstraction with capability reporting.
-  \item Generic resource handles with ownership, access, lifetime, import/export, and completion dependencies.
-  \item A minimal submission/completion contract that can represent asynchronous work without forcing Metal command buffers, CUDA streams, OpenCL queues, and D3D command lists into one false native abstraction.
-  \item Optional capability interfaces for buffers, images/textures, external-memory interoperability, peer transfer, compilation, and specialized synchronization.
-  \item Structured provider errors, device-loss behavior, cancellation rules, and diagnostics.
-  \item A fake/test provider that exercises resource and submission lifecycle without claiming to be a real GPU implementation.
+  \item Provider identity/version and platform-aware provider discovery.
+  \item Device identity, properties, supported features, execution contexts, and static capability descriptors.
+  \item Generic resource handles with ownership, access, lifetime, import/export, residency, and completion dependencies.
+  \item Submission/completion contracts that can represent asynchronous work without pretending Metal command buffers, CUDA streams, OpenCL queues, and D3D command lists are identical.
+  \item A state/availability observation model for device health, availability, memory pressure, outstanding submissions, queue depth, and estimated delay where available.
+  \item Observation timestamps and freshness/quality metadata. Unsupported telemetry is represented as unknown, never as zero load.
+  \item Optional capability interfaces for buffers, images/textures, external-memory interoperability, peer transfer, and specialized synchronization.
+  \item Structured provider errors, device-loss behavior, cancellation, reservation/acquisition, and release rules.
+  \item A fake/test provider whose capabilities and state can be controlled deterministically.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
-  \item \GEP{} builds and tests without referencing any image-processing symbol.
-  \item A fake provider completes, fails, cancels, and releases resources according to the contract.
-  \item Tests prove that resources are not released before submitted work completes.
-  \item Native provider differences remain accessible behind provider-specific capabilities; no universal command-buffer fiction is introduced.
-  \item The protocol exposes enough generic capability information for \IPP{} qualification, but no image-specific qualification rules.
+  \item \GEP{} builds and tests without referencing image-processing symbols.
+  \item A fake provider can report capability and dynamic-state changes and can complete, fail, cancel, and release resources correctly.
+  \item Tests prove that stale or unknown state is not misreported as current or idle.
+  \item Resource lifetime tests prove that submitted work cannot outlive its inputs.
+  \item Native provider differences remain accessible behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
 \end{itemize}
 
-\textbf{Gate.} A provider protocol is not accepted merely because it can allocate a buffer. It must have a coherent asynchronous lifecycle and a verifiable ownership/synchronization model.
-
-\phase{3 --- ImageProcessingProtocol core implementation}
-
-\textbf{Objective.} Implement the primary domain library against the already-defined generic execution contract.
-
-\deliverables
-\begin{enumerate}
-  \item Concrete public types and descriptors for images, layers, pixel semantics, operation definitions, and typed operation inputs/outputs.
-  \item Immutable operation instances with validation at construction or an explicit validated state.
-  \item OperationImplementation protocol and registration metadata.
-  \item Qualifying function types and structured qualification results that consume generic execution capabilities.
-  \item Composition API for compatible operations.
-  \item Explicit layer/composite targets and new-image/replacement result policy.
-  \item Resource references that preserve the distinction between image semantics and generic execution allocation.
-\end{enumerate}
-
-\exitcriteria
-\begin{itemize}
-  \item The package imports \GEP{} in the permitted direction and the dependency graph is acyclic.
-  \item Descriptor tests cover channel model, FP16/FP32/FP64 representation, strides, alpha, color metadata, non-color/scientific data, and invalid combinations.
-  \item Operation tests prove immutable parameters and versioned semantic identity.
-  \item Composition rejects incompatible input/output contracts.
-  \item API tests prove that new-image derivation and replacement are distinct operations.
-  \item No public API leaks provider-native resource classes.
-\end{itemize}
+\textbf{Gate.} Do not make the common protocol larger merely to expose one vendor-specific metric or command primitive.
