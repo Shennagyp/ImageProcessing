@@ -149,7 +149,7 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let effectContract: OperationEffectContract
 
     public func validateContract() throws {
-        let precisionDimensions = qualificationDimensions.filter {
+        let precisionDimensions = Set(qualificationDimensions.filter {
             switch $0 {
             case .inputStoragePrecision, .computationPrecision,
                  .accumulationPrecision, .outputPrecision:
@@ -157,9 +157,10 @@ public struct AnyOperationSpecification: Hashable, Sendable {
             case .deterministicResults:
                 return false
             }
-        }
-        guard precisionDimensions.isSubset(of: precisionContract.qualificationDimensions) else {
-            let missing = precisionDimensions.subtracting(precisionContract.qualificationDimensions).first!
+        })
+        if let missing = precisionDimensions
+            .subtracting(precisionContract.qualificationDimensions)
+            .first {
             throw OperationSpecificationValidationError.undeclaredPrecisionDomain(missing)
         }
         if qualificationDimensions.contains(.deterministicResults),
