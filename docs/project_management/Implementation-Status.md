@@ -50,19 +50,19 @@ This file records actual repository state. The architecture and implementation p
 - LayerSpatialMapping with a checked invertible 4x4 affine map from layer sample-centre indices to canvas sample-centre indices. Same-grid layers use identity; different extents require an explicit map.
 - Raster, mask, label-map, and annotation content descriptors with distinct semantic validation.
 - PixelDataDescriptor with component precision, channel identities/roles, explicit color channel models (gray, RGB, YCbCr, custom), scientific interpretation, alpha mode, and optional channel value ranges.
-- Interleaved and planar storage planes with byte offsets, row/pixel/slice strides, subsampling, channel mappings, checked minimum-capacity computation, and overflow rejection.
+- Interleaved and planar storage planes with byte offsets, row/pixel/slice strides, subsampling, explicit per-plane sample origin/chroma siting, plane-to-layer coordinate conversion, channel mappings, checked minimum-capacity computation, and overflow rejection.
 - Mask semantics (binary, coverage, probability), integer label identifiers, and explicit annotation coordinate spaces.
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, explicit centered/co-sited chroma origins, plane-to-layer coordinate conversion, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 50 tests in 8 suites on Linux x86_64.
+- swift test — passed, 53 tests in 9 suites on Linux x86_64.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain and spatial-registration suite is locally verified (50 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain, spatial-registration, and chroma-siting suite is locally verified (53 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
