@@ -1,0 +1,76 @@
+\phase{4 --- Reference CPU provider}
+
+\textbf{Objective.} Implement and verify a CPU implementation of the generic execution contract before introducing operation algorithms. This proves the provider lifecycle independently from image-operation semantics.
+
+\deliverables
+\begin{enumerate}
+  \item CPU implementation of \GEP{} with resource allocation, host access, submission, completion, synchronization, cancellation, and deterministic release.
+  \item A minimal test-only work submission path sufficient to exercise the generic provider contract without introducing image-specific types into \GEP{}.
+  \item Provider conformance tests for resource ownership, concurrent access, errors, cancellation, and completion ordering.
+  \item Memory and allocation instrumentation that can later be reused by image operation benchmarks.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item The CPU provider passes the complete generic \GEP{} conformance suite.
+  \item Resource lifetime tests prove that submitted work cannot outlive its input allocations.
+  \item Cancellation and execution failure release temporary resources and report structured errors.
+  \item The CPU provider remains image-agnostic and does not contain Gaussian blur, resize, or color-correction logic.
+\end{itemize}
+
+\textbf{Gate.} Close the generic provider lifecycle before adding operation implementations. This phase proves execution infrastructure, not image-processing correctness.
+
+\phase{5 --- Core operation suite and CPU reference implementations}
+
+\textbf{Objective.} Freeze the first useful set of image operations, implement canonical CPU versions, and create the conformance harness used by every later backend.
+
+\deliverables
+\begin{enumerate}
+  \item A semantic specification for each initial operation: pixel/color model, precision, ranges, alpha treatment, border behavior, interpolation, and output type.
+  \item Canonical CPU implementations for a deliberately small first set: explicit pixel/component conversion, resize, Gaussian filtering, color correction, and compositing/blending.
+  \item Reusable operation conformance suites and golden/reference fixtures, including normal, boundary, degenerate, and invalid inputs.
+  \item Separate tests for raster, mask, label-map, and annotation semantics where relevant.
+  \item Composition tests for sequential pipelines, output/input compatibility, and failure propagation.
+  \item Reference benchmarks recording CPU latency, allocations, and memory behavior.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item Every initial operation has a fully specified contract and passes its CPU reference tests.
+  \item Numerical comparisons use declared absolute/relative tolerances or domain-specific metrics.
+  \item Label maps are never processed with intensity interpolation unless an explicit label-aware algorithm is specified.
+  \item Color calculations specify working space, transfer function, and alpha convention.
+  \item Source pixels remain unchanged for non-mutating application; layer targeting preserves unrelated layers.
+  \item Test fixtures are reusable without alteration by every later backend.
+\end{itemize}
+
+\textbf{Gate.} No accelerated implementation is considered correct until it passes these same fixtures and operation contracts.
+
+\phase{6 --- ImageProcessingRuntime: qualification, selection, and execution}
+
+\textbf{Objective.} Integrate the two protocol libraries and the proven CPU operation set into one execution path without moving image-domain qualification into the generic provider library.
+
+\deliverables
+\begin{enumerate}
+  \item Registry of operation implementations and associated generic provider requirements.
+  \item Runtime enumeration of available providers, devices, execution contexts, and registered implementations.
+  \item Invocation of the \IPP{} qualifying function using operation instance, input/layer descriptor, implementation declaration, execution capability facts, and request constraints.
+  \item Structured candidate list with accepted/rejected reasons and required preparation steps.
+  \item Selection policy that only considers qualified implementations; policy inputs include device affinity, precision constraints, residency, memory budget, and caller preferences.
+  \item Initial execution planner that can select one implementation for a simple operation and a compatible implementation sequence for a composed pipeline.
+  \item Atomic image replacement transaction: compute and validate output first, then publish a new image revision.
+  \item Observable diagnostics for the chosen implementation, provider/device, conversions, synchronization, and fallback decisions.
+\end{enumerate}
+
+\exitcriteria
+\begin{itemize}
+  \item An unsupported operation is rejected before execution with a useful reason.
+  \item A valid implementation is selected when several candidates are registered.
+  \item A faster but semantically invalid implementation is never selected.
+  \item If all implementations are rejected, the runtime returns a structured failure and does not silently downgrade semantics.
+  \item A failed execution leaves the input image revision unchanged.
+  \item Tests prove that qualification and selection are separate and independently testable.
+  \item The CPU implementations from Phase 5 are discoverable and executable through the same runtime path used by future providers.
+\end{itemize}
+
+\textbf{Gate.} Do not add heuristic routing based only on operating system or GPU vendor. Qualification must use actual operation, input, implementation, and device facts.
