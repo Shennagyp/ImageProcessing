@@ -111,7 +111,7 @@ public struct AnyImageOperationStep: Sendable {
         self.specification = Operation.specification.erased
     }
 
-    fileprivate func reidentifiedForComposition() -> Self {
+    func reidentifiedForComposition() -> Self {
         Self(
             identifier: .generate(),
             sourceIdentifier: sourceIdentifier,
