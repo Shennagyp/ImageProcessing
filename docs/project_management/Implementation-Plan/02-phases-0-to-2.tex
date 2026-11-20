@@ -6,7 +6,8 @@
 
 \deliverables
 \begin{enumerate}
-  \item A decision register for image/layer identity, resource ownership, snapshot/replacement concurrency, operation identity/versioning, and asynchronous completion.
+  \item A maintained Architecture Decision Register recording each foundational decision as baseline, proposed, or deferred, including rationale, invariants, consequences, and validation required before API freeze.
+  \item Explicit decisions or tracked proposals for image/layer identity, resource ownership, snapshot/replacement concurrency, operation identity/versioning, and asynchronous completion.
   \item A formal boundary among \IPP{}, \GEP{}, \IPR{}, external provider packs, and external operation-implementation packs.
   \item A decision on typed public implementation protocols and private type erasure for the heterogeneous runtime registry.
   \item A specification schema distinguishing operation semantics, implementation support, provider static capabilities, and dynamic execution state.
@@ -24,6 +25,7 @@
   \item No core package depends on a concrete CPU/GPU/algorithm implementation package.
   \item The policy model can represent the required FP32 example without confusing storage and computation precision.
   \item The design distinguishes contradictory policy from a valid requirement that cannot currently be satisfied by available hardware.
+  \item No foundational decision is left implicit: unresolved items have an owner/status and do not block the work that can safely proceed.
 \end{itemize}
 
 \textbf{Do not do yet:} write provider kernels, add a large operation catalog, or create a general-purpose dynamic plug-in loader.
