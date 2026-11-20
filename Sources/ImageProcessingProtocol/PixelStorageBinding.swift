@@ -31,6 +31,11 @@ public enum PixelStorageBindingError: Error, Equatable, Sendable {
         required: UInt64,
         actual: UInt64
     )
+    case resourceAlignmentTooSmall(
+        resource: ExecutionResourceReference,
+        required: UInt64,
+        actual: UInt64
+    )
 }
 
 /// Immutable binding from semantic pixel-plane descriptors to generic,
@@ -60,6 +65,7 @@ public struct PixelStorageBinding: Sendable {
             }
 
             var groupRequiredCapacity: UInt64 = 0
+            var groupRequiredAlignment: UInt64 = 1
             for planeIndex in binding.planeIndices {
                 guard descriptor.minimumRequiredStorageBytesByPlane.indices.contains(planeIndex) else {
                     throw PixelStorageBindingError.invalidPlaneIndex(planeIndex)
@@ -71,9 +77,22 @@ public struct PixelStorageBinding: Sendable {
                     groupRequiredCapacity,
                     descriptor.minimumRequiredStorageBytesByPlane[planeIndex]
                 )
+                let planeLayout = descriptor.layout.planes[planeIndex]
+                groupRequiredAlignment = max(
+                    groupRequiredAlignment,
+                    planeLayout.requiredAlignmentBytes
+                )
             }
 
             let resourceDescriptor = binding.resource.descriptor
+            guard resourceDescriptor.alignmentBytes >= groupRequiredAlignment,
+                  resourceDescriptor.alignmentBytes.isMultiple(of: groupRequiredAlignment) else {
+                throw PixelStorageBindingError.resourceAlignmentTooSmall(
+                    resource: resourceReference,
+                    required: groupRequiredAlignment,
+                    actual: resourceDescriptor.alignmentBytes
+                )
+            }
             guard resourceDescriptor.capacityBytes >= groupRequiredCapacity else {
                 throw PixelStorageBindingError.resourceCapacityTooSmall(
                     resource: resourceReference,
