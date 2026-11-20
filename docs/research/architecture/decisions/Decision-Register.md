@@ -820,6 +820,36 @@ A provider returning no devices is valid because it may represent an opaque mana
 - Concurrent discovery/cancellation and timeout policy for providers that do not return.
 - Provider health scoring and repeated failure/circuit-breaker behavior.
 - Candidate binding qualification and context preparation.
+---
+
+## ADR-028 — Runtime workload accounting and environment snapshot identity are separate from provider telemetry
+
+**Status:** Implemented initial ledger and snapshot coordinator; resource reservation/freshness policy pending
+
+### Decision
+
+RuntimeWorkLedger tracks only work known to ImageProcessingRuntime. Each work lease is keyed by an immutable identifier and execution target and moves through reserved and submitted states. A reservation can be cancelled before provider submission. A submitted lease is removed only after completion has been observed. A cancellation request does not release a submitted lease.
+
+RuntimeWorkLoadSnapshot aggregates reserved and submitted counts by execution target. These counts are not merged into provider-reported queue depth or utilization. The resolver may use both, but must preserve their different sources and meanings.
+
+RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery result with the runtime workload snapshot. Each snapshot has a unique identifier, a monotonically increasing generation within one coordinator, and an explicit capture time. The provider environment and runtime workload remain separate sub-snapshots.
+
+### Invariants
+
+- One lease can have one active state and one terminal removal; repeated or invalid transitions are rejected.
+- Reservation release and submission completion are distinct lifecycle events.
+- Submitted work remains counted through cancellation requests until completion is observed.
+- Workload counts are scoped by full execution target identity, including opaque provider-managed targets.
+- Runtime counters do not rewrite provider telemetry or convert unknown provider observations into zero.
+- Snapshot generations are allocated before asynchronous discovery begins, so overlapping captures cannot reuse a generation.
+- Snapshot identity does not imply that all provider observations were measured at exactly the same instant; each provider/device observation keeps its own timestamp/freshness metadata.
+
+### Deferred
+
+- Resource reservation records and capacities per resource handle, rather than only work counts.
+- Freshness expiration policy, snapshot refresh scheduling, and policy for stale providers.
+- Atomic capture guarantees across registry updates and outstanding-work mutations.
+- Runtime accounting integration with actual submission/completion and cancellation paths.
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
