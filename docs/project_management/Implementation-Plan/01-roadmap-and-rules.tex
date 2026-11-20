@@ -1,0 +1,95 @@
+\section*{Document control}
+\addcontentsline{toc}{section}{Document control}
+\begin{longtable}{@{}L{0.22\textwidth}p{0.70\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Definition} \\
+\midrule
+Purpose & Define an executable, phase-gated path from the accepted architecture to a tested and distributable image-processing library. \\
+Authority & The architecture paper \emph{ImageProcessing: Architecture and Semantic Contracts}, baseline 0.2, is the normative design reference. If this plan conflicts with it, the architecture paper governs until both are revised. \\
+Phase completion & Every phase has required artifacts, tests, evidence, and an explicit exit gate. A partially completed phase remains open. \\
+Schedule & No calendar estimates are assigned. Phase size depends on implementation findings, platform access, available hardware, and test evidence. \\
+Scope exclusion & No node editor, visual graph frontend, or public graph-programming framework is planned. \\
+Implementation principle & Prefer the smallest contract that preserves the required semantics. Do not create abstractions for hypothetical providers or operations without a demonstrated extension need. \\
+\bottomrule
+\end{longtable}
+
+\section{Executive roadmap}
+
+\subsection{The governing dependency direction}
+
+The domain API is the architectural priority. \IPP{} defines images, layers, operations, operation-implementation contracts, and image-specific qualification. It consumes generic execution capabilities from \GEP{}. The latter is deliberately domain-neutral and MUST NOT import or define image-processing concepts.
+
+The distinction between architectural priority and implementation build order is important. The \IPP{} contract is designed first so that the lower-level execution library is shaped by real domain requirements rather than allowing a generic compute abstraction to dictate the image model. Once those requirements are explicit, \GEP{} is implemented first as a source dependency; \IPP{} then compiles against it.
+
+\begin{center}
+\begin{tabularx}{0.94\textwidth}{@{}>{\centering\arraybackslash}X@{}}
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Domain contract first}\quad \IPP{}\\[2pt] Image, Layer, Operation, implementation contract, qualifying function}}\\[6pt]
+$\Downarrow$\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Generic execution dependency}\quad \GEP{}\\[2pt] Provider, Device, Context, Resource, Submission, Completion, Synchronization}}\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Domain runtime and implementation adapters}\quad \IPR{}\\[2pt] Registry, Qualification, Selection, Execution, Image result/replace}}\\[6pt]
+$\Downarrow$\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Execution technologies and libraries}\\[2pt] CPU, Metal, CUDA, OpenCL, Direct3D 12; OpenCV, Core Image, Accelerate, model runtimes}}
+\end{tabularx}
+\end{center}
+
+The arrows show the conceptual dependency and integration direction, not necessarily the order in which each source file is written. In particular, no provider protocol is allowed to become image-aware merely to simplify an adapter.
+
+\subsection{Phase map}
+
+\begin{longtable}{@{}L{0.08\textwidth}L{0.27\textwidth}p{0.54\textwidth}@{}}
+\toprule
+\textbf{Phase} & \textbf{Name} & \textbf{Completion outcome} \\
+\midrule
+0 & Contract decisions and repository foundation & Open design decisions are resolved or explicitly deferred; CI, package boundaries, and architecture decision records are established. \\
+1 & \IPP{} domain contract & Stable first-version contracts for image/layer semantics, operation objects, implementation declarations, and qualification. \\
+2 & \GEP{} generic execution contract & Minimal provider, device, resource, submission, completion, and synchronization contracts, verified by a fake provider. \\
+3 & \IPP{} core implementation & Image/layer/resource descriptors and operation/composition types compile and enforce their domain invariants. \\
+4 & Reference CPU provider & A CPU implementation passes the generic execution-provider lifecycle tests. \\
+5 & Core operations and CPU references & The initial operation set has frozen semantics, CPU implementations, and a reusable conformance suite. \\
+6 & \IPR{} qualification and execution runtime & Registry, qualification, selection, execution, diagnostics, and atomic image result/replace are integrated. \\
+7 & Apple implementations & CPU/Accelerate, Core Image adapters, and native Metal provider/kernels are integrated without changing public semantics. \\
+8 & OpenCV and C/C++ interoperability & OpenCV implementations can be used through adapters with explicit storage and lifetime boundaries. \\
+9 & CUDA and OpenCL providers & Native heterogeneous providers and operation implementations are qualified and tested on supported hardware. \\
+10 & Direct3D 12 and optional Vulkan & Additional platform providers are added only with a verified platform/test matrix. \\
+11 & Model and inference integration & ONNX Runtime and/or Core ML are integrated as model runtimes, not confused with low-level compute providers. \\
+12 & Planner optimization and production hardening & End-to-end routing, memory behavior, packaging, diagnostics, benchmarks, and compatibility are release-ready. \\
+\bottomrule
+\end{longtable}
+
+\subsection{What is deliberately not a phase}
+
+The roadmap does not include a node editor, public graph editor, visual programming surface, or a second processing engine. Composition is an API feature. The runtime may create private plans for execution, but these are internal implementation details. Nor does the roadmap include a new neural-network training framework: training can remain in PyTorch or another specialist environment, while inference integration is treated separately.
+
+\section{Global rules for phase execution}
+
+\subsection{Definition of done}
+
+A phase is not complete until all applicable conditions hold:
+\begin{enumerate}
+  \item Its public contracts and decisions are documented.
+  \item Its code compiles on every platform claimed by that phase.
+  \item Unit and contract tests cover success, invalid input, boundary behavior, and failure paths.
+  \item Tests prove that earlier phases' invariants have not regressed.
+  \item New provider/operation claims have concrete test evidence on the relevant provider and hardware, not only a mock.
+  \item Build and test instructions work from the command line without requiring an IDE-specific project workflow.
+  \item Diagnostics identify the operation, implementation, provider/device, and cause when qualification or execution fails.
+  \item The README, phase status, and any relevant architecture decision records are updated.
+\end{enumerate}
+
+\subsection{Test-first implementation policy}
+
+For each operation, write the semantic reference cases and expected output properties before implementing accelerated kernels. For each provider, write protocol conformance tests before registering it as supported. Tests should be layered:
+\begin{itemize}
+  \item compile-time/API tests for the public contracts;
+  \item pure unit tests for descriptors, parameter validation, identity, and composition;
+  \item fake-provider tests for lifecycle, error, and qualification behavior;
+  \item CPU reference tests for numerical semantics;
+  \item provider-specific tests on actual devices;
+  \item end-to-end tests measuring transfers, allocation, synchronization, and complete operation sequences.
+\end{itemize}
+
+A fake provider proves that the contract can be exercised; it does not prove GPU correctness. A CPU implementation proves a fallback path; it does not prove a GPU provider. These evidence classes must not be conflated.
+
+\subsection{Compatibility and change control}
+
+An observable change to operation meaning, output interpretation, mutation behavior, or a provider contract requires an explicit version/decision update and regression tests. An implementation optimization that preserves the contract need not change the operation's semantic version. Provider-specific limitations must be represented as qualification results rather than undocumented special cases.
