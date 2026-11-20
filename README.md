@@ -37,7 +37,7 @@ Requires Swift 6.2.1 or a compatible Swift 6 toolchain. Xcode IDE projects are n
     swift build
     swift test
 
-The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 104-test suite (14 suites), including typed function composition, policy conflicts/applicability, plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting cross-platform CI. The preceding 86-test revision passed on Ubuntu 24.04 and macOS. Provider-specific packages will have their own platform and hardware test requirements.
+The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 106-test suite (14 suites), including typed function composition, policy conflicts/applicability/provenance, plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting cross-platform CI. The preceding 86-test revision passed on Ubuntu 24.04 and macOS. Provider-specific packages will have their own platform and hardware test requirements.
 
 ## Architecture decisions
 
