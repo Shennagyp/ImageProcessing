@@ -4,7 +4,7 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner, typed ImageFunction composition, validated qualification-policy builder, and static operation/implementation compatibility contracts are implemented. Heterogeneous implementation registration, provider discovery, runtime resolution, execution coordination, and concrete image operations remain pending.
+The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner, typed ImageFunction composition, validated qualification-policy builder, static operation/implementation compatibility contracts, and an initial heterogeneous implementation registry are implemented. Provider discovery, runtime resolution, execution planning/coordination, and concrete image operations remain pending.
 
 See [Implementation Status](docs/project_management/Implementation-Status.md) for the exact implemented and pending scope. Do not treat a package skeleton or a related type as evidence that a full phase is complete.
 
@@ -13,7 +13,7 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 - **Image documents and typed layers** are separate from physical pixel storage and execution residency.
 - **Operation definitions** are separate from concrete implementation classes. One operation, such as Gaussian blur, can have CPU, CUDA, Metal, OpenCV, or other independent implementations.
 - **Operation specifications** describe semantic requirements and permitted behavior. **Implementation specifications** describe tested support subsets for parameters, numerical modes, precision, layer/pixel representations, effects, and generic resource requirements of one implementation.
-- **ImageProcessingProtocol** is the primary image-domain contract. **GeneralExecutionProtocol** is the lower-level, image-agnostic execution contract it consumes.
+- **ImageProcessingProtocol** is the primary image-domain contract. **GeneralExecutionProtocol** is the lower-level, image-agnostic execution contract it consumes. **ImageProcessingRuntime** integrates both without moving provider or image semantics into the wrong layer.
 - **Execution providers** are distinct from **operation-implementation packages**. The consuming application selects and registers both.
 - A **common resolver** will evaluate operation semantics, implementation specifications, current environment observations, and declarative pipeline policy. Implementations publish specifications; they do not each implement custom qualification functions.
 - `ImageFunction<Input, Output>` preserves typed sequential composition. Its immutable qualification policy separates hard requirements from optimization preferences and scopes declarations to the full pipeline or an operation occurrence.
@@ -23,12 +23,13 @@ See [Implementation Status](docs/project_management/Implementation-Status.md) fo
 
 ## Swift package products
 
-The root SwiftPM package currently publishes two modules:
+The root SwiftPM package currently publishes three modules:
 
 - `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, target-scoped resource handles, resource allocation/import contracts, typed work submission/completion, dependencies, cancellation, structured provider failure categories/recovery guidance, context-scoped capability reporting, and optional synchronization capabilities.
 - `ImageProcessingProtocol` — typed operation/implementation contracts and static compatibility validation, operation parameter/numerical/effect/pixel domains, ImageFunction composition, QualificationPolicy builder, image identity, immutable document snapshots, typed layer content, validated pixel-data descriptors, affine layer-to-canvas mapping, explicit plane-to-resource binding, revision-scoped layer storage binding sets, and a thread-safe Image state owner with revision-checked atomic replacement.
+- `ImageProcessingRuntime` — initial actor-backed operation implementation registry, static support enumeration, and private checked type-erased dispatch reserved for a future resolver.
 
-`ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. Pixel descriptors describe meaning/layout and validate storage capacity; they do not own or allocate provider resources. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
+`ImageProcessingProtocol` depends on `GeneralExecutionProtocol`; `ImageProcessingRuntime` depends on both. The generic execution module has no image-processing dependency. Pixel descriptors describe meaning/layout and validate storage capacity; they do not own or allocate provider resources. The runtime registry does not yet discover providers, qualify candidates against live state, rank candidates, or coordinate execution.
 
 ## Build and test
 
