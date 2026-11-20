@@ -20,7 +20,9 @@ This file records actual repository state. The architecture and implementation p
 - Stable provider, device, and capability identifiers.
 - Semantic version and half-open version-range types.
 - Generic provider/device capability values and declarative capability requirements.
-- Capability requirements identify whether a feature must be reported by the provider, device, or either.
+- Capability requirements identify whether a feature must be reported by the provider, device, either, or the created execution context.
+- Standard generic capability identifiers cover resource kinds, allocation/import, work submission/dependencies, synchronization, and peer transfer.
+- Execution contexts expose context-local capabilities; optional context protocol conformance remains the executable contract.
 - Provider and device descriptors.
 - Provider-level and device-level availability/load snapshots.
 - Dynamic observations explicitly distinguish known, stale, and unknown values. Known observations require a validity interval and source.
@@ -42,12 +44,12 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, typed work submission, dependency ordering, and typed implementation execution.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, and typed implementation execution.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 18 tests.
+- swift test — passed, 22 tests.
 
 GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at commit 0895a034b8b75c13336c0a08036c250a61d66cc4. Both jobs completed swift build and swift test successfully. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
