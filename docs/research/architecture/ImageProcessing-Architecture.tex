@@ -1093,7 +1093,7 @@ Provider and algorithm implementation work is an independent workstream, not a t
 
 \section{Risks and decisions still open}
 
-The current status of each foundational decision is tracked in the [Architecture Decision Register](https://github.com/Shennagyp/ImageProcessing/blob/main/docs/research/architecture/decisions/Decision-Register.md). Items marked proposed or deferred below are not silently treated as frozen public API.
+The current status of each foundational decision is tracked in the \href{https://github.com/Shennagyp/ImageProcessing/blob/main/docs/research/architecture/decisions/Decision-Register.md}{Architecture Decision Register}. Items marked proposed or deferred below are not silently treated as frozen public API.
 
 \subsection{Decisions that must be resolved before freezing public API}
 
@@ -1161,7 +1161,7 @@ The following rules are the compact invariants that future API and implementatio
 
 The design should not imitate one existing framework wholesale. OpenCV contributes mature image algorithms and practical array/storage lessons; PyTorch demonstrates a common numerical object and dispatch architecture; ONNX Runtime demonstrates capability-based execution-provider partitioning; Core Image demonstrates useful deferred image evaluation; and native compute APIs demonstrate why resources, command submission, and synchronization require provider-specific implementations.
 
-The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, the domain-facing \texttt{ImageProcessing\allowbreak Protocol}, and the lower-level, image-agnostic \texttt{GeneralExecution\allowbreak Protocol}. Native providers implement the general contract; operation adapters implement the image-processing contract. The runtime joins them without collapsing their responsibilities.
+The proposed unification is deliberately narrower: a layered image object model, immutable operation objects, typed composition, explicit new-versus-replace semantics, the domain-facing \texttt{ImageProcessing\allowbreak Protocol}, and the lower-level, image-agnostic \texttt{GeneralExecution\allowbreak Protocol}. Provider packages implement the general execution contract; independent operation-implementation classes implement the image-domain contract. The runtime resolves concrete implementation/provider/device bindings using declarative specifications, current environment observations, and pipeline policy, then coordinates execution without collapsing those responsibilities.
 
 The most consequential boundary is the separation between \emph{what an operation means} and \emph{which implementation executes it}. The most consequential data boundary is the separation between \emph{logical image/layer identity} and \emph{physical pixel storage}. Preserving both boundaries is the foundation for portability, numerical consistency, safe mutation, and efficient heterogeneous execution.
 
@@ -1177,7 +1177,9 @@ Image document & Logical image object consisting of a canvas, ordered layers, an
 Layer & Typed semantic component of an image document. \\
 Pixel resource & Opaque reference to numerical pixel/array storage. \\
 Operation object & Immutable parameterized description of a computation and its contract. \\
-Operation implementation & Concrete algorithm implementation that satisfies an operation contract on a provider/runtime. \\
+Operation implementation & Concrete algorithm class implementing one operation; it publishes a declarative implementation specification and executes through a provider or managed runtime. \\ 
+Image operation-implementation contract & Generic typed protocol specialized by an associated operation type. \\ 
+Execution candidate & Concrete binding of an implementation instance to a provider/runtime and device/execution target, evaluated against an environment snapshot. \\
 Compute provider & Execution substrate adapter exposing devices, resources, submission, completion, and synchronization. \\
 Operation specification & Declarative statement of an operation's semantic requirements and permitted behavior. \\
 Implementation specification & Declarative, versioned statement of one implementation's tested support, constraints, provider requirements, and resource characteristics. \\
