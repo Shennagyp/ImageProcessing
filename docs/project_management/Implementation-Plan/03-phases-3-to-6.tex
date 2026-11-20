@@ -59,6 +59,9 @@
   \item Internal type-erased registry entries that recover the concrete associated operation/input types before dispatch. **Implemented:** erased execution is module-internal and requires an explicit implementation key; public callers cannot bypass resolver qualification.
   \item Environment snapshot assembly from discovered provider/device descriptors, resource state, provider observations, and runtime-owned outstanding-work accounting. **Partially implemented:** provider/device snapshots and partial failures are preserved; runtime-owned outstanding-work accounting and snapshot lifecycle identity remain.
   \item Snapshot identity, observation time, freshness, and source-quality metadata.
+  \item Runtime-owned outstanding-work ledger keyed by execution target. It distinguishes work reserved by the runtime from work accepted by a provider and releases submitted work only after completion is observed. **Implemented.**
+  \item Identity-bearing runtime environment snapshots with a monotonic per-coordinator generation, captured time, provider discovery result, partial failures, and runtime-owned work-load snapshot. **Implemented.**
+  \item Runtime workload counts remain separate from provider queue depth/utilization observations; missing provider telemetry remains unknown. **Implemented.**
   \item Registration/version compatibility checks and diagnostics for missing provider dependencies or unsupported operation versions.
   \item Test doubles for multiple implementations of one operation and for providers whose availability/load changes between snapshots.
 \end{enumerate}
@@ -71,6 +74,9 @@
   \item The internal erased dispatch rejects mismatched operation/input concrete types even when stable type identifiers are reused.
   \item A registered implementation is not considered executable merely because its package loaded; its required provider and capabilities must be discovered.
   \item Environment snapshots distinguish capability from availability and distinguish unknown load from idle load.
+  \item Runtime-owned reserved/submitted work counts remain separate from provider-reported queue depth and utilization.
+  \item Each runtime snapshot has a unique identity and a monotonically increasing coordinator generation; the provider discovery and work-load snapshots expose their capture times.
+  \item A submitted work lease remains counted until completion; cancellation requests do not release it prematurely.
   \item Heterogeneous registry dispatch is type-safe at the operation boundary and tested for mismatched operation/implementation pairs.
   \item Provider/implementation version incompatibilities produce explicit diagnostics.
   \item A provider whose state observation or device discovery fails does not erase other successful providers from the same environment snapshot; failures remain separately inspectable.
