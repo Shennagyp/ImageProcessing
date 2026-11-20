@@ -52,6 +52,7 @@ The phase-gated implementation roadmap is:
 
 The plan covers Phase 0 (architecture decisions) through Phase 12 (planner optimization and production hardening). Each phase defines deliverables, exit criteria, and constraints on what must not be started prematurely.
 
-Build the PDF locally with:
+Build the PDF from the plan directory:
 
-    latexmk -pdf -interaction=nonstopmode -halt-on-error docs/project_management/Implementation-Plan.tex
+    cd docs/project_management
+    latexmk -pdf -interaction=nonstopmode -halt-on-error Implementation-Plan.tex
