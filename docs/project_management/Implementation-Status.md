@@ -2,7 +2,7 @@
 
 **Architecture baseline:** 0.3  
 **Implementation plan:** 0.2  
-**Current state:** SwiftPM protocol foundation, image-domain state/storage model, typed function composition, policy validation, and declarative operation/implementation compatibility contracts are implemented; heterogeneous runtime registration and execution are not.
+**Current state:** SwiftPM protocol foundation, image-domain state/storage model, typed function composition, policy validation, declarative operation/implementation compatibility contracts, and the initial runtime implementation registry are implemented; provider discovery, qualification, and execution are not.
 
 This file records actual repository state. The architecture and implementation plan remain normative for intended behavior; a listed design or deliverable is not considered complete merely because a related type exists.
 
@@ -11,9 +11,19 @@ This file records actual repository state. The architecture and implementation p
 ### Swift package boundary
 
 - Root SwiftPM package uses Swift language mode 6.
-- Separate library products exist for GeneralExecutionProtocol and ImageProcessingProtocol.
-- ImageProcessingProtocol depends on GeneralExecutionProtocol; the reverse dependency does not exist.
+- Separate library products exist for GeneralExecutionProtocol, ImageProcessingProtocol, and ImageProcessingRuntime.
+- ImageProcessingProtocol depends on GeneralExecutionProtocol; ImageProcessingRuntime depends on both; neither lower-level protocol depends on ImageProcessingRuntime.
 - Core modules contain no Apple-framework or vendor-specific imports.
+
+### ImageProcessingRuntime foundation
+
+- A separate ImageProcessingRuntime SwiftPM product depends on GeneralExecutionProtocol and ImageProcessingProtocol.
+- Actor-backed OperationImplementationRegistry stores implementations by implementation identifier plus implementation version; exact duplicate registrations are rejected and distinct versions may coexist.
+- Registration validates the implementation specification against its associated operation's static specification before storing it.
+- Private type-erased entries preserve the associated implementation type in a checked async dispatch closure; operation and input values are downcast at the boundary, and output type identity is checked.
+- Registered metadata and statically compatible candidates can be enumerated in deterministic order by operation specification or concrete operation step; this does not rank candidates or inspect the provider environment.
+- The erased execution entry is module-internal and requires an explicit key. It is reserved for later resolver use, preventing application callers from bypassing hard-policy and environment qualification.
+- Provider registry/discovery, environment snapshots, common resolution, and execution planning are not implemented.
 
 ### GeneralExecutionProtocol foundation
 
@@ -86,7 +96,6 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
-- Operation implementation registry and safe type-erased execution dispatch.
 - Common environment-aware resolver and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
 - CPU provider and numerical reference image operations.
@@ -99,13 +108,14 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 0 — Architecture decisions | In progress | Image concurrency and document-scoped layer identity are implemented; target platform/toolchain matrix and first operation-family color/scientific contracts remain open. |
 | 1 — Operation/implementation contracts | In progress | Typed operation schemas, parameter validation, precision/numerical/effect/layer/pixel semantics, implementation support subsets, static resource requirements, and compatibility validation are implemented. Qualification result vocabulary and representative multi-implementation operation examples remain. |
 | 2 — GeneralExecutionProtocol | In progress | Generic resource/work lifecycle contracts, structured provider failure categories/recovery guidance, and a reusable test-only conformance harness are implemented and exercised against an in-memory provider; a production provider and hardware conformance remain. |
-| 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, validated QualificationPolicy, and static operation/implementation conformance contracts are implemented; heterogeneous type-erased registration and function execution remain. |
-| 4–9 | Not started | Depend on the preceding contracts and runtime. |
+| 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, validated QualificationPolicy, and static operation/implementation conformance contracts are implemented; end-to-end image function execution remains. |
+| 4 — Environment discovery and registries | In progress | Initial operation implementation registry supports typed registration, static compatibility enumeration, and private checked dispatch; provider registry/discovery and environment snapshot assembly remain. |
+| 5–9 | Not started | Depend on provider discovery, resolver, planning, and execution coordination. |
 
 ## Next implementation order
 
-1. Implement the private type-erased operation-implementation registry while preserving associated-type dispatch at the typed boundary; prove that independent CPU/Metal classes can register for one operation without modifying the core.
-2. Complete provider registry/discovery and environment snapshot aggregation from provider/device observations plus runtime-owned outstanding-work accounting.
-3. Implement the common resolver: static specification eligibility first, context preparation/validation second, then ranking of eligible candidates using fresh state and whole-path cost.
-4. Implement the execution planner and coordinator, including resource request construction, reservation/revalidation, synchronization, cancellation, and structured failure recovery.
+1. Implement the provider registry and discovery layer independently of the operation implementation registry; validate provider/device ownership, opaque targets, versions, and duplicate registrations.
+2. Assemble immutable environment snapshots from provider/device descriptors and state observations, with explicit freshness and runtime-owned outstanding-work accounting.
+3. Implement the common resolver: static specification eligibility first, candidate context preparation/validation second, then ranking of eligible candidates using fresh state and whole-path cost.
+4. Implement the execution planner and coordinator, including resource request construction, reservation/revalidation, synchronization, cancellation, structured failure recovery, and transactional result publication.
 5. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice; only then add GPU and managed-runtime adapters.
