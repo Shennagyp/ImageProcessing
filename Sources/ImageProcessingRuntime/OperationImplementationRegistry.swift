@@ -151,9 +151,11 @@ public actor OperationImplementationRegistry {
             }
     }
 
-    /// Executes one explicitly selected implementation. This method performs
-    /// checked type erasure only; it does not discover providers or select a candidate.
-    public func execute(
+    /// Resolver-only dispatch for an explicitly qualified implementation. This
+    /// method performs checked type erasure; it does not discover providers or
+    /// select a candidate. It remains module-internal so callers cannot bypass
+    /// environment and hard-policy qualification.
+    func execute(
         _ step: AnyImageOperationStep,
         input: any OperationValue,
         using key: OperationImplementationKey,
