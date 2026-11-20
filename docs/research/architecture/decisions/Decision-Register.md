@@ -673,16 +673,16 @@ Policy is declarative and travels with the typed function value. Runtime resolut
 
 ### Deferred
 
-- Candidate eligibility and end-to-end ranking against real ImplementationSpecification precision/support matrices.
+- Preference ranking over computation/input/output precision alternatives; the initial ranker currently implements low-latency, low-memory, and deterministic-result comparisons for candidates that already passed precision eligibility.
 - Additional operation-specific policy dimensions such as border modes and color/alpha behavior after their semantic contracts are modeled.
 - Runtime policy serialization/versioning and compatibility across persisted policy versions.
-- Cost estimate confidence, objective trade-offs, and measured ranking calibration.
+- Source-quality calibration, full-path cost estimates, objective-specific models for energy/throughput, and measured ranking calibration.
 
 ---
 
 ## ADR-024 — Operation semantics and implementation support are complementary validated contracts
 
-**Status:** Static contract baseline and actual input-bound eligibility implemented partially; output-resource validation, dynamic feasibility, and ranking pending
+**Status:** Static contract baseline, input-bound eligibility, output descriptor validation, and initial eligible-candidate ranking implemented partially; complete path-cost evaluation and execution feasibility pending
 
 ### Decision
 
@@ -785,9 +785,8 @@ Provider packages and operation implementation packages can be selected independ
 ### Deferred
 
 - Provider registry, discovery, and environment snapshot aggregation.
-- Preference ranking, complete candidate cost evaluation, execution planning, and execution coordination.
+- Complete candidate cost evaluation (transfer/conversion/allocation/context/compute/synchronization/materialization), precision-preference ranking, and execution planning/coordination; an initial scoped objective ranker is implemented.
 - Reference-counted retention/unloading policy for implementations removed while candidates are outstanding.
-- Cost ranking, execution planning, and execution coordination.
 - Persistent registry metadata and dynamic plug-in loading.
 ---
 
@@ -854,7 +853,7 @@ RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery re
 - Runtime accounting integration with actual submission/completion and cancellation paths.
 ## ADR-029 — Operation input context binds typed inputs to explicit image revisions and generic resources
 
-**Status:** Implemented initial input-binding and qualification baseline; output planning and dynamic resource feasibility pending
+**Status:** Input binding/qualification, operation-derived output/temporary planning, context resource feasibility, output descriptor validation, and initial candidate ranking implemented; physical allocation/residency feasibility pending
 
 ### Decision
 
@@ -880,16 +879,16 @@ Input resource access declarations must also agree with operation semantics: wri
 ### Deferred
 
 - Provider-backed physical memory reservation, residency and full interop feasibility.
-- Source-quality-aware use of fresh/stale/unknown per-observation telemetry during ranking.
-- Actual output value/descriptor and postcondition validation; provider allocation and residency feasibility.
+- Quality-aware weighting and refresh policy for telemetry; the initial ranker consumes only fresh comparable queue-delay values while preserving source, quality, and validity metadata, and does not use stale/unknown values to rank.
+- Provider-backed allocation, returned-resource descriptor validation, residency/import feasibility, and result storage-binding validation; logical output descriptor and typed postcondition validation are implemented under ADR-033.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
-- Preference ranking, complete cost estimates, whole-pipeline planning, and execution coordination.
+- Complete end-to-end cost estimates, precision-preference ranking, whole-pipeline planning, and execution coordination; the initial scoped objective ranker is implemented.
 
 ---
 
 ## ADR-030 — Candidate telemetry preserves observation-local validity and provenance
 
-**Status:** Implemented candidate-bound telemetry assessment; quality-aware ranking pending
+**Status:** Implemented candidate-bound telemetry assessment and initial source-preserving ranking; numeric quality weighting and refresh policy pending
 
 ### Decision
 
@@ -914,7 +913,8 @@ Qualification preserves reliable evidence for later ranking without coupling sem
 
 ### Deferred
 
-- Quality-aware ranking and cost estimation across observations with different sources and qualities.
+- Explicit, calibrated quality-aware comparison/weighting across reported, estimated, and inferred sources; source/quality is preserved but not mapped to numeric confidence.
+- Refresh/re-resolution policy for stale telemetry before coordinator reservation and submission.
 - Provider-backed capacity reservation, allocation/reuse, residency transitions, and output-resource planning.
 - Refresh/retry policy when observations expire before reservation or submission.
 
@@ -953,7 +953,7 @@ The resolver can produce candidate-bound, data-derived output and temporary allo
 - Output resource binding into the typed output value and validation of output descriptors/postconditions.
 - Temporary resource lifecycle and cleanup after their sizes/alignment are represented by the operation-derived plan.
 - Residency transitions, imported-input remapping, and provider allocation failure/re-resolution behavior.
-- Quality-aware ranking and complete cost estimation.
+- Source-quality weighting/refresh, complete end-to-end cost estimation, and objective-specific energy/throughput models; an initial queue-delay/resource-capacity/determinism ranker is implemented.
 
 ---
 
@@ -1044,3 +1044,49 @@ Output contracts are no longer only static declarations. The runtime checks the 
 - [x] Defer a public C ABI until an actual non-Swift consumer/provider requires it.
 
 The checked items are architecture-level decisions recorded in baseline 0.3. The unchecked items require implementation experiments or explicit product/platform validation before public API freeze.
+---
+ 
+## ADR-034 — Initial candidate ranking is explainable, partial, and eligibility-preserving
+
+**Status:** Initial implementation added on version-0.1; build and test verification not yet performed
+
+### Decision
+
+Keep hard eligibility and candidate ranking as separate operations. CommonQualificationResolver.evaluate returns qualification outcomes without ranking. resolve invokes that eligibility pass and ranks only the resulting qualifiedCandidates. A preference or score cannot revive a rejected or indeterminate candidate.
+
+The first ranker uses the policy's existing scoped preference declarations. Applicable declarations are evaluated in descending integer priority. Within a priority tier, each declaration contributes a weight-scaled pairwise win rate only when the two candidates have comparable evidence for that objective. The ranker does not sum heterogeneous units into one fabricated total. Stable implementation identifier/version and provider/device target identity provide deterministic tie-breaking when preference evidence does not order candidates.
+
+The first objective comparisons are deliberately narrow:
+
+- lowLatency uses pairwise Pareto dominance over components available and fresh for both candidates: provider queue delay, device queue delay, and implementation fixed submission/setup overhead. A candidate wins only when it is no worse on every compared component and strictly better on at least one.
+- lowMemory compares the sum of the per-role minimum planned output and temporary resource capacities. This is a lower bound derived from invocation plans and implementation minima, not physical allocation size, peak memory, or current free memory.
+- deterministicResults prefers an implementation that declares deterministic behavior when compared with one that declares nondeterministic behavior.
+- lowEnergy and highThroughput remain unranked until an explicit measured or validated model exists.
+
+Each candidate receives a component estimate record with a unit and one of estimated, stale, or unknown states. Known telemetry retains source, ObservationQuality, observation timestamp, and expiry. Stale and unknown values remain visible in diagnostics but do not participate in pairwise comparisons. No source-quality confidence scale is invented. The ranker also exposes each output/temporary role's feasible memory-domain alternatives; it does not select a domain, allocate resources, or reserve capacity.
+
+The first estimate set can expose provider/device queue depth, available memory, utilization, and implementation hints such as operations-per-element and temporary-bytes-per-element. These values are not automatically reduced to a scalar score. Until operation workload size, residency/transfer routes, conversion requirements, allocation latency, compute throughput, context cost, synchronization, and output materialization have explicit models or measured history, those end-to-end cost terms remain unknown.
+
+### Invariants
+
+- evaluate is eligibility-only; resolve ranks only candidates returned as qualified by the same evaluation.
+- Ranking never weakens operation semantics, implementation support, hard pipeline constraints, provider requirements, precision requirements, or context/resource feasibility.
+- Unknown and stale telemetry is never interpreted as zero or as a measured preference.
+- Source and ObservationQuality are preserved; no implicit numeric confidence or source precedence is applied.
+- Cost components retain their units. The first low-latency comparison is Pareto-based rather than a scalar sum across unrelated terms.
+- Minimum planned resource capacity is not physical allocation, free capacity, or peak memory.
+- Every feasible memory domain remains an option until the Phase 6 coordinator chooses one after ranking.
+- No allocation, reservation, provider submission, or image publication occurs during ranking.
+- Identical registered candidate bindings and the same policy/environment evidence produce a deterministic order.
+
+### Consequence
+
+The runtime can now express a first explainable preference order without coupling policy to backend classes or pretending to know unmeasured portions of the execution path. The cost report also makes missing evidence explicit, so later models can extend component estimates without changing hard eligibility semantics.
+
+### Deferred
+
+- Quality-aware telemetry weighting and stale-observation refresh before coordinator reservation.
+- Input/output residency routes, transfer/conversion costs, allocation/context latency, compute and synchronization costs, output materialization, energy, and throughput models.
+- Precision-preference objectives over otherwise eligible storage/computation alternatives.
+- Candidate selection with an explicit memory-domain choice, resource acquisition/reservation, execution planning, and full lifecycle diagnostics.
+- Calibration against measured per-operation/per-input-size/per-device execution history and end-to-end benchmarks.

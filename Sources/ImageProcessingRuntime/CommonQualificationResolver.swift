@@ -2,9 +2,9 @@ import Foundation
 import GeneralExecutionProtocol
 import ImageProcessingProtocol
 
-/// One shared evaluator for implementation specifications, execution state,
-/// and hard pipeline requirements. This stage establishes eligibility only;
-/// objective ranking and cost optimization remain separate.
+/// One shared resolver for declarative implementation and environment contracts.
+/// `evaluate` establishes hard eligibility; `resolve` ranks only those eligible
+/// bindings and does not allocate resources or execute operation work.
 public actor CommonQualificationResolver {
     private let implementations: OperationImplementationRegistry
     private let providers: ExecutionProviderRegistry
@@ -15,6 +15,36 @@ public actor CommonQualificationResolver {
     ) {
         self.implementations = implementations
         self.providers = providers
+    }
+
+
+    /// Qualifies candidates and orders only the fully eligible results. This
+    /// method does not select a final execution binding or allocate resources.
+    public func resolve(
+        step: AnyImageOperationStep,
+        input: any OperationValue,
+        policy: QualificationPolicy,
+        environment: RuntimeEnvironmentSnapshot,
+        freshness: QualificationFreshnessPolicy,
+        now: Date = Date()
+    ) async throws -> OperationImplementationResolutionReport {
+        let qualification = try await evaluate(
+            step: step,
+            input: input,
+            policy: policy,
+            environment: environment,
+            freshness: freshness,
+            now: now
+        )
+        let ranked = OperationImplementationCandidateRanker.rank(
+            qualification.qualifiedCandidates,
+            stepIdentifier: step.identifier,
+            preferences: policy.preferences
+        )
+        return OperationImplementationResolutionReport(
+            qualification: qualification,
+            rankedCandidates: ranked
+        )
     }
 
     public func evaluate(

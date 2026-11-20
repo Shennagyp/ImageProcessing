@@ -39,7 +39,8 @@ private struct QualificationImplementation: ImageOperationImplementation {
         providerID: ExecutionProviderID? = nil,
         requiredCapabilities: [ExecutionCapabilityConstraint] = [],
         precision: OperationPrecisionContract = .init(computation: [.float32]),
-        resourceRequirements: [ImplementationResourceRequirement] = []
+        resourceRequirements: [ImplementationResourceRequirement] = [],
+        performanceHints: ImplementationPerformanceHints? = nil
     ) {
         specification = ImplementationSpecification(
             identifier: OperationImplementationIdentifier(rawValue: identifier)!,
@@ -55,6 +56,7 @@ private struct QualificationImplementation: ImageOperationImplementation {
             requiredCapabilities: requiredCapabilities,
             precisionSupport: precision,
             determinism: .deterministic,
+            performanceHints: performanceHints,
             numericalSupport: .init(
                 roundingModes: [.nearestEven],
                 overflowBehaviors: [.saturate],
@@ -109,9 +111,15 @@ private struct OutputPlanningImplementation: ImageOperationImplementation {
 
     let specification: ImplementationSpecification
 
-    init() {
+    init(
+        identifier: String = "qualification.output-plan.buffer",
+        minimumOutputCapacityBytes: UInt64 = 512,
+        minimumTemporaryCapacityBytes: UInt64 = 256,
+        allowedMemoryDomains: Set<ExecutionMemoryDomain> = [.host],
+        performanceHints: ImplementationPerformanceHints? = nil
+    ) {
         specification = ImplementationSpecification(
-            identifier: OperationImplementationIdentifier(rawValue: "qualification.output-plan.buffer")!,
+            identifier: OperationImplementationIdentifier(rawValue: identifier)!,
             version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
             operationIdentifier: OutputPlanningOperation.specification.identifier,
             supportedOperationVersions: SemanticVersionRange(
@@ -127,20 +135,21 @@ private struct OutputPlanningImplementation: ImageOperationImplementation {
                 overflowBehaviors: [.saturate],
                 outputRangeBehaviors: [.preserve]
             ),
+            performanceHints: performanceHints,
             resourceRequirements: [
                 ImplementationResourceRequirement(
                     role: .output(0),
                     kind: .buffer,
-                    allowedMemoryDomains: [.host],
-                    minimumCapacityBytes: 512,
+                    allowedMemoryDomains: allowedMemoryDomains,
+                    minimumCapacityBytes: minimumOutputCapacityBytes,
                     minimumAlignmentBytes: 64,
                     access: .write
                 ),
                 ImplementationResourceRequirement(
                     role: .temporary("scratch"),
                     kind: .buffer,
-                    allowedMemoryDomains: [.host],
-                    minimumCapacityBytes: 256,
+                    allowedMemoryDomains: allowedMemoryDomains,
+                    minimumCapacityBytes: minimumTemporaryCapacityBytes,
                     minimumAlignmentBytes: 32,
                     access: .write
                 )
@@ -381,6 +390,103 @@ struct CommonQualificationResolverTests {
             policy: policy,
             environment: environment,
             freshness: freshness ?? self.freshness(),
+            now: now
+        )
+    }
+
+
+    private func makeResolution(
+        providers: [QualificationTestProvider],
+        implementation: QualificationImplementation = QualificationImplementation(),
+        policy: QualificationPolicy,
+        now: Date
+    ) async throws -> OperationImplementationResolutionReport {
+        let implementationRegistry = OperationImplementationRegistry()
+        try await implementationRegistry.register(implementation)
+
+        let providerRegistry = ExecutionProviderRegistry()
+        for provider in providers {
+            try await providerRegistry.register(provider)
+        }
+
+        let coordinator = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providerRegistry,
+            workLedger: RuntimeWorkLedger()
+        )
+        let environment = try await coordinator.capture(
+            platform: platform(),
+            capturedAt: now
+        )
+        let resolver = CommonQualificationResolver(
+            implementations: implementationRegistry,
+            providers: providerRegistry
+        )
+        return try await resolver.resolve(
+            step: AnyImageOperationStep(operation: QualificationOperation()),
+            input: QualificationInput(),
+            policy: policy,
+            environment: environment,
+            freshness: freshness(),
+            now: now
+        )
+    }
+
+    private func makeQueueProvider(
+        identifier: String,
+        delay: ExecutionObservation<UInt64>,
+        capturedAt: Date
+    ) -> QualificationTestProvider {
+        let providerID = ExecutionProviderID(rawValue: identifier)!
+        let deviceState = ExecutionDeviceStateSnapshot(
+            capturedAt: capturedAt,
+            availability: .available,
+            estimatedQueueDelayNanoseconds: delay
+        )
+        let device = QualificationTestDevice(
+            identifier: "device.0",
+            providerID: providerID,
+            capturedAt: capturedAt,
+            state: deviceState
+        )
+        return QualificationTestProvider(
+            identifier: identifier,
+            devices: [device],
+            capturedAt: capturedAt
+        )
+    }
+
+    private func makeOutputResolution(
+        provider: QualificationTestProvider,
+        implementations: [OutputPlanningImplementation],
+        policy: QualificationPolicy,
+        now: Date
+    ) async throws -> OperationImplementationResolutionReport {
+        let implementationRegistry = OperationImplementationRegistry()
+        for implementation in implementations {
+            try await implementationRegistry.register(implementation)
+        }
+
+        let providerRegistry = ExecutionProviderRegistry()
+        try await providerRegistry.register(provider)
+
+        let coordinator = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providerRegistry,
+            workLedger: RuntimeWorkLedger()
+        )
+        let environment = try await coordinator.capture(
+            platform: platform(),
+            capturedAt: now
+        )
+        let resolver = CommonQualificationResolver(
+            implementations: implementationRegistry,
+            providers: providerRegistry
+        )
+        return try await resolver.resolve(
+            step: AnyImageOperationStep(operation: OutputPlanningOperation()),
+            input: QualificationInput(),
+            policy: policy,
+            environment: environment,
+            freshness: freshness(),
             now: now
         )
     }
@@ -894,4 +1000,202 @@ struct CommonQualificationResolverTests {
         #expect(report.evaluations[0].disposition == .rejected)
         #expect(report.evaluations[0].rejections.contains(.noExecutionProviderDiscovered))
     }
+
+    @Test
+    func lowLatencyRanksCandidatesUsingFreshComparableQueueDelay() async throws {
+        let now = Date(timeIntervalSince1970: 52_000)
+        let slowDelay = try ExecutionObservation(
+            value: UInt64(90_000),
+            observedAt: now.addingTimeInterval(-1),
+            validUntil: now.addingTimeInterval(10),
+            source: "qualification.device.queue",
+            quality: .reported
+        )
+        let fastDelay = try ExecutionObservation(
+            value: UInt64(10_000),
+            observedAt: now.addingTimeInterval(-1),
+            validUntil: now.addingTimeInterval(10),
+            source: "qualification.device.queue",
+            quality: .reported
+        )
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.prefer(.lowLatency)
+        }.qualificationPolicy
+        let resolution = try await makeResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.queue.slow",
+                    delay: slowDelay,
+                    capturedAt: now
+                ),
+                makeQueueProvider(
+                    identifier: "provider.queue.fast",
+                    delay: fastDelay,
+                    capturedAt: now
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+
+        #expect(resolution.qualification.qualifiedCandidates.count == 2)
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(resolution.rankedCandidates[0].candidate.target.providerID.rawValue == "provider.queue.fast")
+        let queueEstimate = resolution.rankedCandidates[0].costEstimate.estimate(for: .deviceQueueDelay)
+        #expect({
+            guard let queueEstimate,
+                  case let .estimated(value: .integer(nanoseconds), evidence) = queueEstimate.state else {
+                return false
+            }
+            return nanoseconds == 10_000
+                && evidence.first?.quality == .reported
+                && evidence.first?.source == "qualification.device.queue"
+        }())
+    }
+
+    @Test
+    func unknownQueueTelemetryDoesNotBecomeZeroOrCreateAPreference() async throws {
+        let now = Date(timeIntervalSince1970: 52_100)
+        let knownDelay = try ExecutionObservation(
+            value: UInt64(10),
+            observedAt: now.addingTimeInterval(-1),
+            validUntil: now.addingTimeInterval(10),
+            source: "qualification.device.queue",
+            quality: .reported
+        )
+        let unknownDelay = ExecutionObservation<UInt64>(
+            unknownReason: "device queue delay is not reported"
+        )
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.prefer(.lowLatency)
+        }.qualificationPolicy
+        let resolution = try await makeResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.a-known",
+                    delay: knownDelay,
+                    capturedAt: now
+                ),
+                makeQueueProvider(
+                    identifier: "provider.z-unknown",
+                    delay: unknownDelay,
+                    capturedAt: now
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(resolution.rankedCandidates[0].candidate.target.providerID.rawValue == "provider.a-known")
+        #expect(resolution.rankedCandidates.allSatisfy {
+            $0.preferenceContributions.first?.comparablePairCount == 0
+        })
+        let unknownEstimate = resolution.rankedCandidates.first {
+            $0.candidate.target.providerID.rawValue == "provider.z-unknown"
+        }?.costEstimate.estimate(for: .deviceQueueDelay)
+        #expect({
+            guard let unknownEstimate,
+                  case let .unknown(reason) = unknownEstimate.state else {
+                return false
+            }
+            return reason == "device queue delay is not reported"
+        }())
+    }
+
+    @Test
+    func lowMemoryRanksDeclaredAllocationMinimumAndPreservesDomainAlternatives() async throws {
+        let now = Date(timeIntervalSince1970: 52_200)
+        let capabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(identifier: .resourceMemoryDomains, value: .stringSet(["host", "deviceLocal"]))
+        ])
+        let provider = QualificationTestProvider(
+            contextCapabilities: capabilities,
+            capturedAt: now,
+            allocatesResources: true
+        )
+        let policy = try ImageFunction(operation: OutputPlanningOperation()).qualifying {
+            $0.prefer(.lowMemory)
+        }.qualificationPolicy
+        let resolution = try await makeOutputResolution(
+            provider: provider,
+            implementations: [
+                OutputPlanningImplementation(
+                    identifier: "qualification.output-plan.small",
+                    allowedMemoryDomains: [.host, .deviceLocal]
+                ),
+                OutputPlanningImplementation(
+                    identifier: "qualification.output-plan.large",
+                    minimumOutputCapacityBytes: 8_192,
+                    minimumTemporaryCapacityBytes: 4_096,
+                    allowedMemoryDomains: [.host, .deviceLocal]
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(resolution.rankedCandidates[0].candidate.implementation.specification.identifier.rawValue == "qualification.output-plan.small")
+        let allocationEstimate = resolution.rankedCandidates[0].costEstimate.estimate(for: .minimumPlannedResourceCapacityBytes)
+        #expect({
+            guard let allocationEstimate,
+                  case let .estimated(value: .integer(bytes), _) = allocationEstimate.state else {
+                return false
+            }
+            return bytes == 6_144
+        }())
+        #expect(resolution.rankedCandidates[0].resourceMemoryDomainOptions.count == 2)
+        #expect(resolution.rankedCandidates[0].resourceMemoryDomainOptions.allSatisfy {
+            $0.domains == [.deviceLocal, .host]
+        })
+    }
+
+    @Test
+    func higherPriorityObjectivePrecedesLowerPriorityLatencyPreference() async throws {
+        let now = Date(timeIntervalSince1970: 52_300)
+        let capabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(
+                identifier: .resourceMemoryDomains,
+                value: .stringSet(["host"])
+            )
+        ])
+        let provider = QualificationTestProvider(
+            contextCapabilities: capabilities,
+            capturedAt: now,
+            allocatesResources: true
+        )
+        let policy = try ImageFunction(operation: OutputPlanningOperation()).qualifying {
+            $0.prefer(.lowLatency, priority: 1)
+            $0.prefer(.lowMemory, priority: 10)
+        }.qualificationPolicy
+        let resolution = try await makeOutputResolution(
+            provider: provider,
+            implementations: [
+                OutputPlanningImplementation(
+                    identifier: "qualification.output-plan.small-slower",
+                    performanceHints: .init(fixedOverheadNanoseconds: 10_000)
+                ),
+                OutputPlanningImplementation(
+                    identifier: "qualification.output-plan.large-faster",
+                    minimumOutputCapacityBytes: 8_192,
+                    minimumTemporaryCapacityBytes: 4_096,
+                    performanceHints: .init(fixedOverheadNanoseconds: 1_000)
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(resolution.rankedCandidates[0].candidate.implementation.specification.identifier.rawValue == "qualification.output-plan.small-slower")
+        #expect(resolution.rankedCandidates[0].priorityScores.map(\.priority) == [10, 1])
+        #expect(resolution.rankedCandidates[0].priorityScores[0].weightedScore == 1)
+        #expect(resolution.rankedCandidates[0].priorityScores[1].weightedScore == 0)
+    }
+
 }
