@@ -495,3 +495,134 @@ struct LayerDescriptorTests {
         #expect(LayerProperties(opacity: 1) != nil)
     }
 }
+
+
+struct LayerSpatialMappingTests {
+    private func scalarPixels(extent: ImageExtent) throws -> PixelDataDescriptor {
+        let channel = PixelChannelDescriptor(
+            identifier: try #require(ChannelIdentifier(rawValue: "intensity")),
+            role: .intensity
+        )
+        let plane = PixelPlaneLayout(
+            byteOffset: 0,
+            rowStrideBytes: extent.width * 4,
+            sliceStrideBytes: extent.width * extent.height * 4,
+            pixelStrideBytes: 4,
+            subsampling: try #require(PixelSubsampling()),
+            channelIndices: [0]
+        )
+        return try PixelDataDescriptor(
+            extent: extent,
+            componentType: .float32,
+            channels: [channel],
+            interpretation: .scientific(ScientificDataInterpretation()),
+            layout: .interleaved(plane)
+        )
+    }
+
+    @Test
+    func identityMappingLeavesSampleCoordinatesUnchanged() throws {
+        let point = try #require(CanvasIndexCoordinate(x: 12.5, y: 7, z: 3))
+        #expect(try LayerSpatialMapping.identity.mapToCanvas(point) == point)
+    }
+
+    @Test
+    func affineMappingScalesAndTranslatesLayerCoordinates() throws {
+        let mapping = try LayerSpatialMapping(rowMajorValues: [
+            2, 0, 0, 0.5,
+            0, 2, 0, 0.5,
+            0, 0, 1, 4,
+            0, 0, 0, 1
+        ])
+        let point = try #require(CanvasIndexCoordinate(x: 1, y: 1, z: 2))
+        #expect(try mapping.mapToCanvas(point) == CanvasIndexCoordinate(x: 2.5, y: 2.5, z: 6))
+    }
+
+    @Test
+    func singularAndNonAffineMappingsAreRejected() {
+        #expect(throws: LayerSpatialMappingError.singularLinearTransform) {
+            try LayerSpatialMapping(rowMajorValues: [
+                1, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ])
+        }
+        #expect(throws: LayerSpatialMappingError.invalidAffineLastRow) {
+            try LayerSpatialMapping(rowMajorValues: [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0.1, 1
+            ])
+        }
+    }
+
+    @Test
+    func nonFiniteMappingEntriesAreRejected() {
+        #expect(throws: LayerSpatialMappingError.nonFiniteElement(index: 3)) {
+            try LayerSpatialMapping(rowMajorValues: [
+                1, 0, 0, .infinity,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ])
+        }
+    }
+
+    @Test
+    func snapshotRejectsLayerExtentMismatchWithoutSpatialMapping() throws {
+        let imageID = try #require(ImageIdentifier(rawValue: "image.canvas"))
+        let layerID = try #require(LayerIdentifier(rawValue: "layer.low-res"))
+        let layerPixels = try scalarPixels(extent: #require(ImageExtent(width: 2, height: 2)))
+        let layer = LayerDescriptor(identifier: layerID, content: .raster(layerPixels))
+        let canvas = ImageCanvasDescriptor(extent: try #require(ImageExtent(width: 4, height: 4)))
+
+        #expect(throws: ImageDocumentSnapshotError.layerExtentMismatch(
+            layer: layerID,
+            expectedCanvas: canvas.extent,
+            actualLayer: layerPixels.extent
+        )) {
+            try ImageDocumentSnapshot(identifier: imageID, canvas: canvas, layers: [layer])
+        }
+    }
+
+    @Test
+    func snapshotAcceptsDifferentLayerExtentWithExplicitSpatialMapping() throws {
+        let imageID = try #require(ImageIdentifier(rawValue: "image.canvas"))
+        let layerID = try #require(LayerIdentifier(rawValue: "layer.low-res"))
+        let layerPixels = try scalarPixels(extent: #require(ImageExtent(width: 2, height: 2)))
+        let mapping = try LayerSpatialMapping(rowMajorValues: [
+            2, 0, 0, 0.5,
+            0, 2, 0, 0.5,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ])
+        let layer = LayerDescriptor(
+            identifier: layerID,
+            content: .raster(layerPixels),
+            spatialMapping: mapping
+        )
+        let canvas = ImageCanvasDescriptor(extent: try #require(ImageExtent(width: 4, height: 4)))
+        let snapshot = try ImageDocumentSnapshot(identifier: imageID, canvas: canvas, layers: [layer])
+
+        #expect(snapshot.layers[0].spatialMapping == mapping)
+        #expect(snapshot.layers[0].effectiveSpatialMapping == mapping)
+        #expect(snapshot.layers[0].content.kind == .raster)
+    }
+}
+
+extension LayerSpatialMappingTests {
+    @Test
+    func equalExtentLayerUsesImplicitIdentityMapping() throws {
+        let imageID = try #require(ImageIdentifier(rawValue: "image.same-grid"))
+        let layerID = try #require(LayerIdentifier(rawValue: "layer.same-grid"))
+        let pixels = try scalarPixels(extent: #require(ImageExtent(width: 2, height: 2)))
+        let layer = LayerDescriptor(identifier: layerID, content: .raster(pixels))
+        let canvas = ImageCanvasDescriptor(extent: pixels.extent)
+        let snapshot = try ImageDocumentSnapshot(identifier: imageID, canvas: canvas, layers: [layer])
+
+        #expect(snapshot.layers[0].spatialMapping == nil)
+        #expect(snapshot.layers[0].effectiveSpatialMapping == .identity)
+    }
+}
