@@ -957,7 +957,7 @@ The resolver can produce candidate-bound, data-derived output and temporary allo
 
 ---
 
-## ADR-032 — Context resource capabilities constrain output feasibility
+## ADR-032 — Context resource capabilities constrain allocation feasibility
 
 **Status:** Context resource-kind and memory-domain feasibility implemented; allocation and capacity reservation pending
 
@@ -967,7 +967,7 @@ An implementation's output and temporary resource requirements declare the gener
 
 The standard context capability identifiers use Boolean values for buffer and texture resource support, a string set for provider-defined opaque resource-kind identifiers, and a string set of exact `ExecutionMemoryDomain.rawValue` values for supported allocation domains. These are static support declarations. They do not report free bytes, reserve capacity, or guarantee that a subsequent allocation succeeds.
 
-A qualified output allocation requirement retains both its implementation-allowed domains and the non-empty context-supported intersection. The later coordinator selects a domain, requests an allocation, and validates the actual returned resource descriptor.
+Each qualified output or temporary allocation requirement retains both its implementation-allowed domains and the non-empty context-supported intersection. The later coordinator selects a domain, requests an allocation, and validates the actual returned resource descriptor.
 
 ### Invariants
 
@@ -988,7 +988,7 @@ Qualification no longer labels an output/temporary resource path eligible merely
 - Selecting one allocatable domain using policy and full-path cost.
 - Provider allocation, physical capacity reservation/reuse, and allocation-failure handling.
 - Actual resource descriptor validation and resource binding to typed output values.
-- Temporary resource size planning; candidates declaring temporary allocations are rejected until their size/alignment can be represented by an operation-derived plan.
+- Temporary resource lifecycle and cleanup after sizes and alignment are represented by the operation-derived plan.
 - Residency/import/synchronization transitions and output postcondition validation.
 
 ---
