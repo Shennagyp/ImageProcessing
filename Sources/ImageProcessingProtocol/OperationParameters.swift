@@ -114,6 +114,72 @@ public struct OperationParameterSpecification: Hashable, Sendable {
     }
 }
 
+/// Parameter subset accepted by one concrete implementation.
+public struct OperationParameterSupport: Hashable, Sendable {
+    public let identifier: OperationParameterIdentifier
+    public let domain: OperationParameterDomain
+
+    public init(identifier: OperationParameterIdentifier, domain: OperationParameterDomain) {
+        self.identifier = identifier
+        self.domain = domain
+    }
+}
+
+public enum OperationParameterSupportValidationError: Error, Equatable, Sendable {
+    case invalidDomain(OperationParameterIdentifier)
+    case duplicateSupport(OperationParameterIdentifier)
+    case unknownParameter(OperationParameterIdentifier)
+    case missingRequiredSupport(OperationParameterIdentifier)
+    case supportOutsideOperationDomain(OperationParameterIdentifier)
+}
+
+public enum OperationParameterSupportValidation {
+    public static func validate(
+        operationSpecifications: [OperationParameterSpecification],
+        implementationSupport: [OperationParameterSupport]
+    ) throws {
+        try OperationParameterValidation.validateSpecifications(operationSpecifications)
+
+        var supportByID: [OperationParameterIdentifier: OperationParameterSupport] = [:]
+        for support in implementationSupport {
+            guard support.domain.isValid else {
+                throw OperationParameterSupportValidationError.invalidDomain(support.identifier)
+            }
+            guard supportByID[support.identifier] == nil else {
+                throw OperationParameterSupportValidationError.duplicateSupport(support.identifier)
+            }
+            supportByID[support.identifier] = support
+        }
+
+        let operationIDs = Set(operationSpecifications.map(\\.identifier))
+        for support in implementationSupport where !operationIDs.contains(support.identifier) {
+            throw OperationParameterSupportValidationError.unknownParameter(support.identifier)
+        }
+
+        for specification in operationSpecifications {
+            guard let support = supportByID[specification.identifier] else {
+                if specification.isRequired {
+                    throw OperationParameterSupportValidationError.missingRequiredSupport(specification.identifier)
+                }
+                continue
+            }
+            guard support.domain.isSubset(of: specification.domain) else {
+                throw OperationParameterSupportValidationError.supportOutsideOperationDomain(specification.identifier)
+            }
+        }
+    }
+
+    public static func accepts(
+        _ values: [OperationParameterValueRecord],
+        implementationSupport: [OperationParameterSupport]
+    ) -> Bool {
+        let supportByID = Dictionary(
+            uniqueKeysWithValues: implementationSupport.map { ($0.identifier, $0.domain) }
+        )
+        return values.allSatisfy { supportByID[$0.identifier]?.accepts($0.value) ?? false }
+    }
+}
+
 public struct OperationParameterValueRecord: Hashable, Sendable {
     public let identifier: OperationParameterIdentifier
     public let value: OperationParameterValue
