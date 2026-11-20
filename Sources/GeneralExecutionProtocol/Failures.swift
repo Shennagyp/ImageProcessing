@@ -5,6 +5,7 @@ public enum ExecutionProviderFailureKind: String, Hashable, Sendable {
     case deviceUnavailable
     case deviceLost
     case capabilityUnavailable
+    case providerContractViolation
     case resourceAllocationFailed
     case resourceImportFailed
     case invalidResource
