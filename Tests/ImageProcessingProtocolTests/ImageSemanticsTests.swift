@@ -607,7 +607,7 @@ struct LayerSpatialMappingTests {
         let snapshot = try ImageDocumentSnapshot(identifier: imageID, canvas: canvas, layers: [layer])
 
         #expect(snapshot.layers[0].spatialMapping == mapping)
-        #expect(snapshot.layers[0].effectiveSpatialMapping == mapping)
+        #expect(try snapshot.spatialMapping(for: layer.reference(in: imageID)) == mapping)
         #expect(snapshot.layers[0].content.kind == .raster)
     }
 }
@@ -623,6 +623,6 @@ extension LayerSpatialMappingTests {
         let snapshot = try ImageDocumentSnapshot(identifier: imageID, canvas: canvas, layers: [layer])
 
         #expect(snapshot.layers[0].spatialMapping == nil)
-        #expect(snapshot.layers[0].effectiveSpatialMapping == .identity)
+        #expect(try snapshot.spatialMapping(for: layer.reference(in: imageID)) == .identity)
     }
 }
