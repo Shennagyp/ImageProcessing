@@ -155,11 +155,13 @@ struct PixelDescriptorTests {
         let uPlane = PixelPlaneLayout(
             byteOffset: 15, rowStrideBytes: 3, sliceStrideBytes: 6,
             pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: PixelGridCoordinate(x: 0.5, y: 0.5),
             channelIndices: [1]
         )
         let vPlane = PixelPlaneLayout(
             byteOffset: 21, rowStrideBytes: 3, sliceStrideBytes: 6,
             pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: PixelGridCoordinate(x: 0.5, y: 0.5),
             channelIndices: [2]
         )
         let descriptor = try PixelDataDescriptor(
@@ -522,8 +524,8 @@ struct LayerSpatialMappingTests {
 
     @Test
     func identityMappingLeavesSampleCoordinatesUnchanged() throws {
-        let point = try #require(CanvasIndexCoordinate(x: 12.5, y: 7, z: 3))
-        #expect(try LayerSpatialMapping.identity.mapToCanvas(point) == point)
+        let point = try #require(PixelGridCoordinate(x: 12.5, y: 7, z: 3))
+        #expect(try LayerSpatialMapping.identity.mapToCanvas(point) == CanvasIndexCoordinate(x: point.x, y: point.y, z: point.z))
     }
 
     @Test
@@ -534,7 +536,7 @@ struct LayerSpatialMappingTests {
             0, 0, 1, 4,
             0, 0, 0, 1
         ])
-        let point = try #require(CanvasIndexCoordinate(x: 1, y: 1, z: 2))
+        let point = try #require(PixelGridCoordinate(x: 1, y: 1, z: 2))
         #expect(try mapping.mapToCanvas(point) == CanvasIndexCoordinate(x: 2.5, y: 2.5, z: 6))
     }
 
@@ -624,5 +626,89 @@ extension LayerSpatialMappingTests {
 
         #expect(snapshot.layers[0].spatialMapping == nil)
         #expect(try snapshot.spatialMapping(for: layer.reference(in: imageID)) == .identity)
+    }
+}
+
+
+struct PixelPlaneSampleOriginTests {
+    @Test
+    func subsampledPlaneRequiresExplicitSampleSiting() throws {
+        let channels = [
+            PixelChannelDescriptor(identifier: try #require(ChannelIdentifier(rawValue: "y")), role: .luma),
+            PixelChannelDescriptor(identifier: try #require(ChannelIdentifier(rawValue: "u")), role: .chromaBlue),
+            PixelChannelDescriptor(identifier: try #require(ChannelIdentifier(rawValue: "v")), role: .chromaRed)
+        ]
+        let y = PixelPlaneLayout(
+            byteOffset: 0, rowStrideBytes: 4, sliceStrideBytes: 8,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling()),
+            channelIndices: [0]
+        )
+        let u = PixelPlaneLayout(
+            byteOffset: 8, rowStrideBytes: 2, sliceStrideBytes: 4,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            channelIndices: [1]
+        )
+        let v = PixelPlaneLayout(
+            byteOffset: 12, rowStrideBytes: 2, sliceStrideBytes: 4,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: PixelGridCoordinate(x: 0, y: 0),
+            channelIndices: [2]
+        )
+        #expect(throws: PixelDataDescriptorError.subsampledPlaneRequiresSampleOrigin(plane: 1)) {
+            try PixelDataDescriptor(
+                extent: try #require(ImageExtent(width: 4, height: 2)),
+                componentType: .uint8,
+                channels: channels,
+                interpretation: .color(ColorDataInterpretation(
+                    colorSpace: try #require(ColorSpaceIdentifier(rawValue: "bt709")),
+                    channelModel: .yCbCr,
+                    transferFunction: .rec709,
+                    alphaMode: .none
+                )),
+                layout: .planar([y, u, v])
+            )
+        }
+    }
+
+    @Test
+    func centeredAndCositedChromaProduceDifferentLayerCoordinates() throws {
+        let centered = PixelPlaneLayout(
+            byteOffset: 0, rowStrideBytes: 2, sliceStrideBytes: 4,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: PixelGridCoordinate(x: 0.5, y: 0.5),
+            channelIndices: [0]
+        )
+        let cosited = PixelPlaneLayout(
+            byteOffset: 0, rowStrideBytes: 2, sliceStrideBytes: 4,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: .zero,
+            channelIndices: [0]
+        )
+
+        #expect(try centered.layerCoordinate(planeX: 0, planeY: 0) == PixelGridCoordinate(x: 0.5, y: 0.5))
+        #expect(try cosited.layerCoordinate(planeX: 0, planeY: 0) == PixelGridCoordinate(x: 0, y: 0))
+        #expect(try centered.layerCoordinate(planeX: 1, planeY: 1) == PixelGridCoordinate(x: 2.5, y: 2.5))
+    }
+
+    @Test
+    func sampleOriginMustLieWithinItsSubsamplingCell() throws {
+        let plane = PixelPlaneLayout(
+            byteOffset: 0, rowStrideBytes: 2, sliceStrideBytes: 4,
+            pixelStrideBytes: 1, subsampling: try #require(PixelSubsampling(x: 2, y: 2)),
+            sampleOrigin: PixelGridCoordinate(x: 2, y: 0),
+            channelIndices: [0]
+        )
+        #expect(throws: PixelDataDescriptorError.invalidSampleOrigin(plane: 0)) {
+            try PixelDataDescriptor(
+                extent: try #require(ImageExtent(width: 4, height: 2)),
+                componentType: .uint8,
+                channels: [PixelChannelDescriptor(
+                    identifier: try #require(ChannelIdentifier(rawValue: "y")),
+                    role: .intensity
+                )],
+                interpretation: .scientific(ScientificDataInterpretation()),
+                layout: .planar([plane])
+            )
+        }
     }
 }
