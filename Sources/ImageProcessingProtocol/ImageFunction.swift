@@ -42,6 +42,9 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
     public func followed<NextOutput: OperationValue>(
         by next: ImageFunction<Output, NextOutput>
     ) throws -> ImageFunction<Input, NextOutput> {
+        try validateParameters()
+        try next.validateParameters()
+
         var stepIdentifierMap: [OperationStepIdentifier: OperationStepIdentifier] = [:]
         let rebasedRightHandSteps = next.steps.map { step in
             let rebased = step.reidentifiedForComposition()
@@ -67,6 +70,7 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
         by operation: Next,
         stepIdentifier: OperationStepIdentifier = .generate()
     ) throws -> ImageFunction<Input, Next.Output> where Next.Input == Output {
+        try validateParameters()
         guard !steps.contains(where: { $0.identifier == stepIdentifier }) else {
             throw QualificationPolicyValidationError.duplicateStepIdentifier(stepIdentifier)
         }
@@ -74,6 +78,7 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
             operation: operation,
             identifier: stepIdentifier
         )
+        try step.validateParameters()
         let combinedSteps = steps + [step]
         let combinedPolicy = try qualificationPolicy.combined(
             with: .unrestricted,
@@ -85,11 +90,20 @@ public struct ImageFunction<Input: OperationValue, Output: OperationValue>: Send
         )
     }
 
+    /// Validates each operation instance against its declared parameter domains.
+    /// The runtime must perform this preflight before candidate resolution.
+    public func validateParameters() throws {
+        for step in steps {
+            try step.validateParameters()
+        }
+    }
+
     /// Attaches validated declarative requirements and preferences to this function.
     /// Step-scoped declarations are checked against this function's occurrence IDs.
     public func qualifying(
         _ configure: (inout QualificationPolicyBuilder) -> Void
     ) throws -> Self {
+        try validateParameters()
         var builder = QualificationPolicyBuilder()
         configure(&builder)
         let addition = try builder.build(for: steps)
