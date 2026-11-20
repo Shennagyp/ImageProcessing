@@ -8,6 +8,36 @@ public enum PrecisionDimension: String, Hashable, Sendable {
     case output
 }
 
+/// Precision used by arithmetic rather than the storage representation of pixels.
+public enum ArithmeticPrecision: String, Hashable, Sendable {
+    case int32
+    case int64
+    case float16
+    case float32
+    case float64
+}
+
+/// A typed precision value. Storage dimensions accept only pixel component
+/// types; computation/accumulation dimensions accept arithmetic precisions.
+public enum PrecisionValue: Hashable, Sendable {
+    case storage(PixelComponentType)
+    case arithmetic(ArithmeticPrecision)
+
+    public static let float16 = Self.arithmetic(.float16)
+    public static let float32 = Self.arithmetic(.float32)
+    public static let float64 = Self.arithmetic(.float64)
+    public static let int32 = Self.arithmetic(.int32)
+    public static let int64 = Self.arithmetic(.int64)
+
+    public static let uint8 = Self.storage(.uint8)
+    public static let uint16 = Self.storage(.uint16)
+    public static let uint32 = Self.storage(.uint32)
+    public static let int16 = Self.storage(.int16)
+    public static let storageFloat16 = Self.storage(.float16)
+    public static let storageFloat32 = Self.storage(.float32)
+    public static let storageFloat64 = Self.storage(.float64)
+}
+
 public enum QualificationPolicyScope: Hashable, Sendable {
     case pipeline
     case step(OperationStepIdentifier)
@@ -17,8 +47,8 @@ public enum QualificationRequirement: Hashable, Sendable {
     case provider(ExecutionProviderID)
     case allowedProviders(Set<ExecutionProviderID>)
     case executionCapability(ExecutionCapabilityConstraint)
-    case precision(PrecisionDimension, PixelComponentType)
-    case allowedPrecisions(PrecisionDimension, Set<PixelComponentType>)
+    case precision(PrecisionDimension, PrecisionValue)
+    case allowedPrecisions(PrecisionDimension, Set<PrecisionValue>)
     case deterministicResults
 }
 
@@ -98,6 +128,7 @@ public enum QualificationPolicyValidationError: Error, Hashable, Sendable {
     case duplicateStepIdentifier(OperationStepIdentifier)
     case emptyProviderSet(PolicyDeclarationOrigin)
     case emptyPrecisionSet(PrecisionDimension, PolicyDeclarationOrigin)
+    case invalidPrecisionValue(PrecisionDimension, PolicyDeclarationOrigin)
     case invalidPreferenceWeight(PolicyDeclarationOrigin)
     case unknownStep(OperationStepIdentifier, PolicyDeclarationOrigin)
     case inapplicableDimension(OperationStepIdentifier, OperationQualificationDimension, PolicyDeclarationOrigin)
@@ -175,6 +206,14 @@ public struct QualificationPolicy: Hashable, Sendable {
                 throw QualificationPolicyValidationError.emptyProviderSet(declaration.origin)
             case let .allowedPrecisions(dimension, values) where values.isEmpty:
                 throw QualificationPolicyValidationError.emptyPrecisionSet(dimension, declaration.origin)
+            case let .precision(dimension, value):
+                guard Self.precisionValue(value, matches: dimension) else {
+                    throw QualificationPolicyValidationError.invalidPrecisionValue(dimension, declaration.origin)
+                }
+            case let .allowedPrecisions(dimension, values):
+                guard values.allSatisfy({ Self.precisionValue($0, matches: dimension) }) else {
+                    throw QualificationPolicyValidationError.invalidPrecisionValue(dimension, declaration.origin)
+                }
             default:
                 break
             }
@@ -287,7 +326,7 @@ public struct QualificationPolicy: Hashable, Sendable {
                 }
             })
             for dimension in precisionDimensions {
-                let precisionValues: (QualificationRequirement) -> Set<PixelComponentType>? = {
+                let precisionValues: (QualificationRequirement) -> Set<PrecisionValue>? = {
                     requirement in
                     guard let allowed = self.allowedPrecision(requirement),
                           allowed.dimension == dimension else {
@@ -395,9 +434,22 @@ public struct QualificationPolicy: Hashable, Sendable {
         }
     }
 
+    private static func precisionValue(
+        _ value: PrecisionValue,
+        matches dimension: PrecisionDimension
+    ) -> Bool {
+        switch (dimension, value) {
+        case (.inputStorage, .storage), (.output, .storage),
+             (.computation, .arithmetic), (.accumulation, .arithmetic):
+            true
+        default:
+            false
+        }
+    }
+
     private func allowedPrecision(
         _ requirement: QualificationRequirement
-    ) -> (dimension: PrecisionDimension, values: Set<PixelComponentType>)? {
+    ) -> (dimension: PrecisionDimension, values: Set<PrecisionValue>)? {
         switch requirement {
         case let .precision(dimension, value): return (dimension, [value])
         case let .allowedPrecisions(dimension, values): return (dimension, values)
