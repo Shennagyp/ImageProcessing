@@ -673,7 +673,7 @@ For example, an ONNX Runtime session may partition a model internally among exec
 A provider capability descriptor reports facts, not promises inferred from a platform name. Depending on the provider, useful static facts include:
 \begin{itemize}
   \item provider/device identity, vendor, architecture, driver/runtime version, and supported platform/runtime combinations;
-  \item supported resource types, import/export paths, pixel/component formats, and alignment constraints;
+  \item supported generic resource kinds, opaque native resource-format identifiers, import/export paths, and alignment constraints. The general protocol does not interpret these identifiers as pixel/channel/color semantics;
   \item supported compute features and precision modes;
   \item maximum dimensions, allocation limits, and device memory characteristics;
   \item asynchronous submission, synchronization, and interoperability capabilities;
