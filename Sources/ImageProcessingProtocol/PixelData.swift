@@ -176,6 +176,8 @@ public struct PixelPlaneLayout: Hashable, Sendable {
     public let rowStrideBytes: UInt64
     public let sliceStrideBytes: UInt64
     public let pixelStrideBytes: UInt64
+    /// Required power-of-two base and row/slice alignment for the plane.
+    public let requiredAlignmentBytes: UInt64
     public let subsampling: PixelSubsampling
     /// Position of plane sample (0,0,0) in layer sample-grid coordinates.
     /// Required when any subsampling factor exceeds one (for example, chroma siting).
@@ -187,6 +189,7 @@ public struct PixelPlaneLayout: Hashable, Sendable {
         rowStrideBytes: UInt64,
         sliceStrideBytes: UInt64,
         pixelStrideBytes: UInt64,
+        requiredAlignmentBytes: UInt64 = 1,
         subsampling: PixelSubsampling,
         sampleOrigin: PixelGridCoordinate? = nil,
         channelIndices: [Int]
@@ -195,6 +198,7 @@ public struct PixelPlaneLayout: Hashable, Sendable {
         self.rowStrideBytes = rowStrideBytes
         self.sliceStrideBytes = sliceStrideBytes
         self.pixelStrideBytes = pixelStrideBytes
+        self.requiredAlignmentBytes = requiredAlignmentBytes
         self.subsampling = subsampling
         self.sampleOrigin = sampleOrigin
         self.channelIndices = channelIndices
@@ -240,6 +244,10 @@ public enum PixelDataDescriptorError: Error, Equatable, Sendable {
     case emptyPlaneChannelMapping
     case subsampledPlaneRequiresSampleOrigin(plane: Int)
     case invalidSampleOrigin(plane: Int)
+    case invalidRequiredAlignment(plane: Int)
+    case misalignedPlaneOffset(plane: Int, alignment: UInt64)
+    case misalignedRowStride(plane: Int, alignment: UInt64)
+    case misalignedSliceStride(plane: Int, alignment: UInt64)
     case pixelStrideTooSmall(plane: Int, minimum: UInt64)
     case rowStrideTooSmall(plane: Int, minimum: UInt64)
     case sliceStrideTooSmall(plane: Int, minimum: UInt64)
@@ -389,6 +397,29 @@ public struct PixelDataDescriptor: Hashable, Sendable {
                 && sampleOrigin.z < Double(plane.subsampling.z)
             guard originIsValid else {
                 throw PixelDataDescriptorError.invalidSampleOrigin(plane: planeIndex)
+            }
+
+            let requiredAlignment = plane.requiredAlignmentBytes
+            guard requiredAlignment > 0, requiredAlignment.nonzeroBitCount == 1 else {
+                throw PixelDataDescriptorError.invalidRequiredAlignment(plane: planeIndex)
+            }
+            guard plane.byteOffset.isMultiple(of: requiredAlignment) else {
+                throw PixelDataDescriptorError.misalignedPlaneOffset(
+                    plane: planeIndex,
+                    alignment: requiredAlignment
+                )
+            }
+            guard plane.rowStrideBytes.isMultiple(of: requiredAlignment) else {
+                throw PixelDataDescriptorError.misalignedRowStride(
+                    plane: planeIndex,
+                    alignment: requiredAlignment
+                )
+            }
+            guard plane.sliceStrideBytes.isMultiple(of: requiredAlignment) else {
+                throw PixelDataDescriptorError.misalignedSliceStride(
+                    plane: planeIndex,
+                    alignment: requiredAlignment
+                )
             }
 
             let bytesPerPixel = try checkedMultiply(
