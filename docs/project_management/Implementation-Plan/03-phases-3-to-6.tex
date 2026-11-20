@@ -9,6 +9,7 @@
   \item LayerSpatialMapping: validated invertible 4x4 affine transform from layer sample-centre index coordinates to canvas sample-centre index coordinates; equal extents may omit it (identity), differing pixel extents must declare it.
   \item PixelDataDescriptor with component precision, channel identity/role/order, color or scientific interpretation, alpha mode, interleaved/planar layouts, plane subsampling, explicit sample-origin/chroma siting for subsampled planes, checked stride/offset arithmetic, and minimum-storage-capacity validation.
   \item PixelPlaneLayout maps plane sample indices to layer-grid coordinates using sample origin plus subsampling factors; LayerSpatialMapping then maps layer-grid coordinates to canvas-grid coordinates.
+  \item PixelStorageBinding maps every plane exactly once to one or more generic ExecutionResource handles, supports shared-allocation or per-plane allocation topology, checks capacity per assigned resource, and retains resource handles.
   \item The generic associated-type implementation protocol and public specification descriptors.
   \item Typed sequential function composition with stable operation/step identity for policy scope and diagnostics.
   \item A fluent \texttt{qualifying} builder that produces an immutable normalized \texttt{QualificationPolicy}.
@@ -26,6 +27,7 @@
   \item Pixel descriptor tests cover UInt8/UInt16/UInt32, Int16/Int32, FP16/FP32/FP64, RGB/grayscale/YCbCr/custom color models, scientific channels/units, alpha, interleaved BGR, planar subsampled planes, centered versus co-sited chroma, volumetric strides, buffer-capacity checks, and arithmetic overflow.
   \item Layer-content tests prove masks, integer label maps, and annotations retain distinct semantics and validation.
   \item Spatial-registration tests reject mismatched layer/canvas extents without a mapping, accept explicit affine mappings, reject singular/non-affine/non-finite mappings, and verify coordinate transformation. Mapping does not perform resampling.
+  \item Pixel storage-binding tests cover one shared allocation, independent per-plane allocations, capacity validation, complete/unique plane assignment, duplicate resource grouping, and retained handle lifetime.
   \item Operation tests prove immutable parameters and versioned semantic identity.
   \item Composition rejects incompatible input/output contracts and preserves policy scope.
   \item Builder tests reject incompatible required precision/provider declarations and contradictory objective declarations at construction/finalization.
