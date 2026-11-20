@@ -67,22 +67,29 @@
 \begin{enumerate}
   \item Provider identity/version and platform-aware provider discovery.
   \item Device identity, properties, supported features, execution contexts, and static capability descriptors.
-  \item Generic resource handles with ownership, access, lifetime, import/export, residency, and completion dependencies.
-  \item Submission/completion contracts that can represent asynchronous work without pretending Metal command buffers, CUDA streams, OpenCL queues, and D3D command lists are identical.
+  \item Generic resource identifiers scoped by execution target, descriptors for buffer/texture/opaque resource kinds, capacity/alignment/memory-domain metadata, and validated allocation requests.
+  \item Optional allocation/import context capabilities. Imported handles retain their source resources; no image/pixel semantics enter \GEP{}.
+  \item Resource access declarations for read, write, and read/write use, with reference-based lifetime semantics.
+  \item Typed work submission with declared resource accesses and completion dependencies; providers retain work and resources through completion.
+  \item Typed submission/completion handles, cancellation outcomes, dependency-failure behavior, and optional context/resource synchronization capabilities.
+  \item Submission contracts that preserve native differences: Metal command buffers, CUDA streams, OpenCL queues, and D3D command lists remain provider-owned rather than being forced into one public native-command object.
   \item A state/availability observation model for device health, availability, memory pressure, outstanding submissions, queue depth, and estimated delay where available.
   \item Observation timestamps and freshness/quality metadata. Unsupported telemetry is represented as unknown, never as zero load.
-  \item Optional capability interfaces for buffers, images/textures, external-memory interoperability, peer transfer, and specialized synchronization.
-  \item Structured provider errors, device-loss behavior, cancellation, reservation/acquisition, and release rules.
-  \item A fake/test provider whose capabilities and state can be controlled deterministically.
+  \item Structured provider errors, device-loss behavior, resource reservation/acquisition, and release rules.
+  \item Fake/test provider and conformance doubles whose capabilities and state can be controlled deterministically.
 \end{enumerate}
 
 \exitcriteria
 \begin{itemize}
   \item \GEP{} builds and tests without referencing image-processing symbols.
-  \item A fake provider can report capability and dynamic-state changes and can complete, fail, cancel, and release resources correctly.
-  \item Tests prove that stale or unknown state is not misreported as current or idle.
-  \item Resource lifetime tests prove that submitted work cannot outlive its inputs.
-  \item Native provider differences remain accessible behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
+  \item Resource request tests verify kind, capacity, alignment, memory domain, and context target.
+  \item Imported resource handles retain the source allocation for the full import lifetime.
+  \item A submitting provider retains the work item and declared resources until completion, even if caller references are dropped.
+  \item Dependencies complete successfully before dependent work starts; failed dependencies do not silently execute dependent work.
+  \item Typed submission output is valid after successful completion. Cancellation and provider errors preserve resource lifetime until work is no longer in use.
+  \item Optional synchronization is scoped and does not require every provider to expose the same native primitive.
+  \item Native provider differences remain behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
+  \item Stale or unknown state is never misreported as current or idle.
 \end{itemize}
 
 \textbf{Gate.} Do not make the common protocol larger merely to expose one vendor-specific metric or command primitive.
