@@ -24,6 +24,16 @@ struct OperationOutputResourcePlanTests {
     }
 
     @Test
+    func outputResourceRequirementRejectsNegativeIndices() throws {
+        #expect(throws: OperationOutputResourcePlanError.negativeOutputIndex(-1)) {
+            try OperationOutputResourceRequirement(
+                outputIndex: -1,
+                minimumCapacityBytes: 1
+            )
+        }
+    }
+
+    @Test
     func outputResourceRequirementRejectsInvalidCapacityAndAlignment() throws {
         #expect(throws: OperationOutputResourcePlanError.zeroCapacity(0)) {
             try OperationOutputResourceRequirement(

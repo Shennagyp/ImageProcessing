@@ -149,7 +149,6 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case pixelRepresentationMismatch(inputOutput: String)
     case invalidResourceRequirement(ImplementationResourceRole)
     case resourceAccessContractMismatch(ImplementationResourceRole)
-    case resourceImportOnlyValidForInput(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
     case invalidNumericalSupport
     case missingNumericalSupport
@@ -340,14 +339,6 @@ public struct ImplementationSpecification: Hashable, Sendable {
             }
             guard resourceRoles.insert(requirement.role).inserted else {
                 throw ImplementationSpecificationValidationError.duplicateResourceRequirement(requirement.role)
-            }
-
-            if requirement.requiresImport {
-                guard case .input(_) = requirement.role else {
-                    throw ImplementationSpecificationValidationError.resourceImportOnlyValidForInput(
-                        requirement.role
-                    )
-                }
             }
 
             switch requirement.role {
