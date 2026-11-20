@@ -604,6 +604,39 @@ Image metadata can exist independently of current resource residency, while runt
 
 - Resource sharing/copy-on-write rules across derived images and revisions.
 
+---
+
+## ADR-022 — Typed sequential function composition and operation-step occurrence identity
+
+**Status:** Baseline for the initial composition API
+
+### Decision
+
+Represent a processing sequence as ImageFunction<Input,Output>. Its generic parameters preserve the input/output value-type chain. A function is created from a typed ImageOperation, and followed(by:) composes two functions only when the previous output type equals the next input type. A second overload appends one compatible operation. The identity function is an empty sequence for matching input/output types.
+
+The function stores an ordered immutable sequence of AnyImageOperationStep values. Each step retains its immutable operation instance and erased OperationSpecification. Every occurrence has an OperationStepIdentifier; a right-hand function's step occurrences are reidentified when composed, while sourceIdentifier preserves the original step identity.
+
+Composition is declarative and does not execute operations or select implementations. The runtime will later qualify and dispatch each ordered operation step. The initial public model is linear and sequential; it does not add a visual graph, branching graph, implicit fan-out, or arbitrary closure execution model.
+
+### Invariants
+
+- Input/output compatibility is enforced by Swift generic constraints at composition time.
+- Step order is preserved exactly.
+- Every occurrence in a composed function has a unique OperationStepIdentifier.
+- Reusing the same function creates new occurrence IDs for the copied right-hand steps.
+- Source identifiers remain available for diagnostics and traceability.
+- Composition and identity construction have no execution side effects.
+
+### Consequence
+
+Callers can build typed operation pipelines without manually routing provider or implementation names. The runtime can inspect an ordered heterogeneous step sequence while callers retain a compile-time input/output contract.
+
+### Deferred
+
+- Runtime execution and heterogeneous implementation dispatch for ImageFunction steps.
+- Immutable QualificationPolicy attachment, step-scoped policy rebasing, and conflict provenance.
+- Composition optimizations such as fusion, batching, and resource-residency planning.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
