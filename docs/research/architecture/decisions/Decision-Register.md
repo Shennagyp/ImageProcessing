@@ -723,6 +723,33 @@ The registry and resolver can inspect complete, typed semantic/support metadata 
 - Cost-model calibration from measured end-to-end execution and transfer data.
 - Representative Gaussian blur, resize, and blend operation families and their CPU/accelerator implementations.
 
+---
+
+## ADR-025 — Provider failures use generic categories and advisory recovery dispositions
+
+**Status:** Implemented generic error value; runtime handling pending
+
+### Decision
+
+GeneralExecutionProtocol defines ExecutionProviderFailure as a provider-neutral error value. It identifies the provider, optionally identifies an execution target, and records a machine-readable failure kind and recovery disposition. Optional nativeCode and message fields carry diagnostics only; callers and the runtime must branch on kind/recovery, never parse native strings.
+
+Failure kinds distinguish provider unavailable, device unavailable/lost, capability unavailable, resource allocation/import failure, invalid resource, work submission failure, dependency failure, work execution failure, and synchronization failure.
+
+Recovery dispositions are advisory: retry the same target, refresh the environment, try another target, or treat the failure as permanent. A recovery disposition does not bypass the operation's semantic contract or caller hard requirements. The runtime must revalidate the same hard constraints before retrying or rerouting.
+
+### Invariants
+
+- A target, when supplied, must belong to the identified provider.
+- Machine-readable kind and recovery are stable decision fields; optional message/native code are not.
+- Device loss is distinct from ordinary temporary unavailability.
+- Provider recommendations cannot weaken operation semantics or pipeline hard requirements.
+- Native error types remain inside provider adapters.
+
+### Deferred
+
+- Common runtime mapping from provider errors to candidate outcomes and retry policy.
+- Backoff, circuit-breaking, repeated failure suppression, and provider health scoring.
+- Provider-specific native error translation tests against real CPU/GPU packages.
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
