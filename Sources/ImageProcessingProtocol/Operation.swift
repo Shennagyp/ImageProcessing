@@ -49,6 +49,7 @@ public enum OperationSpecificationValidationError: Error, Equatable, Sendable {
     case invalidNumericalContract
     case invalidParameterSchema(OperationParameterValidationError)
     case invalidPixelDataContract
+    case invalidEffectContract
 }
 
 /// A typed operation specification. Input/output identifiers are derived from
@@ -119,6 +120,9 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         }
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
+        }
+        guard effectContract.isValid else {
+            throw OperationSpecificationValidationError.invalidEffectContract
         }
         if !(pixelDataContract.input?.isValid ?? true)
             || !(pixelDataContract.output?.isValid ?? true) {
