@@ -61,7 +61,7 @@ struct ImageStorageBindingSetTests {
         revision: UInt64 = 0,
         layers: [LayerDescriptor]
     ) throws -> ImageDocumentSnapshot {
-        ImageDocumentSnapshot(
+        try ImageDocumentSnapshot(
             identifier: try #require(ImageIdentifier(rawValue: "image.document")),
             revision: ImageRevision(rawValue: revision),
             canvas: ImageCanvasDescriptor(extent: try #require(ImageExtent(width: 2, height: 2))),
