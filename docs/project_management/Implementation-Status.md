@@ -43,7 +43,7 @@ This file records actual repository state. The architecture and implementation p
 - OperationStepIdentifier identifies each step occurrence; reused right-hand functions are reidentified on composition while source identifiers remain available.
 - Declarative implementation specifications describe operation/version compatibility, optional provider binding, and scoped generic capability requirements.
 - The protocol has no per-implementation qualification hook.
-- OperationSpecification declares applicable policy dimensions; the initial dimension is numerical precision.
+- OperationSpecification declares applicable policy dimensions; the initial dimensions are numerical precision and deterministic results.
 - ImageFunction attaches an immutable QualificationPolicy with hard requirements and soft optimization objectives, each scoped to the pipeline or a concrete step occurrence.
 - Policy validation checks provider/precision set intersections over effective scopes, execution-capability type contradictions, same-scope preference conflicts, invalid weights, step identity, and precision applicability.
 - Step-scoped policy declarations are rebased when a right-hand function is composed and its step occurrences receive new identifiers.
@@ -71,7 +71,7 @@ Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 106 tests across 14 suites, including typed function composition, qualification-policy conflict/applicability/provenance checks, pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests. Cross-platform CI for this revision is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 108 tests across 14 suites, including typed function composition, qualification-policy conflict/applicability/provenance/determinism checks, pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests. Cross-platform CI for this revision is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
