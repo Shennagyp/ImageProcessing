@@ -12,9 +12,12 @@ The current design separates:
 
 - **Image documents and layers** from physical pixel storage.
 - **Immutable operation objects and their semantics** from operation-specific implementations.
-- **General compute providers** (CPU, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan) from algorithm-library adapters (for example OpenCV, Core Image, or inference runtimes).
-- **Qualification** (whether an implementation can correctly satisfy a contract) from **selection** (which qualified implementation should execute).
+- **`ImageProcessingProtocol`**, the primary image-domain contract library, from **`GeneralExecutionProtocol`**, the lower-level, image-agnostic execution contract it consumes.
+- Concrete compute providers (CPU, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan) from image-processing operation adapters.
+- **Qualification** (whether an implementation can correctly satisfy an operation contract) from **selection** (which qualified implementation should execute).
 - **Logical image replacement** from physical in-place memory reuse.
+
+Dependency direction is one-way: `ImageProcessingProtocol` may depend on `GeneralExecutionProtocol`, but `GeneralExecutionProtocol` must never depend on image-processing concepts. The former defines images, layers, operation contracts, and the image-specific qualifying function. The latter defines generic devices, resources, work submission, completion, and synchronization. Concrete provider packages implement the general protocol; operation adapters implement the image-processing contracts.
 
 The public processing model is operation-oriented and compositional. No node editor or visual graph frontend is part of the current design.
 
