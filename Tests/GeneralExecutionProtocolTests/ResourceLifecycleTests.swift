@@ -324,6 +324,13 @@ private actor TaskBackedSubmission<Output: Sendable>: ExecutionSubmission {
 private struct TaskSubmittingContext: ExecutionWorkSubmittingContext {
     let target: ExecutionTargetReference
 
+    var capabilities: ExecutionCapabilities {
+        (try? ExecutionCapabilities([
+            ExecutionCapability(identifier: .workSubmission, value: .boolean(true)),
+            ExecutionCapability(identifier: .workDependencies, value: .boolean(true))
+        ])) ?? .init()
+    }
+
     func submit<Work: ExecutionWork>(
         _ work: Work
     ) async throws -> any ExecutionSubmission<Work.Output> {
