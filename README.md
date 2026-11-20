@@ -33,11 +33,16 @@ The paper is an internal engineering record, not a publication. It distinguishes
 
 Requires a standard LaTeX installation with `latexmk`, `pdflatex`, and the packages used by the source (including `lmodern`, `microtype`, `geometry`, `amsmath`, `booktabs`, `tabularx`, `enumitem`, `listings`, `fancyhdr`, `hyperref`, and `cleveref`).
 
-From the repository root, run:
+Build the architecture paper from the repository root:
 
     latexmk -pdf -interaction=nonstopmode -halt-on-error docs/research/architecture/ImageProcessing-Architecture.tex
 
-The generated PDF is a build artifact; the committed `.tex` source is canonical.
+Build the phased implementation plan from its document directory (its section files are included by relative path):
+
+    cd docs/project_management
+    latexmk -pdf -interaction=nonstopmode -halt-on-error Implementation-Plan.tex
+
+The generated PDFs are build artifacts; the committed `.tex` entry points and included section sources are canonical.
 
 ## Implementation plan
 
