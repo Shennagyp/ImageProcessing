@@ -2,6 +2,7 @@
 /// messages may be retained as opaque diagnostic values without exposing vendor types.
 public enum ExecutionProviderFailureKind: String, Hashable, Sendable {
     case providerUnavailable
+    case deviceDiscoveryFailed
     case deviceUnavailable
     case deviceLost
     case capabilityUnavailable
