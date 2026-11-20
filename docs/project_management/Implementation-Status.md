@@ -39,6 +39,8 @@ This file records actual repository state. The architecture and implementation p
 - Typed operation values and associated input/output types.
 - Operation specifications derive input/output value identifiers from their associated Swift types.
 - One generic ImageOperationImplementation protocol, specialized by its associated operation type.
+- Typed ImageFunction<Input,Output> sequential composition, typed identity function, direct operation append, and heterogeneous ordered step storage.
+- OperationStepIdentifier identifies each step occurrence; reused right-hand functions are reidentified on composition while source identifiers remain available.
 - Declarative implementation specifications describe operation/version compatibility, optional provider binding, and scoped generic capability requirements.
 - The protocol has no per-implementation qualification hook.
 
@@ -65,7 +67,7 @@ Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 80 tests across 12 suites, including pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 86 tests across 13 suites, including pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
@@ -87,7 +89,7 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
 | 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
-| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, affine layer-to-canvas registration, and pixel-plane resource binding are implemented; Image identity, immutable snapshots, and atomic revision/resource-set replacement are implemented; typed composition, policy builder, and type-erased registry remain. |
+| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, affine layer-to-canvas registration, and pixel-plane resource binding are implemented; Image identity, immutable snapshots, and atomic revision/resource-set replacement are implemented; policy builder and runtime type-erased implementation registry remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
