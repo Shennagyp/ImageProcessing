@@ -20,7 +20,6 @@
   \item A builder that validates provider/precision allowed-set intersections at effective pipeline/step scope, detects incompatible execution-capability value requirements, validates finite positive preference weights, and rejects contradictory same-objective preferences at one scope.
   \item Composition rules: pipeline-wide hard requirements apply to applicable steps; step policies remain scoped and are rebased when the right-hand function's step occurrences are reidentified; hard allowed sets combine by intersection; preferences combine only through explicit objective/priority/weight semantics.
   \item Applicability validation through OperationSpecification. Input-storage, computation, accumulation, and output precision applicability are declared independently. A step-scoped rule is rejected when that exact dimension is absent; pipeline rules/preferences for a dimension are rejected if no step exposes it. Deterministic-result applicability is declared separately.
-  \item Private type-erasure adapters for heterogeneous registration while preserving typed public APIs.
   \item Explicit layer/composite targets and new-image/replacement result semantics.
 \end{enumerate}
 
@@ -56,8 +55,8 @@
 \deliverables
 \begin{enumerate}
   \item Provider registry and discovery over the provider packages selected by the application.
-  \item Operation implementation registry that records operation identity/version, implementation identity/version, and declarative implementation specification.
-  \item Internal type-erased registry entries that safely recover the typed implementation associated with a given operation.
+  \item Operation implementation registry that records operation identity/version, implementation identity/version, and declarative implementation specification. **Implemented:** an actor-backed registry validates registration, stores implementation versions independently, and enumerates candidates by operation or concrete step without ranking them.
+  \item Internal type-erased registry entries that recover the concrete associated operation/input types before dispatch. **Implemented:** erased execution is module-internal and requires an explicit implementation key; public callers cannot bypass resolver qualification.
   \item Environment snapshot assembly from discovered provider/device descriptors, resource state, provider observations, and runtime-owned outstanding-work accounting.
   \item Snapshot identity, observation time, freshness, and source-quality metadata.
   \item Registration/version compatibility checks and diagnostics for missing provider dependencies or unsupported operation versions.
@@ -66,7 +65,10 @@
 
 \exitcriteria
 \begin{itemize}
-  \item A consumer/sample target can register two implementation classes for the same operation without modifying \IPP{} or \IPR{} source.
+  \item A consumer/sample target can register two implementation classes for the same operation without modifying \IPP{} or \IPR{} source. **Implemented/tested:** CPU and Metal test implementations share one GaussianBlur operation identity while declaring different static support.
+  \item Registry registration validates implementation metadata against the associated operation contract; duplicate implementation identity/version pairs are rejected while separate versions coexist.
+  \item Candidate enumeration is deterministic and does not rank or execute an implementation.
+  \item The internal erased dispatch rejects mismatched operation/input concrete types even when stable type identifiers are reused.
   \item A registered implementation is not considered executable merely because its package loaded; its required provider and capabilities must be discovered.
   \item Environment snapshots distinguish capability from availability and distinguish unknown load from idle load.
   \item Heterogeneous registry dispatch is type-safe at the operation boundary and tested for mismatched operation/implementation pairs.
