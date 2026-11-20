@@ -583,19 +583,31 @@ The arrow is a dependency direction. Concrete provider packages implement the lo
 
 \subsection{GeneralExecutionProtocol library}
 
-The general execution library exposes only concepts that remain meaningful outside image processing. A provider supplies access to a compute substrate, devices, resource allocation/import, command submission, completion, and synchronization. Examples include CPU execution, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan.
+The general execution library exposes only concepts that remain meaningful outside image processing. A provider supplies access to a compute substrate, provider/device discovery, generic resources, and optional work execution capabilities. Examples include CPU execution, Metal, CUDA, OpenCL, Direct3D 12, and potentially Vulkan.
 
-The common protocol SHOULD cover:
+The common provider contract SHOULD cover:
 \begin{itemize}
-  \item provider identity, version, and device discovery;
-  \item device and execution-context capabilities;
-  \item generic resource creation, import, retention, export, and release;
-  \item work submission with declared resource access and dependencies;
-  \item completion, failure, cancellation, and synchronization primitives;
-  \item transfer and interoperability capabilities where available.
+  \item provider identity, version, discovery, and provider-level capabilities/state;
+  \item device identity, discovery, device-level capabilities/state, and execution-context creation;
+  \item a stable execution-target identity, including provider-managed targets whose internal devices are opaque;
+  \item typed generic resource identity, descriptors, allocation requests, ownership/lifetime, import/export, and residency;
+  \item asynchronous work dependencies, typed completion, cancellation, and synchronization where supported;
+  \item structured errors and observability for provider/device failures.
 \end{itemize}
 
-It MUST NOT force every provider to expose a Metal-like command buffer, a CUDA-like stream, an OpenCL command queue, or a Direct3D command list as the same public object. These native mechanisms differ. The common API expresses intent; provider-specific implementations retain native details. Optional capability protocols should cover image/texture resources, general buffers, shader compilation, peer-device transfers, external-memory interop, asynchronous queues, and specialized synchronization.
+\textbf{Generic resources.} An \texttt{ExecutionResource} is an opaque, reference-counted provider allocation. Its generic descriptor identifies its owning execution target, resource kind (for example buffer, texture, or provider-defined opaque kind), capacity, alignment, and memory domain. It does not describe image dimensions, pixel formats, channel order, color spaces, tensor layout, or scientific units. Those belong to the domain consuming the resource. Resource identifiers are scoped by execution target; the pair \texttt{(target, identifier)} is the stable generic resource reference.
+
+Allocation and import are optional context capabilities. An allocation request states minimum capacity, alignment, kind, and memory domain; a provider must verify that its returned descriptor satisfies that request and belongs to the context's target. Import produces a context-local resource handle. The imported handle MUST retain the source handle for as long as the import or any submitted work uses it. This makes the lifetime relationship explicit without exposing native allocation pointers or introducing a second manual-release system on top of reference ownership.
+
+\textbf{Work submission.} Providers MAY expose an \texttt{ExecutionWorkSubmittingContext}. A typed \texttt{ExecutionWork} declares resource accesses (read, write, or read/write) and completion dependencies, and executes using the context. Submission returns a typed \texttt{ExecutionSubmission} whose value/completion operation is the public boundary at which the result is guaranteed valid. The provider MUST retain the work item and all declared resources until completion, even if the caller releases its local references. Dependencies MUST complete successfully before dependent work starts.
+
+Cancellation is a request, not a universal promise that already-submitted hardware work can be interrupted. The result distinguishes cancellation before execution, cancellation requested after execution may have begun, and work that is already too late to cancel. After requesting cancellation, the caller still observes completion before considering the work's resources reusable. Provider implementations map these rules onto their native mechanisms.
+
+\textbf{Synchronization.} Explicit context-wide or resource-scoped synchronization is an optional capability. Waiting for one submission is preferred when that is sufficient. Providers retain their native event, fence, barrier, queue, and command-buffer mechanisms; the common contract does not define a universal command object.
+
+These contracts are intentionally capability-based. A provider may support allocation and import but not explicit synchronization, or support typed work submission while keeping queue management private. An operation implementation declares the capabilities it requires; the runtime must not assume every provider implements every optional interface.
+
+The common contract MUST NOT force every provider to expose a Metal-like command buffer, a CUDA-like stream, an OpenCL command queue, or a Direct3D command list as the same public object. The common API expresses resource and completion intent; provider-specific implementations retain native details. Optional capability protocols may cover specialized buffer/texture allocation, external-memory interop, peer-device transfer, native kernel encoding, asynchronous queues, and specialized synchronization.
 
 \subsection{ImageProcessingProtocol operation and implementation contracts}
 
@@ -868,9 +880,13 @@ The architecture MUST NOT assume that unified memory means identical access cost
 
 \subsection{Ownership and lifetime}
 
-For every resource, the runtime must know whether it owns the allocation, retains a shared reference, or holds a lease on externally owned memory. A camera buffer, for example, may be reusable by the acquisition driver only after all processing commands that read it have completed. Retaining a pointer is not equivalent to retaining the underlying external resource's validity.
+The generic execution resource handle is a reference-counted opaque allocation. The provider implementation owns the native storage; callers own references to the handle. A provider may release or recycle the native allocation only after the resource handle and all outstanding submission/import references are gone.
 
-Resource lifetime must be tied to completion dependencies. Releasing a CPU-side handle must not free or recycle memory while submitted GPU work still references it. Provider-specific completion events, fences, or equivalent mechanisms are responsible for establishing safe reuse.
+An imported resource is a new handle bound to the importing execution target. It MUST retain the source resource for as long as the imported handle or submitted work refers to it. This applies to externally owned buffers as well: the source handle represents the external owner's lease/retention rule, and the imported handle must not outlive that lease silently.
+
+A submitted work item declares each resource and its access mode. The provider MUST retain the work item and every declared resource until the submission reaches completion, even if the caller drops its references or requests cancellation. A cancellation request does not authorize early release. The caller observes completion (success, failure, or cancellation) before considering scratch storage or external buffers reusable.
+
+These rules allow reference ownership to express the normal lifetime path. A separate manual release call is not required by the common contract; provider wrappers may still expose explicit pool/lease operations when the native API requires them, but they must preserve the same lifetime invariant.
 
 \subsection{Read, write, and alias contracts}
 
@@ -887,7 +903,11 @@ The default for ordinary image transformations is read-only input and a logicall
 
 \subsection{Synchronization and concurrency}
 
-The common execution model must represent dependencies and completion, but provider adapters retain native synchronization mechanics. Metal barriers/fences/events, CUDA stream/event behavior, OpenCL events and queue ordering, and Direct3D 12 fences/resource barriers are not interchangeable details. Their provider implementations must translate the common dependency model without weakening correctness \cite{metal-sync,opencl-spec,d3d12-queues,d3d12-barriers,cuda-guide}.
+The common execution model represents resource accesses, explicit completion dependencies, and optional resource/context synchronization. A submission can depend on prior completion handles; a provider must not begin dependent work until all dependencies succeed. A failed or cancelled dependency propagates as a failure of the dependent work unless a higher-level operation explicitly defines another recovery semantic.
+
+Per-submission waiting is the narrow completion mechanism. Context-wide or resource-scoped synchronization is an optional capability for cases that need a broader boundary. Provider adapters retain native synchronization mechanics: Metal fences/events/barriers, CUDA stream/event behavior, OpenCL events and queue ordering, and Direct3D 12 fences/resource barriers are not interchangeable details. Their providers map generic dependencies onto native mechanisms without weakening correctness \cite{metal-sync,opencl-spec,d3d12-queues,d3d12-barriers,cuda-guide}.
+
+This contract does not promise preemption. Cancellation is best-effort: the provider reports whether work was stopped before execution, cancellation was requested after work may have begun, or cancellation was too late. Resources remain retained until completion is observed. A device-loss or native execution failure must produce a failed completion and release retained resources only when the provider knows they are no longer in use.
 
 The image document's mutation policy also needs a concurrency rule. Concurrent reads may share immutable resource snapshots. Concurrent writes to the same logical image revision must be serialized, rejected, or resolved through an explicitly defined conflict policy. The initial implementation SHOULD serialize commits per image and use revision checks to reject stale replacement attempts. The precise Swift synchronization mechanism (actor, lock-protected handle, or another approach) remains open.
 
@@ -1036,7 +1056,12 @@ Tests MUST cover:
   \item shallow image/document derivation and immutable resource sharing;
   \item copy-on-write behavior and proof that an input is not changed by a pure operation;
   \item image and layer identity behavior across new-image and replacement modes;
-  \item row stride, plane stride, alignment, ROI/view offsets, and non-contiguous data;
+  \item generic resource request validation: kind, capacity, alignment, memory domain, and owning target;
+  \item imported-resource retention and source lifetime while the import remains alive;
+  \item declared resource-access retention until submitted work completes;
+  \item dependency ordering, typed submission output, failure propagation, and cancellation outcomes;
+  \item context/resource synchronization boundaries where the provider advertises those capabilities;
+  \item row stride, plane stride, alignment, ROI/view offsets, and non-contiguous data at the image-domain layer;
   \item external-resource lifetime and safe release after asynchronous execution;
   \item preservation of unrelated layers when a targeted layer is transformed;
   \item explicit composite rendering and no accidental flattening;
@@ -1202,7 +1227,8 @@ Physical in-place execution & Reuse/overwrite of an existing allocation; an opti
 The package names below express dependency boundaries, not a requirement to create all packages in the first milestone.
 \begin{lstlisting}
 GeneralExecutionProtocol/
-  Provider, Device, Context, Resource, Submission, Completion, Sync
+  Provider, Device, Context, Resource, Allocation/Import
+  Work, Submission, Completion, Cancellation, Synchronization
   CapabilityDescriptor, Availability/StateObservation
 
 ImageProcessingProtocol/
