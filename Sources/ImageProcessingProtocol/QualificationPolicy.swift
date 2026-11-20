@@ -88,8 +88,10 @@ public enum QualificationPolicyConflictDimension: Hashable, Sendable {
 
 public struct QualificationPolicyConflict: Error, Hashable, Sendable {
     public let dimension: QualificationPolicyConflictDimension
-    public let first: PolicyDeclarationOrigin
-    public let second: PolicyDeclarationOrigin
+    /// All declarations contributing to the previously accumulated constraint.
+    public let priorDeclarations: [PolicyDeclarationOrigin]
+    /// The declaration that made the accumulated intersection impossible.
+    public let incomingDeclaration: PolicyDeclarationOrigin
 }
 
 public enum QualificationPolicyValidationError: Error, Hashable, Sendable {
@@ -202,6 +204,8 @@ public struct QualificationPolicy: Hashable, Sendable {
             }
         }
 
+        try validateAllowedSetIntersections(for: steps)
+
         for index in requirements.indices {
             for otherIndex in requirements.indices where otherIndex > index {
                 let first = requirements[index]
@@ -210,8 +214,8 @@ public struct QualificationPolicy: Hashable, Sendable {
                 if let dimension = conflictDimension(first.requirement, second.requirement) {
                     throw QualificationPolicyConflict(
                         dimension: dimension,
-                        first: first.origin,
-                        second: second.origin
+                        priorDeclarations: [first.origin],
+                        incomingDeclaration: second.origin
                     )
                 }
             }
@@ -228,10 +232,86 @@ public struct QualificationPolicy: Hashable, Sendable {
                 }
                 throw QualificationPolicyConflict(
                     dimension: .objective(first.objective),
-                    first: first.origin,
-                    second: second.origin
+                    priorDeclarations: [first.origin],
+                    incomingDeclaration: second.origin
                 )
             }
+        }
+    }
+
+    private func validateAllowedSetIntersections(
+        for steps: [AnyImageOperationStep]
+    ) throws {
+        // A pipeline declaration applies to the complete function. Step
+        // declarations refine that pipeline constraint only for their target
+        // occurrence. Evaluate each effective scope so three-way empty
+        // intersections are detected, not just pairwise contradictions.
+        let effectiveScopes: [QualificationPolicyScope] =
+            [.pipeline] + steps.map { .step($0.identifier) }
+
+        for effectiveScope in effectiveScopes {
+            let applicable = requirements.filter { declaration in
+                declaration.origin.scope == .pipeline
+                    || declaration.origin.scope == effectiveScope
+            }
+
+            try validateIntersection(
+                applicable,
+                dimension: .provider,
+                values: { allowedProviders($0) }
+            )
+
+            let precisionDimensions = Set(applicable.compactMap { declaration -> PrecisionDimension? in
+                switch declaration.requirement {
+                case let .precision(dimension, _),
+                     let .allowedPrecisions(dimension, _):
+                    dimension
+                default:
+                    nil
+                }
+            })
+            for dimension in precisionDimensions {
+                try validateIntersection(
+                    applicable,
+                    dimension: .precision(dimension),
+                    values: { requirement in
+                        guard let allowed = allowedPrecision(requirement),
+                              allowed.dimension == dimension else {
+                            return nil
+                        }
+                        return allowed.values
+                    }
+                )
+            }
+        }
+    }
+
+    private func validateIntersection<Value: Hashable>(
+        _ declarations: [QualificationRequirementDeclaration],
+        dimension: QualificationPolicyConflictDimension,
+        values: (QualificationRequirement) -> Set<Value>?
+    ) throws {
+        var intersection: Set<Value>?
+        var contributors: [PolicyDeclarationOrigin] = []
+
+        for declaration in declarations {
+            guard let nextValues = values(declaration.requirement) else { continue }
+            guard let current = intersection else {
+                intersection = nextValues
+                contributors = [declaration.origin]
+                continue
+            }
+
+            let narrowed = current.intersection(nextValues)
+            guard !narrowed.isEmpty else {
+                throw QualificationPolicyConflict(
+                    dimension: dimension,
+                    priorDeclarations: contributors,
+                    incomingDeclaration: declaration.origin
+                )
+            }
+            intersection = narrowed
+            contributors.append(declaration.origin)
         }
     }
 
@@ -277,15 +357,6 @@ public struct QualificationPolicy: Hashable, Sendable {
         _ lhs: QualificationRequirement,
         _ rhs: QualificationRequirement
     ) -> QualificationPolicyConflictDimension? {
-        if let a = allowedProviders(lhs), let b = allowedProviders(rhs), a.isDisjoint(with: b) {
-            return .provider
-        }
-
-        if let a = allowedPrecision(lhs), let b = allowedPrecision(rhs),
-           a.dimension == b.dimension, a.values.isDisjoint(with: b.values) {
-            return .precision(a.dimension)
-        }
-
         if case let .executionCapability(a) = lhs,
            case let .executionCapability(b) = rhs,
            a.scope == b.scope,
