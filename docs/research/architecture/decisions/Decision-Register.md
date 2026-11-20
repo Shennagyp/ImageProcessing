@@ -662,7 +662,7 @@ Policy construction and function composition are validation boundaries. The buil
 - Pipeline requirements are inherited; step-scoped declarations do not leak to other steps.
 - Different step scopes do not conflict merely because they constrain the same dimension.
 - Preferences for the same objective at the same scope cannot disagree on priority or weight. A pipeline and a step may use different priorities for the same objective.
-- Precision requirements are dimensioned and require operation-declared applicability.
+- Precision and deterministic-result requirements are operation-dimensioned and require OperationSpecification-declared applicability.
 - Generic execution capability requirements retain provider/device/context scope from GeneralExecutionProtocol.
 - Invalid or unknown step references, empty intersections, mismatched capability value types, and invalid weights are rejected before function execution.
 - Composition does not execute work or resolve implementations; it only validates and preserves the policy.
