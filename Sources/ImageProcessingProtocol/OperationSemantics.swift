@@ -175,15 +175,17 @@ public struct PixelRepresentationDomain: Hashable, Sendable {
               interpretations.isSubset(of: operationDomain.interpretations) else {
             return false
         }
-        return optionalSetIsSubset(colorModels, of: operationDomain.colorModels)
-            && optionalSetIsSubset(alphaModes, of: operationDomain.alphaModes)
-            && optionalSetIsSubset(transferFunctions, of: operationDomain.transferFunctions)
-            && optionalSetIsSubset(colorSpaces, of: operationDomain.colorSpaces)
+        let implementationUsesColor = interpretations.contains(.color)
+        let implementationUsesScientificData = interpretations.contains(.scientific)
+        return (!implementationUsesColor || optionalSetIsSubset(colorModels, of: operationDomain.colorModels))
+            && (!implementationUsesColor || optionalSetIsSubset(alphaModes, of: operationDomain.alphaModes))
+            && (!implementationUsesColor || optionalSetIsSubset(transferFunctions, of: operationDomain.transferFunctions))
+            && (!implementationUsesColor || optionalSetIsSubset(colorSpaces, of: operationDomain.colorSpaces))
             && optionalSetIsSubset(channelRoles, of: operationDomain.channelRoles)
             && optionalSetIsSubset(channelOrders, of: operationDomain.channelOrders)
             && optionalSetIsSubset(subsamplingFactors, of: operationDomain.subsamplingFactors)
             && optionalSetIsSubset(sampleOrigins, of: operationDomain.sampleOrigins)
-            && optionalSetIsSubset(measurementUnits, of: operationDomain.measurementUnits)
+            && (!implementationUsesScientificData || optionalSetIsSubset(measurementUnits, of: operationDomain.measurementUnits))
     }
 
     private func optionalSetIsValid<Element>(_ values: Set<Element>?) -> Bool {
