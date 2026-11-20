@@ -95,6 +95,111 @@ public struct OperationLayerContract: Hashable, Sendable {
     public static let none = Self()
 }
 
+public enum PixelStorageLayoutKind: String, Hashable, Sendable {
+    case interleaved
+    case planar
+}
+
+public enum PixelInterpretationKind: String, Hashable, Sendable {
+    case color
+    case scientific
+}
+
+/// Semantic pixel representation domain for a pixel-bearing operation input/output.
+/// Required sets are explicit; optional sets use nil to mean that the operation
+/// does not constrain that particular attribute.
+public struct PixelRepresentationDomain: Hashable, Sendable {
+    public let layouts: Set<PixelStorageLayoutKind>
+    public let interpretations: Set<PixelInterpretationKind>
+    public let colorModels: Set<ColorChannelModel>?
+    public let alphaModes: Set<AlphaMode>?
+    public let transferFunctions: Set<TransferFunction>?
+    public let colorSpaces: Set<ColorSpaceIdentifier>?
+    public let channelRoles: Set<PixelChannelRole>?
+    public let measurementUnits: Set<MeasurementUnitIdentifier>?
+
+    public init(
+        layouts: Set<PixelStorageLayoutKind>,
+        interpretations: Set<PixelInterpretationKind>,
+        colorModels: Set<ColorChannelModel>? = nil,
+        alphaModes: Set<AlphaMode>? = nil,
+        transferFunctions: Set<TransferFunction>? = nil,
+        colorSpaces: Set<ColorSpaceIdentifier>? = nil,
+        channelRoles: Set<PixelChannelRole>? = nil,
+        measurementUnits: Set<MeasurementUnitIdentifier>? = nil
+    ) {
+        self.layouts = layouts
+        self.interpretations = interpretations
+        self.colorModels = colorModels
+        self.alphaModes = alphaModes
+        self.transferFunctions = transferFunctions
+        self.colorSpaces = colorSpaces
+        self.channelRoles = channelRoles
+        self.measurementUnits = measurementUnits
+    }
+
+    public var isValid: Bool {
+        guard !layouts.isEmpty, !interpretations.isEmpty else { return false }
+        let hasColor = interpretations.contains(.color)
+        let hasScientific = interpretations.contains(.scientific)
+        if !hasColor,
+           colorModels != nil || alphaModes != nil || transferFunctions != nil || colorSpaces != nil {
+            return false
+        }
+        if !hasScientific, measurementUnits != nil {
+            return false
+        }
+        return optionalSetIsValid(colorModels)
+            && optionalSetIsValid(alphaModes)
+            && optionalSetIsValid(transferFunctions)
+            && optionalSetIsValid(colorSpaces)
+            && optionalSetIsValid(channelRoles)
+            && optionalSetIsValid(measurementUnits)
+    }
+
+    public func isSubset(of operationDomain: Self) -> Bool {
+        guard isValid, operationDomain.isValid,
+              layouts.isSubset(of: operationDomain.layouts),
+              interpretations.isSubset(of: operationDomain.interpretations) else {
+            return false
+        }
+        return optionalSetIsSubset(colorModels, of: operationDomain.colorModels)
+            && optionalSetIsSubset(alphaModes, of: operationDomain.alphaModes)
+            && optionalSetIsSubset(transferFunctions, of: operationDomain.transferFunctions)
+            && optionalSetIsSubset(colorSpaces, of: operationDomain.colorSpaces)
+            && optionalSetIsSubset(channelRoles, of: operationDomain.channelRoles)
+            && optionalSetIsSubset(measurementUnits, of: operationDomain.measurementUnits)
+    }
+
+    private func optionalSetIsValid<Element>(_ values: Set<Element>?) -> Bool {
+        values.map { !$0.isEmpty } ?? true
+    }
+
+    private func optionalSetIsSubset<Element: Hashable>(
+        _ values: Set<Element>?,
+        of operationValues: Set<Element>?
+    ) -> Bool {
+        guard let operationValues else { return true }
+        guard let values else { return false }
+        return values.isSubset(of: operationValues)
+    }
+}
+
+public struct OperationPixelDataContract: Hashable, Sendable {
+    public let input: PixelRepresentationDomain?
+    public let output: PixelRepresentationDomain?
+
+    public init(
+        input: PixelRepresentationDomain? = nil,
+        output: PixelRepresentationDomain? = nil
+    ) {
+        self.input = input
+        self.output = output
+    }
+
+    public static let none = Self()
+}
+
 /// Static layer-kind subset supported by one implementation.
 public struct ImplementationLayerSupport: Hashable, Sendable {
     public let inputKinds: Set<LayerKind>
