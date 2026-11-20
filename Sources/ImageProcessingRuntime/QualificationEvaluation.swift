@@ -31,6 +31,7 @@ public enum CandidateQualificationDisposition: String, Hashable, Sendable {
 public enum CandidateQualificationRejection: Hashable, Sendable {
     case implementationDoesNotSupportOperationStep
     case requiredProviderNotDiscovered(ExecutionProviderID)
+    case noExecutionProviderDiscovered
     case providerNotAllowed(ExecutionProviderID)
     case providerUnavailable(ExecutionProviderID, String)
     case deviceUnavailable(ExecutionTargetReference, String)
