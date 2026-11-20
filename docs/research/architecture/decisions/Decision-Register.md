@@ -216,33 +216,47 @@ A pipeline may require FP32 computation and prefer low latency. A compatible CPU
 
 ## ADR-008 — Image identity and concurrent replacement
 
-**Status:** Proposed
+**Status:** Baseline
 
 ### Decision
 
-Represent Image as a stable logical document handle with an immutable ImageID and a versioned document state. The public handle should have reference semantics; mutable state should be protected behind an actor or equivalent serialized state owner.
+Represent Image as a stable logical document handle with an immutable ImageIdentifier and a versioned ImageDocumentSnapshot. The public Image handle is a thread-safe reference type. Its mutable state is protected by a short NSLock critical section rather than an actor; immutable snapshot reads remain synchronous and do not require an actor hop.
 
-A snapshot contains an immutable image revision and references to retained resources. Image processing runs against a snapshot without holding the document-state lock/actor during compute.
+Image.snapshot() captures one immutable ImageStateSnapshot containing both the document snapshot and the ImageStorageBindingSet for exactly that image identity and revision. The snapshot retains all referenced execution resources independently of later Image replacements.
+
+Image.replace(expectedRevision:canvas:layers:storageBindings:) constructs and validates the candidate document and its matching resource-binding set outside the lock. It then locks, verifies the current revision still equals expectedRevision, and publishes the complete candidate state in one assignment. If another replacement committed first, it throws a revisionConflict. No automatic replay or silent overwrite occurs.
+
+The initial Image initializer may generate an identity or accept an explicit ImageIdentifier. Explicit identity is required when callers construct initial LayerReference-based resource bindings before Image creation.
 
 ### Replacement semantics
 
-1. Read the current revision and obtain an immutable snapshot.
-2. Resolve and execute the operation against that snapshot.
-3. Validate output descriptors and postconditions.
-4. Commit only if the document still has the revision used for execution.
-5. Increment the revision atomically.
+1. Capture the current immutable ImageStateSnapshot.
+2. Resolve and execute processing outside the Image lock.
+3. Construct and validate candidate descriptors and resource bindings for the next revision.
+4. Commit only if the captured revision remains current.
+5. Increment the revision without wrapping and atomically publish document plus resource bindings.
 
-If another operation commits first, a stale commit is rejected with a revision-conflict error. The first version does not silently overwrite concurrent work and does not automatically replay arbitrary operations.
+applying creates a new logical Image identity. apply retains the existing Image identity and publishes a new revision. Neither promises physical in-place storage reuse.
 
-applying creates a new logical image identity. apply retains the existing image identity and publishes a new revision. Neither promises physical in-place storage reuse.
+### Invariants
+
+- ImageIdentifier is immutable for the lifetime of an Image instance.
+- Snapshot capture is consistent and holds the lock only while acquiring value/reference ownership.
+- No processing, provider call, resource allocation, import, or await occurs while the Image lock is held.
+- The document and its revision-scoped ImageStorageBindingSet are published atomically.
+- A stale replacement cannot overwrite a newer revision.
+- Validation failure leaves the published state unchanged.
+- Old snapshots retain their resources until those snapshots are released.
+- Revision exhaustion is an explicit error; revisions never wrap.
 
 ### Consequence
 
-The API avoids lost updates, permits concurrent read snapshots, and keeps expensive compute outside the serialized document-state critical section.
+The public object has ordinary reference semantics while processing remains snapshot-based and concurrency-safe. The state lock protects only the short commit boundary; expensive work is independent and concurrent. A revision conflict is explicit and can be handled by the caller/runtime.
 
-### Open validation
+### Validation
 
-Validate whether actor isolation and revision compare-and-swap can be represented cleanly in the desired Swift API without forcing every image read to become an actor hop. Do not freeze method signatures until this is tested.
+The Swift implementation and tests cover stable identity, initial revision, synchronous snapshot capture, replacement revision advancement, stale conflict rejection, validation failure atomicity, concurrent same-revision writers (at most one commit succeeds), atomic publication of document plus matching resource set, and resource retention by captured snapshots.
+
 
 ---
 
@@ -588,7 +602,7 @@ Image metadata can exist independently of current resource residency, while runt
 
 ### Deferred
 
-- Transactional commit of a new image revision and its matching storage-binding set.
+- Resource sharing/copy-on-write rules across derived images and revisions.
 - Resource sharing/copy-on-write rules across derived images and revisions.
 
 ## Phase 0 completion checklist
