@@ -678,6 +678,51 @@ Policy is declarative and travels with the typed function value. Runtime resolut
 - Runtime policy serialization/versioning and compatibility across persisted policy versions.
 - Cost estimate confidence, objective trade-offs, and measured ranking calibration.
 
+---
+
+## ADR-024 — Operation semantics and implementation support are complementary validated contracts
+
+**Status:** Implemented static contract baseline; resolver integration pending
+
+### Decision
+
+OperationSpecification defines the semantic domain of one operation version. It owns named parameter domains, typed input/output identity, independent precision domains (input storage, computation, accumulation, output storage), numerical behavior, required/permitted effects, mutation/aliasing rules, layer kinds, and applicable pixel-representation domains.
+
+Operation parameter values are immutable named records attached to an operation instance. Preflight validation rejects missing required values, duplicate/unknown names, type mismatches, non-finite real values, and values outside the operation's domain. An operation value may be valid for the operation while unsupported by a particular implementation; this is a candidate-support failure, not an invalid operation.
+
+ImplementationSpecification defines the tested static subset one implementation can execute. It must match operation identity, a supported semantic version, and input/output value types. Its parameter domains, precision modes, layer kinds, and pixel representation declarations must be subsets of the operation's permitted domains. It must preserve operation numerical guarantees, determinism, required effects, permitted effects, input mutation, and output aliasing. It also declares provider/capability dependencies, input/output/temporary resource roles, resource kind, allowed memory domains, minimum capacity/alignment, access, import needs, and optional static performance hints.
+
+Storage precision and arithmetic precision are distinct types. Input/output storage dimensions accept PixelComponentType; computation/accumulation accept ArithmeticPrecision. A storage format such as FP32 does not establish the arithmetic or accumulation precision used by an implementation.
+
+OperationNumericalContract states rounding, overflow, output-range behavior, determinism, and optional absolute/relative error tolerances. When rounding or overflow is implementation-defined, an implementation may declare a concrete supported mode. Otherwise it must declare the exact required mode. A declared implementation error bound must meet any operation tolerance; an operation with no tolerance leaves error-bound choice unconstrained.
+
+OperationEffectContract separates effects required by the operation from the superset of effects permitted to implementations. An implementation must include all required effects, and its permitted effect set must be contained in the operation's permitted set. Input mutation and output aliasing remain separate dimensions. The default pure contract forbids extra effects and input mutation and requires outputs distinct from inputs.
+
+Raster, mask, and label-map layer contracts require matching input/output pixel representation domains. Annotation-only operations do not acquire pixel-storage requirements. Pixel domains can constrain interleaved/planar layout, color/scientific interpretation, color models, alpha, transfer function, color-space identity, channel roles/order, subsampling, sample origins, and measurement units.
+
+### Invariants
+
+- Operation semantics are owned by the operation contract, not backend code.
+- An implementation's declared static support is a subset of the operation's permitted domain.
+- An operation-invalid parameter value fails preflight; an operation-valid value outside one implementation's support rejects only that implementation.
+- Precision dimensions are independent; storage precision never implies computation or accumulation precision.
+- Numerical precision compatibility does not imply rounding, overflow, determinism, error-bound, or effect compatibility.
+- Static resource minima and cost hints are not dynamic availability, live memory capacity, queue depth, or measured performance.
+- No per-implementation qualify hook is required; static compatibility is validated by shared code.
+- Environment-aware eligibility, context checks, reservation, ranking, and execution remain runtime responsibilities.
+
+### Consequence
+
+The registry and resolver can inspect complete, typed semantic/support metadata without calling backend-specific code. Candidate rejection can identify the exact unsupported parameter, precision mode, numerical guarantee, representation, effect, capability, or resource requirement before execution.
+
+### Deferred
+
+- Context preparation and live validation of required resource requests against actual descriptor capacity/alignment and provider capabilities.
+- Validation of implementation declarations against numerical conformance suites and reference outputs, beyond structural metadata checks.
+- Runtime candidate outcome vocabulary and complete diagnostics/provenance.
+- Cost-model calibration from measured end-to-end execution and transfer data.
+- Representative Gaussian blur, resize, and blend operation families and their CPU/accelerator implementations.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
