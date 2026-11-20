@@ -180,7 +180,7 @@ public struct QualificationPolicy: Hashable, Sendable {
             }
 
             switch declaration.requirement {
-            case .precision, .allowedPrecisions:
+            case .precision(_, _), .allowedPrecisions(_, _):
                 try validatePrecisionApplicability(
                     declaration.origin,
                     stepsByID: stepsByID,
@@ -300,9 +300,9 @@ public struct QualificationPolicy: Hashable, Sendable {
 
     private func allowedProviders(_ requirement: QualificationRequirement) -> Set<ExecutionProviderID>? {
         switch requirement {
-        case let .provider(provider): [provider]
-        case let .allowedProviders(values): values
-        default: nil
+        case let .provider(provider): return [provider]
+        case let .allowedProviders(values): return values
+        default: return nil
         }
     }
 
@@ -310,9 +310,9 @@ public struct QualificationPolicy: Hashable, Sendable {
         _ requirement: QualificationRequirement
     ) -> (dimension: PrecisionDimension, values: Set<PixelComponentType>)? {
         switch requirement {
-        case let .precision(dimension, value): (dimension, [value])
-        case let .allowedPrecisions(dimension, values): (dimension, values)
-        default: nil
+        case let .precision(dimension, value): return (dimension, [value])
+        case let .allowedPrecisions(dimension, values): return (dimension, values)
+        default: return nil
         }
     }
 
@@ -324,7 +324,7 @@ public struct QualificationPolicy: Hashable, Sendable {
              let .integerAtLeast(id, _),
              let .decimalAtLeast(id, _),
              let .stringSetContains(id, _):
-            id
+            return id
         }
     }
 
@@ -334,18 +334,18 @@ public struct QualificationPolicy: Hashable, Sendable {
     ) -> Bool {
         switch (lhs, rhs) {
         case let (.exact(_, left), .exact(_, right)):
-            left != right
+            return left != right
         case let (.exact(_, .integer(value)), .integerAtLeast(_, minimum)),
              let (.integerAtLeast(_, minimum), .exact(_, .integer(value))):
-            value < minimum
+            return value < minimum
         case let (.exact(_, .decimal(value)), .decimalAtLeast(_, minimum)),
              let (.decimalAtLeast(_, minimum), .exact(_, .decimal(value))):
-            !value.isFinite || value < minimum
+            return !value.isFinite || value < minimum
         case let (.exact(_, .stringSet(values)), .stringSetContains(_, expected)),
              let (.stringSetContains(_, expected), .exact(_, .stringSet(values))):
-            !values.contains(expected)
+            return !values.contains(expected)
         default:
-            false
+            return false
         }
     }
 }
