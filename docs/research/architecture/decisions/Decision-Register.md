@@ -440,7 +440,7 @@ The initial image-domain model includes:
 
 Color interpretation explicitly identifies color space, channel model (gray, RGB, YCbCr, or named custom model), transfer function, and alpha mode. Scientific interpretation can identify a measurement unit and does not acquire an implicit color space.
 
-Storage layout is interleaved or planar. Every plane describes byte offset, row/pixel/slice strides, channel mapping, and spatial subsampling. The descriptor validates channel mapping, stride sufficiency, and arithmetic overflow, then calculates the minimum required storage capacity. Binding that descriptor to one or more generic ExecutionResource handles is a separate responsibility.
+Storage layout is interleaved or planar. Every plane describes byte offset, row/pixel/slice strides, channel mapping, spatial subsampling, and an explicit sample origin whenever it is subsampled. The sample origin distinguishes centered from co-sited chroma; plane sample indices convert to layer-grid coordinates before layer-to-canvas mapping. The descriptor validates channel mapping, sample origin, stride sufficiency, and arithmetic overflow, then calculates minimum required storage capacity. Binding that descriptor to one or more generic ExecutionResource handles is a separate responsibility.
 
 ### Invariants
 
@@ -500,6 +500,34 @@ Multi-resolution layers, crops, and affine-registered layers can coexist in one 
 - Physical/world coordinate calibration, including units, origin, orientation, and transforms between named coordinate systems.
 - Resampling and rendering policies that consume the mapping; they belong to explicit operation contracts, not the descriptor itself.
 
+---
+
+## ADR-019 — Subsampled planes declare sample-origin/chroma-siting semantics
+
+**Status:** Baseline for the initial pixel descriptor
+
+### Decision
+
+A subsampling ratio does not fully define the sample grid of a plane. Each subsampled PixelPlaneLayout must declare the layer-grid coordinate of its plane sample at index (0,0,0). Non-subsampled planes may omit the origin and use zero.
+
+For plane index (i,j,k), the layer-grid coordinate is:
+
+    sampleOrigin + (i * subsampling.x, j * subsampling.y, k * subsampling.z)
+
+The origin must be finite and lie within the corresponding subsampling cell. This makes centered and co-sited chroma distinct and explicit.
+
+### Invariants
+
+- Any plane with a subsampling factor greater than one requires an explicit sample origin.
+- Missing or out-of-cell origins are rejected when constructing PixelDataDescriptor.
+- Plane sample coordinates are in the layer's base sample grid; LayerSpatialMapping then maps them to the image canvas.
+- Sample siting is metadata. It does not perform interpolation or resampling.
+
+### Consequence
+
+A YCbCr descriptor cannot silently treat all 4:2:0 or 4:2:2 layouts as having the same chroma-centre convention. Conversion and resampling operations receive enough information to implement the declared sampling geometry.
+
+---
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
