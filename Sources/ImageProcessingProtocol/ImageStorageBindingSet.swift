@@ -54,7 +54,7 @@ public struct ImageStorageBindingSet: Sendable {
             guard expectedPixels == layerBinding.storage.descriptor else {
                 throw ImageStorageBindingSetError.pixelDescriptorMismatch(reference)
             }
-            guard indexed[layer.identifier] == nil else {
+            guard !indexed.keys.contains(layer.identifier) else {
                 throw ImageStorageBindingSetError.duplicateLayerBinding(reference)
             }
             indexed[layer.identifier] = layerBinding.storage
