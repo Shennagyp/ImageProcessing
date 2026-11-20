@@ -45,6 +45,7 @@ public enum OperationQualificationDimension: String, Hashable, Sendable {
 public enum OperationSpecificationValidationError: Error, Equatable, Sendable {
     case undeclaredPrecisionDomain(OperationQualificationDimension)
     case deterministicDimensionRequiresSelectableContract
+    case missingNumericalContract
     case invalidNumericalContract
     case invalidParameterSchema(OperationParameterValidationError)
 }
@@ -106,6 +107,9 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             }
         }
 
+        if !precisionContract.qualificationDimensions.isEmpty, numericalContract == nil {
+            throw OperationSpecificationValidationError.missingNumericalContract
+        }
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
         }
@@ -145,24 +149,29 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let effectContract: OperationEffectContract
 
     public func validateContract() throws {
-        for dimension in qualificationDimensions {
-            switch dimension {
+        let precisionDimensions = qualificationDimensions.filter {
+            switch $0 {
             case .inputStoragePrecision, .computationPrecision,
                  .accumulationPrecision, .outputPrecision:
-                guard precisionContract.qualificationDimensions.contains(dimension) else {
-                    throw OperationSpecificationValidationError.undeclaredPrecisionDomain(dimension)
-                }
+                return true
             case .deterministicResults:
-                guard numericalContract?.determinism == .implementationSelectable else {
-                    throw OperationSpecificationValidationError.deterministicDimensionRequiresSelectableContract
-                }
+                return false
             }
         }
-
+        guard precisionDimensions.isSubset(of: precisionContract.qualificationDimensions) else {
+            let missing = precisionDimensions.subtracting(precisionContract.qualificationDimensions).first!
+            throw OperationSpecificationValidationError.undeclaredPrecisionDomain(missing)
+        }
+        if qualificationDimensions.contains(.deterministicResults),
+           numericalContract?.determinism != .implementationSelectable {
+            throw OperationSpecificationValidationError.deterministicDimensionRequiresSelectableContract
+        }
+        if !precisionContract.qualificationDimensions.isEmpty, numericalContract == nil {
+            throw OperationSpecificationValidationError.missingNumericalContract
+        }
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
         }
-
         do {
             try OperationParameterValidation.validateSpecifications(parameterSpecifications)
         } catch let error as OperationParameterValidationError {
