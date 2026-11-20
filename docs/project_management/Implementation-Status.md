@@ -51,7 +51,7 @@ Local verification performed on Swift 6.2.1, Linux x86_64:
 - swift build — passed.
 - swift test — passed, 22 tests.
 
-GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at commit 0895a034b8b75c13336c0a08036c250a61d66cc4. Both jobs completed swift build and swift test successfully. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at commit 0895a034b8b75c13336c0a08036c250a61d66cc4. Both jobs completed swift build and swift test successfully with 18 tests. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it. The expanded 22-test suite and context-capability changes are being validated in the next CI run.
 
 ## Not implemented
 
