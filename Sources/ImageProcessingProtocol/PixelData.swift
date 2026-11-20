@@ -177,6 +177,9 @@ public struct PixelPlaneLayout: Hashable, Sendable {
     public let sliceStrideBytes: UInt64
     public let pixelStrideBytes: UInt64
     public let subsampling: PixelSubsampling
+    /// Position of plane sample (0,0,0) in layer sample-grid coordinates.
+    /// Required when any subsampling factor exceeds one (for example, chroma siting).
+    public let sampleOrigin: PixelGridCoordinate?
     public let channelIndices: [Int]
 
     public init(
@@ -185,6 +188,7 @@ public struct PixelPlaneLayout: Hashable, Sendable {
         sliceStrideBytes: UInt64,
         pixelStrideBytes: UInt64,
         subsampling: PixelSubsampling,
+        sampleOrigin: PixelGridCoordinate? = nil,
         channelIndices: [Int]
     ) {
         self.byteOffset = byteOffset
@@ -192,7 +196,25 @@ public struct PixelPlaneLayout: Hashable, Sendable {
         self.sliceStrideBytes = sliceStrideBytes
         self.pixelStrideBytes = pixelStrideBytes
         self.subsampling = subsampling
+        self.sampleOrigin = sampleOrigin
         self.channelIndices = channelIndices
+    }
+
+    /// Maps a plane sample index to the layer's base sample-grid coordinates.
+    /// This includes both subsampling and explicit chroma/sample siting.
+    public func layerCoordinate(
+        planeX: UInt64,
+        planeY: UInt64,
+        planeZ: UInt64 = 0
+    ) throws -> PixelGridCoordinate {
+        let origin = sampleOrigin ?? .zero
+        let x = origin.x + Double(planeX) * Double(subsampling.x)
+        let y = origin.y + Double(planeY) * Double(subsampling.y)
+        let z = origin.z + Double(planeZ) * Double(subsampling.z)
+        guard let coordinate = PixelGridCoordinate(x: x, y: y, z: z) else {
+            throw PixelDataDescriptorError.arithmeticOverflow
+        }
+        return coordinate
     }
 }
 
@@ -216,6 +238,8 @@ public enum PixelDataDescriptorError: Error, Equatable, Sendable {
     case duplicateChannelMapping(Int)
     case missingChannelMapping(Int)
     case emptyPlaneChannelMapping
+    case subsampledPlaneRequiresSampleOrigin(plane: Int)
+    case invalidSampleOrigin(plane: Int)
     case pixelStrideTooSmall(plane: Int, minimum: UInt64)
     case rowStrideTooSmall(plane: Int, minimum: UInt64)
     case sliceStrideTooSmall(plane: Int, minimum: UInt64)
@@ -344,6 +368,24 @@ public struct PixelDataDescriptor: Hashable, Sendable {
             guard !plane.channelIndices.isEmpty else {
                 throw PixelDataDescriptorError.emptyPlaneChannelMapping
             }
+
+            let hasSubsampling = plane.subsampling.x > 1
+                || plane.subsampling.y > 1
+                || plane.subsampling.z > 1
+            if hasSubsampling && plane.sampleOrigin == nil {
+                throw PixelDataDescriptorError.subsampledPlaneRequiresSampleOrigin(plane: planeIndex)
+            }
+            let sampleOrigin = plane.sampleOrigin ?? .zero
+            let originIsValid = sampleOrigin.x >= 0
+                && sampleOrigin.y >= 0
+                && sampleOrigin.z >= 0
+                && sampleOrigin.x < Double(plane.subsampling.x)
+                && sampleOrigin.y < Double(plane.subsampling.y)
+                && sampleOrigin.z < Double(plane.subsampling.z)
+            guard originIsValid else {
+                throw PixelDataDescriptorError.invalidSampleOrigin(plane: planeIndex)
+            }
+
             let bytesPerPixel = try checkedMultiply(
                 UInt64(plane.channelIndices.count),
                 componentType.bytesPerComponent
