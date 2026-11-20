@@ -486,7 +486,15 @@ and keeps transient device state out of the specification. A candidate can satis
 All concrete algorithm classes conform to one generic implementation contract specialized by an associated operation type. Conceptually:
 
 \begin{lstlisting}
-public protocol ImageOperationImplementation {
+public protocol ImageOperation: Sendable {
+    associatedtype Input: OperationValue
+    associatedtype Output: OperationValue
+
+    static var specification: OperationSpecification<Input, Output> { get }
+    var parameterValues: [OperationParameterValueRecord] { get }
+}
+
+public protocol ImageOperationImplementation: Sendable {
     associatedtype Operation: ImageOperation
 
     var specification: ImplementationSpecification { get }
@@ -494,10 +502,14 @@ public protocol ImageOperationImplementation {
     func execute(
         operation: Operation,
         input: Operation.Input,
-        context: ExecutionContext
+        context: any ExecutionContext
     ) async throws -> Operation.Output
 }
 \end{lstlisting}
+
+The current 	exttt{ImageOperation} protocol exposes immutable typed input/output contracts through its associated types and static specification; each operation instance provides its named parameter values. The default parameter-value implementation is empty for operations with no parameters. 	exttt{AnyImageOperationStep} retains the typed operation instance, its erased specification, and its parameter values so a heterogeneous function can be preflighted without erasing application-facing types.
+
+The current implementation specification has a validation method against 	exttt{AnyOperationSpecification}; this is static conformance validation, not environment qualification. 	exttt{supports(step)} additionally checks that the concrete parameter values fall inside the implementation's narrower support domains. Both methods are reusable contract checks. Neither inspects live device availability, queue load, resource residency, or cost.
 
 The protocol has no mandatory per-class qualification method. The implementation publishes its specification and executes only after the runtime has resolved it as a valid candidate. A future operation-specific extension may be introduced only when a real semantic constraint cannot be represented declaratively; it must be owned by the operation/runtime contract, not duplicated as arbitrary qualification code in every backend class.
 
