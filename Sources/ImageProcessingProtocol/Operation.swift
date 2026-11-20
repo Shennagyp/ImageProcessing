@@ -129,6 +129,16 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             throw OperationSpecificationValidationError.invalidPixelDataContract
         }
 
+        let pixelLayerKinds: Set<LayerKind> = [.raster, .mask, .labelMap]
+        if !layerContract.acceptedInputKinds.isDisjoint(with: pixelLayerKinds),
+           pixelDataContract.input == nil {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
+        if !layerContract.producedOutputKinds.isDisjoint(with: pixelLayerKinds),
+           pixelDataContract.output == nil {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
+
         do {
             try OperationParameterValidation.validateSpecifications(parameterSpecifications)
         } catch let error as OperationParameterValidationError {
@@ -197,6 +207,16 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         }
         if !(pixelDataContract.input?.isValid ?? true)
             || !(pixelDataContract.output?.isValid ?? true) {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
+
+        let pixelLayerKinds: Set<LayerKind> = [.raster, .mask, .labelMap]
+        if !layerContract.acceptedInputKinds.isDisjoint(with: pixelLayerKinds),
+           pixelDataContract.input == nil {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
+        if !layerContract.producedOutputKinds.isDisjoint(with: pixelLayerKinds),
+           pixelDataContract.output == nil {
             throw OperationSpecificationValidationError.invalidPixelDataContract
         }
         do {
