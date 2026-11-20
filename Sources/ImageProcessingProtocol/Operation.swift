@@ -35,6 +35,65 @@ public extension OperationValue {
     var valueTypeIdentifier: OperationValueIdentifier { Self.typeIdentifier }
 }
 
+public enum OperationOutputResourcePlanError: Error, Equatable, Sendable {
+    case inputValueTypeMismatch
+    case negativeOutputIndex(Int)
+    case zeroCapacity(Int)
+    case invalidAlignment(Int)
+    case duplicateOutputIndex(Int)
+}
+
+/// Data-derived storage size/alignment needed for one output resource slot.
+/// It describes this operation invocation's output, not a provider memory
+/// domain or a concrete allocation.
+public struct OperationOutputResourceRequirement: Hashable, Sendable {
+    public let outputIndex: Int
+    public let minimumCapacityBytes: UInt64
+    public let minimumAlignmentBytes: UInt64
+
+    public init(
+        outputIndex: Int,
+        minimumCapacityBytes: UInt64,
+        minimumAlignmentBytes: UInt64 = 1
+    ) throws {
+        guard outputIndex >= 0 else {
+            throw OperationOutputResourcePlanError.negativeOutputIndex(outputIndex)
+        }
+        guard minimumCapacityBytes > 0 else {
+            throw OperationOutputResourcePlanError.zeroCapacity(outputIndex)
+        }
+        guard minimumAlignmentBytes > 0,
+              minimumAlignmentBytes.nonzeroBitCount == 1 else {
+            throw OperationOutputResourcePlanError.invalidAlignment(outputIndex)
+        }
+        self.outputIndex = outputIndex
+        self.minimumCapacityBytes = minimumCapacityBytes
+        self.minimumAlignmentBytes = minimumAlignmentBytes
+    }
+}
+
+/// Complete generic output-resource slots for one invocation. This plan does
+/// not allocate or select a provider, memory domain, or native resource.
+public struct OperationOutputResourcePlan: Hashable, Sendable {
+    public let resources: [OperationOutputResourceRequirement]
+
+    public static let empty = Self(uncheckedResources: [])
+
+    public init(resources: [OperationOutputResourceRequirement]) throws {
+        var seen = Set<Int>()
+        for resource in resources {
+            guard seen.insert(resource.outputIndex).inserted else {
+                throw OperationOutputResourcePlanError.duplicateOutputIndex(resource.outputIndex)
+            }
+        }
+        self.resources = resources.sorted { $0.outputIndex < $1.outputIndex }
+    }
+
+    private init(uncheckedResources: [OperationOutputResourceRequirement]) {
+        self.resources = uncheckedResources
+    }
+}
+
 public enum OperationQualificationDimension: String, Hashable, Sendable {
     /// Input pixels may have implementation-selectable storage component types.
     case inputStoragePrecision
@@ -285,6 +344,7 @@ public struct AnyImageOperationStep: Sendable {
     public let operation: any ImageOperation
     public let specification: AnyOperationSpecification
     public let parameterValues: [OperationParameterValueRecord]
+    private let outputResourcePlanner: @Sendable (any OperationValue) throws -> OperationOutputResourcePlan
 
     public init<Operation: ImageOperation>(
         operation: Operation,
@@ -295,6 +355,12 @@ public struct AnyImageOperationStep: Sendable {
         self.operation = operation
         self.specification = Operation.specification.erased
         self.parameterValues = operation.parameterValues
+        self.outputResourcePlanner = { inputValue in
+            guard let typedInput = inputValue as? Operation.Input else {
+                throw OperationOutputResourcePlanError.inputValueTypeMismatch
+            }
+            return try operation.outputResourcePlan(for: typedInput)
+        }
     }
 
     func reidentifiedForComposition() -> Self {
@@ -303,7 +369,8 @@ public struct AnyImageOperationStep: Sendable {
             sourceIdentifier: sourceIdentifier,
             operation: operation,
             specification: specification,
-            parameterValues: parameterValues
+            parameterValues: parameterValues,
+            outputResourcePlanner: outputResourcePlanner
         )
     }
 
@@ -312,13 +379,23 @@ public struct AnyImageOperationStep: Sendable {
         sourceIdentifier: OperationStepIdentifier,
         operation: any ImageOperation,
         specification: AnyOperationSpecification,
-        parameterValues: [OperationParameterValueRecord]
+        parameterValues: [OperationParameterValueRecord],
+        outputResourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationOutputResourcePlan
     ) {
         self.identifier = identifier
         self.sourceIdentifier = sourceIdentifier
         self.operation = operation
         self.specification = specification
         self.parameterValues = parameterValues
+        self.outputResourcePlanner = outputResourcePlanner
+    }
+
+    /// Derives invocation-specific output resource size/alignment from the
+    /// exact typed input and immutable operation instance.
+    public func outputResourcePlan(
+        for input: any OperationValue
+    ) throws -> OperationOutputResourcePlan {
+        try outputResourcePlanner(input)
     }
 
     public func validateParameters() throws {
@@ -338,8 +415,16 @@ public protocol ImageOperation: Sendable {
 
     static var specification: OperationSpecification<Input, Output> { get }
     var parameterValues: [OperationParameterValueRecord] { get }
+
+    /// Describes output resource sizes for this exact operation/input pair.
+    func outputResourcePlan(for input: Input) throws -> OperationOutputResourcePlan
 }
 
 public extension ImageOperation {
     var parameterValues: [OperationParameterValueRecord] { [] }
+
+    /// Default for operations with no runtime-allocated generic output resources.
+    func outputResourcePlan(for input: Input) throws -> OperationOutputResourcePlan {
+        .empty
+    }
 }

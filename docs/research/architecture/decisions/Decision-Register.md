@@ -881,7 +881,7 @@ Input resource access declarations must also agree with operation semantics: wri
 
 - Provider-backed physical memory reservation, residency and full interop feasibility.
 - Source-quality-aware use of fresh/stale/unknown per-observation telemetry during ranking.
-- Output descriptor/resource planning.
+- Actual output value/descriptor and postcondition validation; provider allocation and residency feasibility.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
 - Preference ranking, complete cost estimates, whole-pipeline planning, and execution coordination.
 
@@ -917,6 +917,43 @@ Qualification preserves reliable evidence for later ranking without coupling sem
 - Quality-aware ranking and cost estimation across observations with different sources and qualities.
 - Provider-backed capacity reservation, allocation/reuse, residency transitions, and output-resource planning.
 - Refresh/retry policy when observations expire before reservation or submission.
+
+---
+
+## ADR-031 — Output allocation requirements combine operation data with implementation support
+
+**Status:** Operation-derived output resource planning and candidate matching implemented; provider allocation and output validation pending
+
+### Decision
+
+ImageOperation may derive an OperationOutputResourcePlan from the exact typed input and immutable operation parameters for one invocation. The plan identifies unique output resource slots and their data-derived minimum byte capacity and required alignment. Its default is empty for operations that do not require runtime-allocated generic output resources.
+
+ImplementationSpecification remains the owner of implementation-specific constraints for each output slot: generic resource kind, allowed memory domains, minimum capacity/alignment, access mode, and provider requirements. The common resolver requires a one-to-one match between operation-planned output slots and the implementation's declared output resource roles. It combines the operation's data-derived capacity/alignment with the implementation's lower bounds using the maximum of each; kind, allowed domains, and access come from the implementation. A candidate with a missing or undeclared slot is rejected before context preparation.
+
+This is an operation-semantic planning seam, not a custom implementation qualification hook. It does not select a provider memory domain, allocate a physical resource, or assert current memory availability.
+
+### Invariants
+
+- The operation derives invocation-specific output capacity/alignment from its exact typed input and parameters; the runtime does not guess output size from input byte count.
+- The implementation declares the concrete resource kind, admissible memory domains, minimum bounds, and access contract.
+- Every planned output slot matches exactly one implementation output resource role.
+- An implementation output role without an operation-derived size plan is not considered executable.
+- An operation output slot not declared by an implementation rejects that implementation.
+- Qualified output requirements are not memory reservations and do not prove allocation or residency.
+- Resource imports apply to bound inputs; output and temporary resources are allocated in the selected execution context.
+
+### Consequence
+
+The resolver can produce a candidate-bound, data-derived output allocation requirement without embedding provider or algorithm-specific branches. A later coordinator can translate this into provider allocation requests, validate returned generic resource descriptors, and retain handles through submission/completion.
+
+### Deferred
+
+- Provider-backed allocation and actual returned-resource validation (target, kind, capacity, alignment, memory domain).
+- Selection among allowed memory domains and capability verification for resource kind/domain.
+- Output resource binding into the typed output value and validation of output descriptors/postconditions.
+- Temporary resource sizing and lifecycle.
+- Residency transitions, imported-input remapping, and provider allocation failure/re-resolution behavior.
+- Quality-aware ranking and complete cost estimation.
 
 ---
 

@@ -109,6 +109,39 @@ public actor CommonQualificationResolver {
                 continue
             }
 
+            let operationOutputPlan: OperationOutputResourcePlan
+            do {
+                operationOutputPlan = try step.outputResourcePlan(for: input)
+            } catch {
+                evaluations.append(
+                    evaluation(
+                        implementation,
+                        target: nil,
+                        rejections: [.outputResourcePlanningFailed(String(describing: error))],
+                        uncertainties: []
+                    )
+                )
+                continue
+            }
+
+            var outputPlanRejections: [CandidateQualificationRejection] = []
+            let outputResourceAllocations = qualifyOutputResourceAllocations(
+                operationPlan: operationOutputPlan,
+                implementation: implementation.specification,
+                rejections: &outputPlanRejections
+            )
+            if !outputPlanRejections.isEmpty {
+                evaluations.append(
+                    evaluation(
+                        implementation,
+                        target: nil,
+                        rejections: outputPlanRejections,
+                        uncertainties: []
+                    )
+                )
+                continue
+            }
+
             var inputSemanticRejections: [CandidateQualificationRejection] = []
             evaluateImageInputSemantics(
                 imageInputContext,
@@ -326,6 +359,7 @@ public actor CommonQualificationResolver {
                                 deviceState: provider.devices.first(where: { $0.target == target })?.state,
                                 assessedAt: now
                             ),
+                            outputResourceAllocations: outputResourceAllocations,
                             inputResourceAccesses: inputResourceAccesses
                         )
                         evaluations.append(
@@ -824,6 +858,53 @@ public actor CommonQualificationResolver {
         case .context:
             rejections.append(.contextCapabilityMissing(identifier))
         }
+    }
+
+    private func qualifyOutputResourceAllocations(
+        operationPlan: OperationOutputResourcePlan,
+        implementation: ImplementationSpecification,
+        rejections: inout [CandidateQualificationRejection]
+    ) -> [QualifiedOutputResourceAllocation] {
+        let implementationRequirements = implementation.resourceRequirements.compactMap {
+            requirement -> (index: Int, requirement: ImplementationResourceRequirement)? in
+            guard case let .output(index) = requirement.role else { return nil }
+            return (index, requirement)
+        }
+        let plannedResources = Dictionary(
+            uniqueKeysWithValues: operationPlan.resources.map { ($0.outputIndex, $0) }
+        )
+
+        var allocations: [QualifiedOutputResourceAllocation] = []
+        for planned in operationPlan.resources {
+            guard let declared = implementationRequirements.first(where: {
+                $0.index == planned.outputIndex
+            })?.requirement else {
+                rejections.append(.outputResourceNotDeclaredByImplementation(planned.outputIndex))
+                continue
+            }
+
+            allocations.append(
+                QualifiedOutputResourceAllocation(
+                    outputIndex: planned.outputIndex,
+                    kind: declared.kind,
+                    allowedMemoryDomains: declared.allowedMemoryDomains,
+                    minimumCapacityBytes: max(
+                        planned.minimumCapacityBytes,
+                        declared.minimumCapacityBytes
+                    ),
+                    minimumAlignmentBytes: max(
+                        planned.minimumAlignmentBytes,
+                        declared.minimumAlignmentBytes
+                    ),
+                    access: declared.access
+                )
+            )
+        }
+
+        for (index, _) in implementationRequirements where plannedResources[index] == nil {
+            rejections.append(.implementationOutputResourceNotPlanned(index))
+        }
+        return allocations
     }
 
     private func evaluateContextClaims(

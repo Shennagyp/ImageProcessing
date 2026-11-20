@@ -907,3 +907,24 @@ extension ImplementationSpecificationTests {
         #expect(metal.supports(operation))
     }
 }
+
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func resourceImportRequirementIsValidOnlyForInputRoles() throws {
+        let invalid = BlurImplementationFixture.specification(resources: [
+            ImplementationResourceRequirement(
+                role: .output(0),
+                kind: .buffer,
+                allowedMemoryDomains: [.host],
+                access: .write,
+                requiresImport: true
+            )
+        ])
+
+        #expect(throws: ImplementationSpecificationValidationError.resourceImportOnlyValidForInput(.output(0))) {
+            try invalid.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+}

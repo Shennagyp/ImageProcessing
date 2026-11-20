@@ -99,6 +99,9 @@ public enum CandidateQualificationRejection: Hashable, Sendable {
     case inputResourceMemoryDomainUnsupported(Int, ExecutionResourceReference, ExecutionMemoryDomain)
     case inputResourceAccessInsufficient(Int, ExecutionResourceReference, actual: ExecutionResourceAccessMode, required: ExecutionResourceAccessMode)
     case inputResourceNotAccessibleFromTarget(Int, ExecutionResourceReference, ExecutionTargetReference)
+    case outputResourcePlanningFailed(String)
+    case outputResourceNotDeclaredByImplementation(Int)
+    case implementationOutputResourceNotPlanned(Int)
     case requiredProviderNotDiscovered(ExecutionProviderID)
     case noExecutionProviderDiscovered
     case providerNotAllowed(ExecutionProviderID)
@@ -126,6 +129,17 @@ public enum CandidateQualificationUncertainty: Hashable, Sendable {
     case providerRegistrationIdentityMissing(ExecutionProviderID)
 }
 
+/// Effective output allocation requirement after combining operation-derived
+/// size/alignment with the selected implementation's static constraints.
+public struct QualifiedOutputResourceAllocation: Hashable, Sendable {
+    public let outputIndex: Int
+    public let kind: ExecutionResourceKind
+    public let allowedMemoryDomains: Set<ExecutionMemoryDomain>
+    public let minimumCapacityBytes: UInt64
+    public let minimumAlignmentBytes: UInt64
+    public let access: ExecutionResourceAccessMode
+}
+
 public struct QualifiedOperationImplementation: Sendable {
     public let implementation: RegisteredOperationImplementation
     /// Exact provider package registration used to create the execution context.
@@ -140,6 +154,8 @@ public struct QualifiedOperationImplementation: Sendable {
     public let imageInputContext: ImageOperationInputContext?
     /// Provider/device telemetry from the same environment snapshot as qualification.
     public let environmentObservations: CandidateEnvironmentObservations
+    /// Candidate-bound output allocation requirements; these are not reservations.
+    public let outputResourceAllocations: [QualifiedOutputResourceAllocation]
     /// Source-resource accesses implied by the implementation's input roles.
     public let inputResourceAccesses: [ExecutionResourceAccess]
 }

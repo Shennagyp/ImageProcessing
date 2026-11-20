@@ -38,7 +38,8 @@ private struct QualificationImplementation: ImageOperationImplementation {
         identifier: String = "qualification.transform.reference",
         providerID: ExecutionProviderID? = nil,
         requiredCapabilities: [ExecutionCapabilityConstraint] = [],
-        precision: OperationPrecisionContract = .init(computation: [.float32])
+        precision: OperationPrecisionContract = .init(computation: [.float32]),
+        resourceRequirements: [ImplementationResourceRequirement] = []
     ) {
         specification = ImplementationSpecification(
             identifier: OperationImplementationIdentifier(rawValue: identifier)!,
@@ -58,12 +59,84 @@ private struct QualificationImplementation: ImageOperationImplementation {
                 roundingModes: [.nearestEven],
                 overflowBehaviors: [.saturate],
                 outputRangeBehaviors: [.preserve]
-            )
+            ),
+            resourceRequirements: resourceRequirements
         )
     }
 
     func execute(
         operation: QualificationOperation,
+        input: QualificationInput,
+        context: any ExecutionContext
+    ) async throws -> QualificationOutput {
+        QualificationOutput()
+    }
+}
+
+private struct OutputPlanningOperation: ImageOperation {
+    typealias Input = QualificationInput
+    typealias Output = QualificationOutput
+
+    static let specification = OperationSpecification<Input, Output>(
+        identifier: OperationIdentifier(rawValue: "qualification.output-plan")!,
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        precisionContract: OperationPrecisionContract(computation: [.float32, .float64]),
+        numericalContract: OperationNumericalContract(
+            rounding: .nearestEven,
+            overflow: .saturate
+        )
+    )
+
+    func outputResourcePlan(
+        for input: QualificationInput
+    ) throws -> OperationOutputResourcePlan {
+        let resource = try OperationOutputResourceRequirement(
+            outputIndex: 0,
+            minimumCapacityBytes: 4_096,
+            minimumAlignmentBytes: 256
+        )
+        return try OperationOutputResourcePlan(resources: [resource])
+    }
+}
+
+private struct OutputPlanningImplementation: ImageOperationImplementation {
+    typealias Operation = OutputPlanningOperation
+
+    let specification: ImplementationSpecification
+
+    init() {
+        specification = ImplementationSpecification(
+            identifier: OperationImplementationIdentifier(rawValue: "qualification.output-plan.buffer")!,
+            version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            operationIdentifier: OutputPlanningOperation.specification.identifier,
+            supportedOperationVersions: SemanticVersionRange(
+                lowerBound: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+                upperBound: SemanticVersion(major: 2, minor: 0, patch: 0)!
+            )!,
+            inputType: QualificationInput.typeIdentifier,
+            outputType: QualificationOutput.typeIdentifier,
+            precisionSupport: OperationPrecisionContract(computation: [.float32]),
+            determinism: .deterministic,
+            numericalSupport: .init(
+                roundingModes: [.nearestEven],
+                overflowBehaviors: [.saturate],
+                outputRangeBehaviors: [.preserve]
+            ),
+            resourceRequirements: [
+                ImplementationResourceRequirement(
+                    role: .output(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host],
+                    minimumCapacityBytes: 512,
+                    minimumAlignmentBytes: 64,
+                    access: .write
+                )
+            ]
+        )
+    }
+
+    func execute(
+        operation: OutputPlanningOperation,
         input: QualificationInput,
         context: any ExecutionContext
     ) async throws -> QualificationOutput {
@@ -109,9 +182,52 @@ private struct QualificationTestDevice: ExecutionDevice {
     }
 }
 
+private final class QualificationTestResource: ExecutionResource, @unchecked Sendable {
+    let descriptor: ExecutionResourceDescriptor
+
+    init(descriptor: ExecutionResourceDescriptor) {
+        self.descriptor = descriptor
+    }
+}
+
 private struct QualificationTestContext: ExecutionContext {
     let target: ExecutionTargetReference
     let capabilities: ExecutionCapabilities
+}
+
+private struct QualificationAllocatingTestContext: ExecutionResourceAllocatingContext {
+    let target: ExecutionTargetReference
+    let capabilities: ExecutionCapabilities
+
+    func allocateResource(
+        _ request: ExecutionResourceRequest
+    ) async throws -> any ExecutionResource {
+        let descriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: UUID().uuidString)!,
+            target: target,
+            kind: request.kind,
+            capacityBytes: request.minimumCapacityBytes,
+            alignmentBytes: request.minimumAlignmentBytes,
+            memoryDomain: request.memoryDomain
+        )
+        return QualificationTestResource(descriptor: descriptor)
+    }
+
+    func importResource(
+        _ resource: any ExecutionResource,
+        access: ExecutionResourceAccessMode
+    ) async throws -> any ExecutionResource {
+        let source = resource.descriptor
+        let descriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: UUID().uuidString)!,
+            target: target,
+            kind: source.kind,
+            capacityBytes: source.capacityBytes,
+            alignmentBytes: source.alignmentBytes,
+            memoryDomain: source.memoryDomain
+        )
+        return QualificationTestResource(descriptor: descriptor)
+    }
 }
 
 private struct QualificationTestProvider: ExecutionProvider {
@@ -120,6 +236,7 @@ private struct QualificationTestProvider: ExecutionProvider {
     let availability: ExecutionAvailability
     let capturedAt: Date
     let contextCapabilities: ExecutionCapabilities
+    let allocatesResources: Bool
     let state: ExecutionProviderStateSnapshot?
     let failsDiscovery: Bool
     let failsContextCreation: Bool
@@ -135,7 +252,8 @@ private struct QualificationTestProvider: ExecutionProvider {
         failsContextCreation: Bool = false,
         returnsWrongContextTarget: Bool = false,
         capturedAt: Date,
-        state: ExecutionProviderStateSnapshot? = nil
+        state: ExecutionProviderStateSnapshot? = nil,
+        allocatesResources: Bool = false
     ) {
         let providerID = ExecutionProviderID(rawValue: identifier)!
         descriptor = ExecutionProviderDescriptor(
@@ -154,6 +272,7 @@ private struct QualificationTestProvider: ExecutionProvider {
         self.availability = availability
         self.capturedAt = capturedAt
         self.contextCapabilities = contextCapabilities
+        self.allocatesResources = allocatesResources
         self.state = state
         self.failsDiscovery = failsDiscovery
         self.failsContextCreation = failsContextCreation
@@ -181,6 +300,12 @@ private struct QualificationTestProvider: ExecutionProvider {
             )
         } else {
             actualTarget = target
+        }
+        if allocatesResources {
+            return QualificationAllocatingTestContext(
+                target: actualTarget,
+                capabilities: contextCapabilities
+            )
         }
         return QualificationTestContext(
             target: actualTarget,
@@ -245,6 +370,88 @@ struct CommonQualificationResolverTests {
             freshness: freshness ?? self.freshness(),
             now: now
         )
+    }
+
+    private func makeOutputReport(
+        provider: QualificationTestProvider,
+        now: Date
+    ) async throws -> OperationImplementationQualificationReport {
+        let implementationRegistry = OperationImplementationRegistry()
+        try await implementationRegistry.register(OutputPlanningImplementation())
+
+        let providerRegistry = ExecutionProviderRegistry()
+        try await providerRegistry.register(provider)
+
+        let coordinator = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providerRegistry,
+            workLedger: RuntimeWorkLedger()
+        )
+        let environment = try await coordinator.capture(
+            platform: platform(),
+            capturedAt: now
+        )
+        let resolver = CommonQualificationResolver(
+            implementations: implementationRegistry,
+            providers: providerRegistry
+        )
+        return try await resolver.evaluate(
+            step: AnyImageOperationStep(operation: OutputPlanningOperation()),
+            input: QualificationInput(),
+            policy: .unrestricted,
+            environment: environment,
+            freshness: freshness(),
+            now: now
+        )
+    }
+
+    @Test
+    func candidateCombinesOperationOutputSizeWithImplementationMinimum() async throws {
+        let now = Date(timeIntervalSince1970: 50_025)
+        let allocationCapabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true))
+        ])
+        let provider = QualificationTestProvider(
+            contextCapabilities: allocationCapabilities,
+            capturedAt: now,
+            allocatesResources: true
+        )
+        let report = try await makeOutputReport(provider: provider, now: now)
+        let candidate = try #require(report.qualifiedCandidates.first)
+        let allocation = try #require(candidate.outputResourceAllocations.first)
+
+        #expect(allocation.outputIndex == 0)
+        #expect(allocation.kind == .buffer)
+        #expect(allocation.allowedMemoryDomains == [.host])
+        #expect(allocation.minimumCapacityBytes == 4_096)
+        #expect(allocation.minimumAlignmentBytes == 256)
+        #expect(allocation.access == .write)
+    }
+
+    @Test
+    func implementationOutputResourceWithoutOperationPlanIsRejected() async throws {
+        let now = Date(timeIntervalSince1970: 50_030)
+        let requirement = ImplementationResourceRequirement(
+            role: .output(0),
+            kind: .buffer,
+            allowedMemoryDomains: [.host],
+            minimumCapacityBytes: 16,
+            access: .write
+        )
+        let implementation = QualificationImplementation(
+            resourceRequirements: [requirement]
+        )
+        let provider = QualificationTestProvider(capturedAt: now)
+        let report = try await makeReport(
+            provider: provider,
+            implementation: implementation,
+            now: now
+        )
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].disposition == .rejected)
+        #expect(report.evaluations[0].rejections.contains(
+            .implementationOutputResourceNotPlanned(0)
+        ))
     }
 
     @Test
