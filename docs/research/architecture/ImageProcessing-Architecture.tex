@@ -519,18 +519,24 @@ The function stores an immutable ordered array of heterogeneous \texttt{AnyImage
 
 The public abstraction is sequential typed composition, not a public graph.
 
-Illustrative API sketch (not a frozen signature):
+The API currently composes typed functions and attaches policy as follows:
 \begin{lstlisting}
-let correction = ColorCorrection(exposure: 0.25, contrast: 1.1)
-let blur        = GaussianBlur(sigma: 1.2, border: .reflect)
-let resize      = Resize(width: 1024, height: 768)
+let correction = ImageFunction(operation:
+    ColorCorrection(exposure: 0.25, contrast: 1.1))
+let blur = ImageFunction(operation:
+    GaussianBlur(sigma: 1.2, border: .reflect))
+let resize = ImageFunction(operation:
+    Resize(width: 1024, height: 768))
 
-let pipeline = correction.then(blur).then(resize)
-    .qualifying {
-        .require(.precision(.computation, .fp32))
-        .prefer(.lowLatency)
+let pipeline = try correction
+    .followed(by: blur)
+    .followed(by: resize)
+    .qualifying { policy in
+        policy.require(.precision(.computation, .float32))
+        policy.prefer(.lowLatency)
     }
 
+// The Image runtime/application API is still pending.
 let result = try await source.applying(
     pipeline,
     to: .layer(sourceLayer.id)
@@ -851,9 +857,9 @@ The runtime must not infer that a GPU is idle because no global utilization metr
 
 \subsection{Conflict prevention and policy composition}
 
-The fluent builder produces a normalized, immutable policy rather than an unstructured list of positive and negative predicates. Each constraint dimension has a well-defined representation: for example, an allowed precision set, a required provider, or one explicit optimization objective/profile. This prevents contradictory declarations from accumulating unnoticed.
+The fluent builder produces a validated immutable policy that retains source declarations and provenance rather than an unstructured list of positive and negative predicates. Each constraint dimension has a well-defined representation: for example, an allowed precision set, a required provider, or one explicit optimization objective/profile. It rejects contradictory declarations before execution.
 
-Hard constraints compose conjunctively. If two composed functions permit sets $A$ and $B$ for the same dimension, the combined admissible set is:
+Hard constraints compose conjunctively. For one effective step scope, pipeline-wide and step-scoped allowed sets are conjoined. If their admissible sets are $A$ and $B$ for the same dimension, the combined admissible set is:
 \[
   A_{\mathrm{combined}} = A \cap B.
 \]
@@ -861,7 +867,7 @@ An empty result is a policy conflict and MUST be rejected when the builder is fi
 
 Preferences are not intersected as sets. They are represented as explicit objective dimensions and, when multiple objectives must be traded off, by a declared priority or weight model. Contradictory declarations for the same objective at the same scope are rejected unless the caller explicitly supplies a valid ordering/weighting. Composition preserves preferences scoped to individual steps; pipeline-wide objectives apply to the complete execution plan. An operation-local rule cannot silently erase a pipeline-wide hard requirement.
 
-Conflict diagnostics MUST preserve provenance: policy scope, pipeline/operation/step identity, source declaration, conflicting declaration, and the incompatible dimension. Validation occurs:
+Conflict diagnostics MUST preserve provenance: policy scope, pipeline/operation-step identity, every prior declaration contributing to an empty intersection, the incoming declaration, and the incompatible dimension. Validation occurs:
 \begin{itemize}
   \item while building/finalizing a policy;
   \item when composing functions or pipelines;
@@ -1037,19 +1043,21 @@ The following sketches communicate the intended separation. They are not final S
 \subsection{Operation object and composition}
 
 \begin{lstlisting}
-let blur = GaussianBlur(
+let blur = ImageFunction(operation: GaussianBlur(
     sigma: 1.2,
-    border: .reflect,
-    precision: .fp32
-)
+    border: .reflect
+))
 
-let color = ColorCorrection(
+let color = ImageFunction(operation: ColorCorrection(
     exposure: 0.25,
     contrast: 1.1,
     workingSpace: .linearSRGB
-)
+))
 
-let pipeline = color.then(blur)
+let pipeline = try color.followed(by: blur)
+    .qualifying {
+        $0.require(.precision(.computation, .float32))
+    }
 \end{lstlisting}
 
 \subsection{Target and result policy}
