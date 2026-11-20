@@ -387,14 +387,16 @@ The first \texttt{PixelDataDescriptor} is a validated semantic/storage-layout de
 
 Color and scientific data are separate interpretations. Color interpretation explicitly states color-space identity, channel model, transfer function, and alpha mode. The initial channel-model vocabulary includes grayscale, RGB, YCbCr, and named custom models such as CMYK or Lab; physical channel order is represented separately through the plane mapping. Scientific interpretation may carry a measurement-unit identity and does not invent a color space. The component type (UInt8/UInt16/UInt32, Int16/Int32, FP16/FP32/FP64) does not by itself establish the numerical range or meaning.
 
-Storage layout is either interleaved or planar. Each plane records byte offset, row stride, slice stride, pixel stride, spatial subsampling factors, and the channel indices stored in that plane. This permits channel order to differ from semantic order (for example BGR), supports planar/subsampled YCbCr, and represents volumetric planes. The descriptor verifies that every channel is mapped exactly once, strides can contain each plane, and size arithmetic does not overflow. It calculates the minimum byte capacity required by the described layout; a later resource binding checks that the actual generic execution resource is large enough. The current descriptor describes planes within one byte-addressable storage block; separate allocations for separate planes require an explicit multi-resource binding in a later resource-integration step.
+Storage layout is either interleaved or planar. Each plane records byte offset, row stride, slice stride, pixel stride, spatial subsampling factors, channel indices, and—when subsampled—the explicit sample origin in layer-grid coordinates. A plane sample at index $(i,j,k)$ maps to layer-grid coordinate $\mathbf{o} + (i s_x,j s_y,k s_z)$, where $\mathbf{o}$ is the declared sample origin and $(s_x,s_y,s_z)$ are the subsampling factors. A subsampled plane without a declared origin is invalid. This records chroma siting explicitly: centered and co-sited chroma are not treated as the same grid merely because both use 2:1 subsampling.
+
+This permits channel order to differ from semantic order (for example BGR), supports planar/subsampled YCbCr with explicit chroma sample locations, and represents volumetric planes. The descriptor verifies that every channel is mapped exactly once, strides can contain each plane, sample origins lie within their subsampling cells, and size arithmetic does not overflow. It calculates the minimum byte capacity required by the described layout; a later resource binding checks that the actual generic execution resource is large enough. The current descriptor describes planes within one byte-addressable storage block; separate allocations for separate planes require an explicit multi-resource binding in a later resource-integration step.
 
 The descriptor MUST separate at least the following dimensions:
 \begin{itemize}
   \item width, height, depth/volume extent, and explicit spatial subsampling per plane;
   \item component type and precision (integer, FP16, FP32, or FP64 where supported);
   \item channel identity, role, channel model, and physical channel mapping;
-  \item interleaved or planar storage, byte offset, row/pixel/slice strides, and alignment requirements;
+  \item interleaved or planar storage, byte offset, row/pixel/slice strides, alignment requirements, spatial subsampling, and explicit sample origin/chroma siting;
   \item optional per-channel numerical range and scientific measurement unit;
   \item color-space identity, transfer function, and explicit channel model for color data;
   \item alpha mode (none, straight, or premultiplied) when alpha is present.
