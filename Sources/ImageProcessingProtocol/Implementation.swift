@@ -16,15 +16,6 @@ public enum ImplementationDeterminism: String, Hashable, Sendable {
     case nondeterministic
 }
 
-public extension ExecutionResourceKind {
-    var isValid: Bool {
-        if case let .opaque(identifier) = self {
-            return !identifier.isEmpty
-        }
-        return true
-    }
-}
-
 public enum ImplementationResourceRole: Hashable, Sendable {
     case input(Int)
     case output(Int)
@@ -69,9 +60,16 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
         self.requiresImport = requiresImport
     }
 
+    private static func isValidResourceKind(_ kind: ExecutionResourceKind) -> Bool {
+        if case let .opaque(identifier) = kind {
+            return !identifier.isEmpty
+        }
+        return true
+    }
+
     public var isValid: Bool {
         role.isValid
-            && kind.isValid
+            && Self.isValidResourceKind(kind)
             && !allowedMemoryDomains.isEmpty
             && minimumCapacityBytes > 0
             && minimumAlignmentBytes > 0
