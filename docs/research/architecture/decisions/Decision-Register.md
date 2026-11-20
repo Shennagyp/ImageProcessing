@@ -731,7 +731,7 @@ The registry and resolver can inspect complete, typed semantic/support metadata 
 - [x] Separate environment discovery/telemetry from resolver evaluation.
 - [x] Define candidate identity as implementation plus execution binding.
 - [x] Define hard/soft policy semantics and conflict validation.
-- [ ] Validate mutable Image reference/state ownership and concurrent replacement API; only immutable document snapshots and revision values exist so far.
+- [x] Validate mutable Image reference/state ownership and concurrent replacement API; Image uses a thread-safe state owner with immutable snapshots, revision-checked atomic replacement, resource-set consistency, and concurrency tests.
 - [x] Establish document-scoped layer identity and test that references include ImageIdentifier.
 - [ ] Validate Swift package targets and the initial OS/architecture/toolchain matrix.
 - [ ] Validate the first operation families' color and scientific-data contracts.
