@@ -69,6 +69,40 @@ public struct ImplementationResourceRequirement: Hashable, Sendable {
     }
 }
 
+/// Numerical behavior actually supported by one implementation.
+/// The values are guarantees, not preferred modes or measured telemetry.
+public struct ImplementationNumericalSupport: Hashable, Sendable {
+    public let roundingModes: Set<OperationRoundingMode>
+    public let overflowBehaviors: Set<OperationOverflowBehavior>
+    public let outputRangeBehaviors: Set<OperationOutputRangeBehavior>
+    /// Maximum absolute error guaranteed by this implementation, when known.
+    public let maximumAbsoluteError: Double?
+    /// Maximum relative error guaranteed by this implementation, when known.
+    public let maximumRelativeError: Double?
+
+    public init(
+        roundingModes: Set<OperationRoundingMode>,
+        overflowBehaviors: Set<OperationOverflowBehavior>,
+        outputRangeBehaviors: Set<OperationOutputRangeBehavior>,
+        maximumAbsoluteError: Double? = nil,
+        maximumRelativeError: Double? = nil
+    ) {
+        self.roundingModes = roundingModes
+        self.overflowBehaviors = overflowBehaviors
+        self.outputRangeBehaviors = outputRangeBehaviors
+        self.maximumAbsoluteError = maximumAbsoluteError
+        self.maximumRelativeError = maximumRelativeError
+    }
+
+    public var isValid: Bool {
+        !roundingModes.isEmpty
+            && !overflowBehaviors.isEmpty
+            && !outputRangeBehaviors.isEmpty
+            && (maximumAbsoluteError.map { $0.isFinite && $0 >= 0 } ?? true)
+            && (maximumRelativeError.map { $0.isFinite && $0 >= 0 } ?? true)
+    }
+}
+
 public struct ImplementationPerformanceHints: Hashable, Sendable {
     /// Approximate fixed submission/setup overhead, in nanoseconds.
     public let fixedOverheadNanoseconds: Double?
@@ -107,6 +141,9 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case pixelRepresentationMismatch(inputOutput: String)
     case invalidResourceRequirement(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
+    case invalidNumericalSupport
+    case missingNumericalSupport
+    case numericalSupportMismatch
     case invalidPerformanceHints
     case invalidRequiredCapability
 }
@@ -123,6 +160,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
     public let parameterSupport: [OperationParameterSupport]
     public let precisionSupport: OperationPrecisionContract
     public let determinism: ImplementationDeterminism
+    public let numericalSupport: ImplementationNumericalSupport?
     public let effectContract: OperationEffectContract
     public let layerSupport: ImplementationLayerSupport
     public let pixelDataSupport: OperationPixelDataContract
@@ -141,6 +179,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
         parameterSupport: [OperationParameterSupport] = [],
         precisionSupport: OperationPrecisionContract = .none,
         determinism: ImplementationDeterminism = .deterministic,
+        numericalSupport: ImplementationNumericalSupport? = nil,
         effectContract: OperationEffectContract = .pure,
         layerSupport: ImplementationLayerSupport = .init(),
         pixelDataSupport: OperationPixelDataContract = .none,
@@ -158,6 +197,7 @@ public struct ImplementationSpecification: Hashable, Sendable {
         self.parameterSupport = parameterSupport
         self.precisionSupport = precisionSupport
         self.determinism = determinism
+        self.numericalSupport = numericalSupport
         self.effectContract = effectContract
         self.layerSupport = layerSupport
         self.pixelDataSupport = pixelDataSupport
@@ -215,6 +255,26 @@ public struct ImplementationSpecification: Hashable, Sendable {
             }
         }
 
+        switch (operation.numericalContract, numericalSupport) {
+        case (nil, nil):
+            break
+        case let (.some(contract), .some(support)):
+            guard support.isValid else {
+                throw ImplementationSpecificationValidationError.invalidNumericalSupport
+            }
+            guard support.roundingModes.contains(contract.rounding),
+                  support.overflowBehaviors.contains(contract.overflow),
+                  support.outputRangeBehaviors.contains(contract.outputRange),
+                  errorBound(support.maximumAbsoluteError, satisfies: contract.absoluteErrorTolerance),
+                  errorBound(support.maximumRelativeError, satisfies: contract.relativeErrorTolerance) else {
+                throw ImplementationSpecificationValidationError.numericalSupportMismatch
+            }
+        case (.some, nil):
+            throw ImplementationSpecificationValidationError.missingNumericalSupport
+        case (nil, .some):
+            throw ImplementationSpecificationValidationError.numericalSupportMismatch
+        }
+
         switch operation.numericalContract?.determinism {
         case .required, nil:
             guard determinism == .deterministic else {
@@ -270,6 +330,21 @@ public struct ImplementationSpecification: Hashable, Sendable {
         if let performanceHints, !performanceHints.isValid {
             throw ImplementationSpecificationValidationError.invalidPerformanceHints
         }
+    }
+
+    private func errorBound(
+        _ implementationBound: Double?,
+        satisfies operationTolerance: Double?
+    ) -> Bool {
+        guard let operationTolerance else {
+            return implementationBound == nil
+        }
+        guard let implementationBound,
+              implementationBound.isFinite,
+              implementationBound >= 0 else {
+            return false
+        }
+        return implementationBound <= operationTolerance
     }
 
     private static func isValidCapabilityConstraint(
