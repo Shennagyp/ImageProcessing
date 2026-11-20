@@ -26,7 +26,19 @@ private enum BlurFixture {
         alphaModes: [.none, .straight, .premultiplied],
         transferFunctions: [.linear, .sRGB],
         colorSpaces: [srgb, linearSRGB],
-        channelRoles: [.gray, .red, .green, .blue, .alpha]
+        channelRoles: [.gray, .red, .green, .blue, .alpha],
+        channelOrders: [
+            [.red, .green, .blue],
+            [.blue, .green, .red]
+        ],
+        subsamplingFactors: [
+            PixelSubsampling()!,
+            PixelSubsampling(x: 2, y: 2)!
+        ],
+        sampleOrigins: [
+            .zero,
+            PixelGridCoordinate(x: 0.5, y: 0.5)!
+        ]
     )
 
     static let implementationPixelDomain = PixelRepresentationDomain(
@@ -36,7 +48,10 @@ private enum BlurFixture {
         alphaModes: [.none],
         transferFunctions: [.sRGB],
         colorSpaces: [srgb],
-        channelRoles: [.red, .green, .blue]
+        channelRoles: [.red, .green, .blue],
+        channelOrders: [[.red, .green, .blue]],
+        subsamplingFactors: [PixelSubsampling()!],
+        sampleOrigins: [.zero]
     )
     static let implementationPixelSupport = OperationPixelDataContract(
         input: implementationPixelDomain,
@@ -576,6 +591,93 @@ extension ImplementationSpecificationTests {
         ])
         #expect(throws: ImplementationSpecificationValidationError.invalidRequiredCapability) {
             try malformedCapability.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+}
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func acceptsNarrowerChannelOrderSubsamplingAndSampleOriginSupport() throws {
+        let implementation = BlurImplementationFixture.specification()
+        try implementation.validate(implements: BlurOperation.specification.erased)
+    }
+
+    @Test
+    func rejectsUnsupportedChannelSequence() throws {
+        let unsupported = PixelRepresentationDomain(
+            layouts: [.interleaved],
+            interpretations: [.color],
+            colorModels: [.rgb],
+            alphaModes: [.none],
+            transferFunctions: [.sRGB],
+            colorSpaces: [BlurFixture.srgb],
+            channelRoles: [.red, .green, .blue, .alpha],
+            channelOrders: [[.alpha, .red, .green, .blue]],
+            subsamplingFactors: [PixelSubsampling()!],
+            sampleOrigins: [.zero]
+        )
+        let implementation = BlurImplementationFixture.specification(
+            pixelSupport: OperationPixelDataContract(
+                input: unsupported,
+                output: BlurFixture.implementationPixelDomain
+            )
+        )
+
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "input")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func rejectsUnsupportedSubsamplingFactors() throws {
+        let unsupported = PixelRepresentationDomain(
+            layouts: [.interleaved],
+            interpretations: [.color],
+            colorModels: [.rgb],
+            alphaModes: [.none],
+            transferFunctions: [.sRGB],
+            colorSpaces: [BlurFixture.srgb],
+            channelRoles: [.red, .green, .blue],
+            channelOrders: [[.red, .green, .blue]],
+            subsamplingFactors: [PixelSubsampling(x: 4, y: 4)!],
+            sampleOrigins: [.zero]
+        )
+        let implementation = BlurImplementationFixture.specification(
+            pixelSupport: OperationPixelDataContract(
+                input: unsupported,
+                output: BlurFixture.implementationPixelDomain
+            )
+        )
+
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "input")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func rejectsUnsupportedSampleOrigins() throws {
+        let unsupported = PixelRepresentationDomain(
+            layouts: [.interleaved],
+            interpretations: [.color],
+            colorModels: [.rgb],
+            alphaModes: [.none],
+            transferFunctions: [.sRGB],
+            colorSpaces: [BlurFixture.srgb],
+            channelRoles: [.red, .green, .blue],
+            channelOrders: [[.red, .green, .blue]],
+            subsamplingFactors: [PixelSubsampling()!],
+            sampleOrigins: [PixelGridCoordinate(x: 0.25, y: 0.25)!]
+        )
+        let implementation = BlurImplementationFixture.specification(
+            pixelSupport: OperationPixelDataContract(
+                input: unsupported,
+                output: BlurFixture.implementationPixelDomain
+            )
+        )
+
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "input")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
         }
     }
 }
