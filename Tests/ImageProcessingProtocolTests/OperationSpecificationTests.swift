@@ -160,6 +160,16 @@ struct OperationSpecificationTests {
             layerContract: OperationLayerContract(
                 acceptedInputKinds: [.raster, .mask],
                 producedOutputKinds: [.labelMap]
+            ),
+            pixelDataContract: OperationPixelDataContract(
+                input: PixelRepresentationDomain(
+                    layouts: [.interleaved, .planar],
+                    interpretations: [.color, .scientific]
+                ),
+                output: PixelRepresentationDomain(
+                    layouts: [.interleaved, .planar],
+                    interpretations: [.scientific]
+                )
             )
         )
 
