@@ -300,12 +300,19 @@ extension QualificationPolicyTests {
         let metal = try provider("provider.metal")
         let function = numericFunction()
 
-        #expect(throws: QualificationPolicyConflict.self) {
-            try function.qualifying {
+        do {
+            _ = try function.qualifying {
                 $0.require(.allowedProviders([cpu, cuda]), source: "set A")
                 $0.require(.allowedProviders([cuda, metal]), source: "set B")
                 $0.require(.allowedProviders([cpu, metal]), source: "set C")
             }
+            Issue.record("Expected three-way provider intersection conflict")
+        } catch let conflict as QualificationPolicyConflict {
+            #expect(conflict.dimension == .provider)
+            #expect(conflict.priorDeclarations.count == 2)
+            #expect(conflict.priorDeclarations.map(\\.source).contains("set A"))
+            #expect(conflict.priorDeclarations.map(\\.source).contains("set B"))
+            #expect(conflict.incomingDeclaration.source == "set C")
         }
     }
 
@@ -337,6 +344,29 @@ extension QualificationPolicyTests {
                     scope: .provider,
                     requirement: .stringSetContains(feature, "fast")
                 )))
+            }
+        }
+    }
+}
+
+
+extension QualificationPolicyTests {
+    @Test
+    func emptyProviderAllowedSetIsRejected() throws {
+        let function = numericFunction()
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.require(.allowedProviders([]))
+            }
+        }
+    }
+
+    @Test
+    func emptyPrecisionAllowedSetIsRejected() throws {
+        let function = numericFunction()
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.require(.allowedPrecisions(.computation, []))
             }
         }
     }
