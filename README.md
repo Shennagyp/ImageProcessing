@@ -4,7 +4,7 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-This repository is being established from an empty baseline. The current committed artifact is the internal architecture paper; it is a design specification, not evidence that the described API or runtime has already been implemented.
+This repository is being established from an empty baseline. Its committed documentation now includes the internal architecture paper and a phase-gated implementation plan. Both are design documents; they are not evidence that the described API or runtime has already been implemented.
 
 ## Architecture
 
