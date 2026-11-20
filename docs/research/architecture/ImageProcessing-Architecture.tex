@@ -435,21 +435,51 @@ For example, a Gaussian blur operation is not fully specified by \textquotedblle
 
 \subsection{Operation specification versus implementation specification}
 
-These specifications are complementary and have different owners.
+These specifications are complementary and have different owners. They are immutable, declarative values that can be inspected by the runtime without calling implementation-specific qualification code.
 
-\textbf{Operation specification} describes the operation's semantic truth: what result is required, which input domains and parameters are valid, what numerical guarantees apply, and which implementation variations are permitted. It may be refined by the concrete operation parameters and by the caller's pipeline requirements.
-
-\textbf{Implementation specification} describes one concrete implementation class: which operation identity/version it implements, what semantic modes and parameter ranges it supports, which input/output representations and precision modes it can realize, which provider capabilities it requires, and its resource/execution characteristics. It is declarative metadata, not a custom \texttt{qualify()} function.
-
-For a \texttt{GaussianBlur}, an implementation specification may declare supported border modes, supported component formats, computation/accumulation precision, maximum radius, required device capabilities, and resource limits. \texttt{CUDAGaussianBlur} declares a CUDA provider requirement; \texttt{MetalGaussianBlur} declares a Metal requirement; \texttt{CPUGaussianBlur} declares the CPU capability requirements. The runtime compares these declarations with the actual environment. It does not encode special-case logic such as \textquotedblleft{}if macOS then prefer Metal\textquotedblright{}.
-
-Implementation specifications MUST distinguish:
+\textbf{Operation specification} describes semantic truth: what result is required, which input domains and parameters are valid, what numerical guarantees apply, and which implementation variations are permitted. The typed \texttt{OperationSpecification<Input,Output>} derives its input/output value identifiers from the associated Swift types and carries:
 \begin{itemize}
-  \item static, tested support declared by the implementation;
-  \item provider/device capabilities reported by the execution provider;
-  \item transient availability and load, reported by the current environment snapshot.
+  \item named parameter specifications with typed domains (integer/unsigned/real ranges, Boolean, text sets, and enumerated options), including whether a value is required;
+  \item dimensioned precision domains for input storage, arithmetic computation, accumulation, and output storage;
+  \item a numerical contract for rounding, overflow, output-range behavior, determinism, and optional absolute/relative error tolerances;
+  \item an effect contract separating required effects from effects permitted to an implementation, plus input-mutation and output-aliasing semantics;
+  \item accepted and produced layer kinds; and
+  \item optional input/output pixel representation domains covering interleaved/planar layout, color/scientific interpretation, color models, alpha, transfer function, color-space identity, channel roles and order, subsampling factors, sample origins, and scientific measurement units.
 \end{itemize}
-A specification must not claim that a device is currently available or currently idle. Those are runtime facts.
+
+An operation instance exposes immutable named \texttt{OperationParameterValueRecord} values. The common preflight validator checks schema identity/uniqueness, required values, value types, and parameter domains before the function can proceed to candidate resolution. A parameter domain is also a mathematical support set: an implementation's declared support must be a subset of the operation's permitted domain. A value that is legal for the operation but outside one implementation's narrower range makes that implementation ineligible; it does not make the operation instance invalid.
+
+The operation precision contract distinguishes storage representation from arithmetic precision. Input/output storage choices use \texttt{PixelComponentType}; computation and accumulation use \texttt{ArithmeticPrecision}. A float32 storage format is not evidence that arithmetic or accumulation is float32. The operation's precision qualification dimensions are derived from the corresponding nonempty precision domains and can be narrowed by the caller's dimensioned hard requirements.
+
+The numerical contract is separate from precision. It states the exact rounding/overflow/output-range semantics, whether deterministic results are mandatory or implementation-selectable, and any maximum permitted absolute/relative error. A precision-compatible implementation is not conformant when it uses different rounding or overflow semantics, or cannot meet the operation's stated error tolerance.
+
+The effect contract has two sets: effects required by the operation and the superset of effects permitted to implementations. An implementation must preserve every required effect and may expose no effect outside the permitted set. Input mutation and output aliasing are separately constrained. A default pure operation requires no effects, does not permit implementations to add observable effects, does not permit mutation of inputs, and requires outputs to be distinct from inputs.
+
+If a layer contract accepts or produces raster, mask, or label-map content, the corresponding input/output pixel representation domain is mandatory. Annotation-only layer operations do not invent pixel storage requirements. A \texttt{PixelRepresentationDomain} can narrow channel order, color/scientific interpretation, alpha behavior, color-space and transfer-function choices, subsampling and sample-origin values, and measurement units independently of the layer kind.
+
+\textbf{Implementation specification} describes one concrete implementation class. The current \texttt{ImplementationSpecification} validates:
+\begin{itemize}
+  \item exact operation identity, semantic-version range, and input/output value type;
+  \item support subsets for every required operation parameter, including parameter-specific ranges and options;
+  \item supported input-storage, computation, accumulation, and output precision sets, each constrained to the operation's corresponding domain;
+  \item supported rounding, overflow, output-range behavior, and maximum numerical error guarantees;
+  \item deterministic/nondeterministic behavior and required/permitted effects, mutation, and aliasing;
+  \item supported input/output layer kinds and pixel representation subsets, including physical channel order, subsampling factors, and sample origins;
+  \item static resource requirements by input/output/temporary role, resource kind, allowed memory domains, minimum capacity, minimum alignment, access mode, and whether import is required; and
+  \item optional static performance hints for fixed setup overhead, arithmetic work per element, and temporary bytes per element.
+\end{itemize}
+
+A resource requirement's minimum capacity is an implementation lower bound. The concrete request made by the execution planner must also meet the actual descriptor-derived storage capacity, alignment, and data size; the static declaration does not replace those runtime facts. Performance hints are estimates, not current availability or measured queue telemetry. Provider/device capabilities and transient availability/load remain separate inputs supplied by \texttt{GeneralExecutionProtocol} and the environment snapshot.
+
+For a \texttt{GaussianBlur}, the operation might permit radii from 0.1 to 100, border modes reflect/clamp/wrap, FP32 or FP64 computation, deterministic or implementation-selectable results, and an explicit pixel/color domain. A CPU implementation may support radius 0.1 to 5, reflect only, FP32 computation, and a narrower interleaved RGB/sRGB representation. It remains a conforming implementation for the parameter/representation subset it declares, but does not qualify for a radius of 8 or a clamp-border request. The same operation may have separate CUDA and Metal implementations with different support subsets and resource requirements.
+
+The specifications are checked statically before environment-aware resolution. This establishes the crucial distinction:
+\[
+\text{operation's permitted semantic domain}
+\supseteq
+\text{implementation's declared support}
+\]
+and keeps transient device state out of the specification. A candidate can satisfy its static contract and still be unavailable because its provider/device/context is not currently usable.
 
 \subsection{One generic operation-implementation contract}
 
