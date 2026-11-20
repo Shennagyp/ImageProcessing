@@ -42,6 +42,13 @@ public enum OperationQualificationDimension: String, Hashable, Sendable {
     case deterministicResults
 }
 
+public enum OperationSpecificationValidationError: Error, Equatable, Sendable {
+    case undeclaredPrecisionDomain(OperationQualificationDimension)
+    case deterministicDimensionRequiresSelectableContract
+    case invalidNumericalContract
+    case invalidParameterSchema(OperationParameterValidationError)
+}
+
 /// A typed operation specification. Input/output identifiers are derived from
 /// the associated Swift types and therefore cannot drift from the public type contract.
 public struct OperationSpecification<Input: OperationValue, Output: OperationValue>: Hashable, Sendable {
@@ -51,19 +58,63 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
     public let outputType: OperationValueIdentifier
     public let qualificationDimensions: Set<OperationQualificationDimension>
     public let parameterSpecifications: [OperationParameterSpecification]
+    public let precisionContract: OperationPrecisionContract
+    public let numericalContract: OperationNumericalContract?
+    public let effectContract: OperationEffectContract
+    private let explicitlyDeclaredQualificationDimensions: Set<OperationQualificationDimension>
 
     public init(
         identifier: OperationIdentifier,
         semanticVersion: SemanticVersion,
         qualificationDimensions: Set<OperationQualificationDimension> = [],
-        parameterSpecifications: [OperationParameterSpecification] = []
+        parameterSpecifications: [OperationParameterSpecification] = [],
+        precisionContract: OperationPrecisionContract = .none,
+        numericalContract: OperationNumericalContract? = nil,
+        effectContract: OperationEffectContract = .pure
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = Input.typeIdentifier
         self.outputType = Output.typeIdentifier
-        self.qualificationDimensions = qualificationDimensions
+        self.explicitlyDeclaredQualificationDimensions = qualificationDimensions
+        self.precisionContract = precisionContract
+        self.numericalContract = numericalContract
+        self.effectContract = effectContract
         self.parameterSpecifications = parameterSpecifications
+
+        var dimensions = qualificationDimensions
+        dimensions.formUnion(precisionContract.qualificationDimensions)
+        if numericalContract?.determinism == .implementationSelectable {
+            dimensions.insert(.deterministicResults)
+        }
+        self.qualificationDimensions = dimensions
+    }
+
+    public func validateContract() throws {
+        for dimension in explicitlyDeclaredQualificationDimensions {
+            switch dimension {
+            case .inputStoragePrecision, .computationPrecision,
+                 .accumulationPrecision, .outputPrecision:
+                guard qualificationDimensions.contains(dimension),
+                      precisionContract.qualificationDimensions.contains(dimension) else {
+                    throw OperationSpecificationValidationError.undeclaredPrecisionDomain(dimension)
+                }
+            case .deterministicResults:
+                guard numericalContract?.determinism == .implementationSelectable else {
+                    throw OperationSpecificationValidationError.deterministicDimensionRequiresSelectableContract
+                }
+            }
+        }
+
+        if let numericalContract, !numericalContract.isValid {
+            throw OperationSpecificationValidationError.invalidNumericalContract
+        }
+
+        do {
+            try OperationParameterValidation.validateSpecifications(parameterSpecifications)
+        } catch let error as OperationParameterValidationError {
+            throw OperationSpecificationValidationError.invalidParameterSchema(error)
+        }
     }
 
     public var erased: AnyOperationSpecification {
@@ -73,7 +124,10 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             inputType: inputType,
             outputType: outputType,
             qualificationDimensions: qualificationDimensions,
-            parameterSpecifications: parameterSpecifications
+            parameterSpecifications: parameterSpecifications,
+            precisionContract: precisionContract,
+            numericalContract: numericalContract,
+            effectContract: effectContract
         )
     }
 }
@@ -86,6 +140,9 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let outputType: OperationValueIdentifier
     public let qualificationDimensions: Set<OperationQualificationDimension>
     public let parameterSpecifications: [OperationParameterSpecification]
+    public let precisionContract: OperationPrecisionContract
+    public let numericalContract: OperationNumericalContract?
+    public let effectContract: OperationEffectContract
 
     public init(
         identifier: OperationIdentifier,
@@ -93,14 +150,22 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         inputType: OperationValueIdentifier,
         outputType: OperationValueIdentifier,
         qualificationDimensions: Set<OperationQualificationDimension> = [],
-        parameterSpecifications: [OperationParameterSpecification] = []
+        parameterSpecifications: [OperationParameterSpecification] = [],
+        precisionContract: OperationPrecisionContract = .none,
+        numericalContract: OperationNumericalContract? = nil,
+        effectContract: OperationEffectContract = .pure
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
         self.inputType = inputType
         self.outputType = outputType
-        self.qualificationDimensions = qualificationDimensions
+        self.qualificationDimensions = qualificationDimensions.union(precisionContract.qualificationDimensions).union(
+            numericalContract?.determinism == .implementationSelectable ? [.deterministicResults] : []
+        )
         self.parameterSpecifications = parameterSpecifications
+        self.precisionContract = precisionContract
+        self.numericalContract = numericalContract
+        self.effectContract = effectContract
     }
 }
 
