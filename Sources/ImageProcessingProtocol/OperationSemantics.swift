@@ -306,8 +306,12 @@ public enum OperationEffect: String, Hashable, Sendable {
 public struct OperationEffectContract: Hashable, Sendable {
     public let inputMutation: OperationInputMutationSemantics
     public let outputAliasing: OperationOutputAliasingSemantics
-    public let effects: Set<OperationEffect>
+    /// Effects that are intrinsic to the operation's observable semantics.
+    public let requiredEffects: Set<OperationEffect>
+    /// Effects that a conforming implementation is permitted to expose.
+    public let permittedEffects: Set<OperationEffect>
 
+    /// Declares one exact effect set for the operation.
     public init(
         inputMutation: OperationInputMutationSemantics = .never,
         outputAliasing: OperationOutputAliasingSemantics = .distinctFromInputs,
@@ -315,9 +319,24 @@ public struct OperationEffectContract: Hashable, Sendable {
     ) {
         self.inputMutation = inputMutation
         self.outputAliasing = outputAliasing
-        self.effects = effects
+        self.requiredEffects = effects
+        self.permittedEffects = effects
     }
 
+    public init(
+        inputMutation: OperationInputMutationSemantics = .never,
+        outputAliasing: OperationOutputAliasingSemantics = .distinctFromInputs,
+        requiredEffects: Set<OperationEffect>,
+        permittedEffects: Set<OperationEffect>
+    ) {
+        self.inputMutation = inputMutation
+        self.outputAliasing = outputAliasing
+        self.requiredEffects = requiredEffects
+        self.permittedEffects = permittedEffects
+    }
+
+    public var effects: Set<OperationEffect> { permittedEffects }
+    public var isValid: Bool { requiredEffects.isSubset(of: permittedEffects) }
     public static let pure = Self()
-    public var isPure: Bool { effects.isEmpty }
+    public var isPure: Bool { requiredEffects.isEmpty && permittedEffects.isEmpty }
 }
