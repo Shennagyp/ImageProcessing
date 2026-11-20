@@ -7,6 +7,8 @@ public struct RegisteredExecutionProvider: Hashable, Sendable {
 public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
     case duplicateProvider(ExecutionProviderID)
     case providerNotRegistered(ExecutionProviderID)
+    case targetProviderMismatch(expected: ExecutionProviderID, actual: ExecutionProviderID)
+    case providerDescriptorChanged(ExecutionProviderID)
 }
 
 /// One discovery attempt can succeed partially. Provider/device failures are
@@ -60,6 +62,28 @@ public actor ExecutionProviderRegistry {
         entries.values
             .map { RegisteredExecutionProvider(descriptor: $0.descriptor) }
             .sorted { $0.descriptor.identifier.rawValue < $1.descriptor.identifier.rawValue }
+    }
+
+    /// Creates a context only for a provider registration whose immutable
+    /// descriptor still matches the descriptor used by the environment snapshot.
+    public func makeContext(
+        for target: ExecutionTargetReference,
+        expecting expectedProvider: ExecutionProviderDescriptor
+    ) async throws -> any ExecutionContext {
+        guard target.providerID == expectedProvider.identifier else {
+            throw ExecutionProviderRegistryError.targetProviderMismatch(
+                expected: expectedProvider.identifier,
+                actual: target.providerID
+            )
+        }
+        guard let entry = entries[target.providerID] else {
+            throw ExecutionProviderRegistryError.providerNotRegistered(target.providerID)
+        }
+        guard entry.descriptor == expectedProvider,
+              entry.provider.descriptor == expectedProvider else {
+            throw ExecutionProviderRegistryError.providerDescriptorChanged(target.providerID)
+        }
+        return try await entry.provider.makeContext(for: target)
     }
 
     /// Discovers all registered providers in deterministic provider order.
