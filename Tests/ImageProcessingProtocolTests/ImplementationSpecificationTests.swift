@@ -483,15 +483,19 @@ extension ImplementationSpecificationTests {
 
     @Test
     func operationRequiredEffectsMustBeImplementedButOptionalPermittedEffectsMayBeOmitted() throws {
+        let base = BlurOperation.specification
         let operation = OperationSpecification<BlurInput, BlurOutput>(
-            identifier: BlurOperation.specification.identifier,
-            semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            identifier: base.identifier,
+            semanticVersion: base.semanticVersion,
+            parameterSpecifications: base.parameterSpecifications,
+            precisionContract: base.precisionContract,
+            numericalContract: base.numericalContract,
             effectContract: OperationEffectContract(
                 requiredEffects: [.randomness],
                 permittedEffects: [.randomness, .deviceState]
             ),
-            layerContract: BlurOperation.specification.layerContract,
-            pixelDataContract: BlurOperation.specification.pixelDataContract
+            layerContract: base.layerContract,
+            pixelDataContract: base.pixelDataContract
         )
         let valid = BlurImplementationFixture.specification(
             effects: OperationEffectContract(
