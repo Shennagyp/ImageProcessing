@@ -224,7 +224,7 @@ struct OperationImplementationRegistryTests {
         try await registry.register(implementation)
         let alternativeStep = AnyImageOperationStep(operation: AlternativeRegistryOperation())
 
-        #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
+        await #expect(throws: OperationImplementationRegistryError.typedDispatchMismatch(
             key("registry.multiply.cpu")
         )) {
             try await registry.execute(
