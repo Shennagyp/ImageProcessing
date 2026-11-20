@@ -826,7 +826,7 @@ A provider returning no devices is valid because it may represent an opaque mana
 
 ## ADR-028 — Runtime workload accounting and environment snapshot identity are separate from provider telemetry
 
-**Status:** Work ledger and snapshot coordinator implemented; work leases now atomically include generic resource-access reservations and revalidation. Physical capacity/residency reservation and full observation freshness policy remain pending
+**Status:** Work ledger and snapshot coordinator implemented; work leases now atomically include generic resource-access reservations and revalidation. Candidate-bound telemetry snapshots are implemented; physical capacity/residency reservation remains pending
 
 ### Decision
 
@@ -849,7 +849,7 @@ RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery re
 ### Deferred
 
 - Resource reservation records and capacities per resource handle, rather than only work counts.
-- Freshness expiration policy, snapshot refresh scheduling, and policy for stale providers.
+- Snapshot refresh scheduling and policy for stale providers.
 - Atomic capture guarantees across registry updates and outstanding-work mutations.
 - Runtime accounting integration with actual submission/completion and cancellation paths.
 ## ADR-029 — Operation input context binds typed inputs to explicit image revisions and generic resources
@@ -880,10 +880,43 @@ Input resource access declarations must also agree with operation semantics: wri
 ### Deferred
 
 - Provider-backed physical memory reservation, residency and full interop feasibility.
-- Per-observation freshness/quality handling during ranking.
+- Source-quality-aware use of fresh/stale/unknown per-observation telemetry during ranking.
 - Output descriptor/resource planning.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
 - Preference ranking, complete cost estimates, whole-pipeline planning, and execution coordination.
+
+---
+
+## ADR-030 — Candidate telemetry preserves observation-local validity and provenance
+
+**Status:** Implemented candidate-bound telemetry assessment; quality-aware ranking pending
+
+### Decision
+
+A qualified operation candidate retains the provider and optional device state snapshots from the exact `RuntimeEnvironmentSnapshot` used during evaluation, along with that snapshot's identity and the evaluation time. It exposes each currently defined telemetry metric as a separate `known`, `stale`, or `unknown` observation state assessed at that time.
+
+Observation validity is local to each metric. A value is known only when the assessment time lies within its `[observedAt, validUntil]` interval. A value from a future observation or an expired observation is stale. Unknown observations remain unknown. The original observation objects remain attached to the candidate, preserving source, quality, timestamps, and the measured value for diagnostics and subsequent cost evaluation.
+
+These metrics are optional environmental evidence, not implicit hard requirements. Missing or stale queue/memory/utilization telemetry does not by itself make a semantically and technically eligible candidate indeterminate. A fresh zero remains a known zero; unknown is never substituted with zero. Available-memory telemetry is not an allocation reservation and cannot prove that an output or temporary allocation will succeed.
+
+### Invariants
+
+- Candidate telemetry belongs to the same environment snapshot used for candidate qualification.
+- Every metric is assessed independently against its own validity interval.
+- Source and `ObservationQuality` metadata are preserved without inventing a confidence scale or silently preferring one source.
+- Unknown and stale optional telemetry cannot be converted to zero or used as proof of provider unavailability.
+- Telemetry alone cannot satisfy provider-backed resource allocation, import, residency, or synchronization requirements.
+- Preferences and cost ranking may consume these observations only after hard eligibility and resource-feasibility checks have passed.
+
+### Consequence
+
+Qualification preserves reliable evidence for later ranking without coupling semantic eligibility to optional driver telemetry. Providers that do not expose a particular metric remain usable when their actual execution contracts satisfy the operation; the resolver simply has less evidence for estimating cost or memory pressure.
+
+### Deferred
+
+- Quality-aware ranking and cost estimation across observations with different sources and qualities.
+- Provider-backed capacity reservation, allocation/reuse, residency transitions, and output-resource planning.
+- Refresh/retry policy when observations expire before reservation or submission.
 
 ---
 

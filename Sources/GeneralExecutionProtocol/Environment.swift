@@ -64,10 +64,8 @@ public struct ExecutionObservation<Value: Sendable>: Sendable {
         case let .unknown(reason):
             return .unknown(reason: reason)
         case let .value(value):
-            guard let validUntil else {
-                return .stale(value)
-            }
-            if date > validUntil {
+            guard let observedAt, let validUntil,
+                  date >= observedAt, date <= validUntil else {
                 return .stale(value)
             }
             return .known(value)

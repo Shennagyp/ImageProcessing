@@ -80,13 +80,15 @@ private struct QualificationTestDevice: ExecutionDevice {
     let descriptor: ExecutionDeviceDescriptor
     let availability: ExecutionAvailability
     let capturedAt: Date
+    let state: ExecutionDeviceStateSnapshot?
 
     init(
         identifier: String,
         providerID: ExecutionProviderID,
         availability: ExecutionAvailability = .available,
         capabilities: ExecutionCapabilities = .init(),
-        capturedAt: Date
+        capturedAt: Date,
+        state: ExecutionDeviceStateSnapshot? = nil
     ) {
         descriptor = ExecutionDeviceDescriptor(
             identifier: ExecutionDeviceID(rawValue: identifier)!,
@@ -96,10 +98,11 @@ private struct QualificationTestDevice: ExecutionDevice {
         )
         self.availability = availability
         self.capturedAt = capturedAt
+        self.state = state
     }
 
     func observeState() async throws -> ExecutionDeviceStateSnapshot {
-        ExecutionDeviceStateSnapshot(
+        state ?? ExecutionDeviceStateSnapshot(
             capturedAt: capturedAt,
             availability: availability
         )
@@ -117,6 +120,7 @@ private struct QualificationTestProvider: ExecutionProvider {
     let availability: ExecutionAvailability
     let capturedAt: Date
     let contextCapabilities: ExecutionCapabilities
+    let state: ExecutionProviderStateSnapshot?
     let failsDiscovery: Bool
     let failsContextCreation: Bool
     let returnsWrongContextTarget: Bool
@@ -130,7 +134,8 @@ private struct QualificationTestProvider: ExecutionProvider {
         failsDiscovery: Bool = false,
         failsContextCreation: Bool = false,
         returnsWrongContextTarget: Bool = false,
-        capturedAt: Date
+        capturedAt: Date,
+        state: ExecutionProviderStateSnapshot? = nil
     ) {
         let providerID = ExecutionProviderID(rawValue: identifier)!
         descriptor = ExecutionProviderDescriptor(
@@ -149,13 +154,14 @@ private struct QualificationTestProvider: ExecutionProvider {
         self.availability = availability
         self.capturedAt = capturedAt
         self.contextCapabilities = contextCapabilities
+        self.state = state
         self.failsDiscovery = failsDiscovery
         self.failsContextCreation = failsContextCreation
         self.returnsWrongContextTarget = returnsWrongContextTarget
     }
 
     func observeState() async throws -> ExecutionProviderStateSnapshot {
-        ExecutionProviderStateSnapshot(
+        state ?? ExecutionProviderStateSnapshot(
             capturedAt: capturedAt,
             availability: availability
         )
@@ -255,6 +261,79 @@ struct CommonQualificationResolverTests {
         #expect(candidate.target.providerID == provider.descriptor.identifier)
         #expect(candidate.target.deviceID == provider.devices[0].descriptor.identifier)
         #expect(candidate.context.target == candidate.target)
+    }
+
+    @Test
+    func candidateRetainsPerMetricFreshnessAndQualityWithoutChangingEligibility() async throws {
+        let now = Date(timeIntervalSince1970: 50_050)
+        let freshZero = try ExecutionObservation(
+            value: UInt64(0),
+            observedAt: now.addingTimeInterval(-1),
+            validUntil: now.addingTimeInterval(10),
+            source: "driver.queue",
+            quality: .reported
+        )
+        let staleMemory = try ExecutionObservation(
+            value: UInt64(0),
+            observedAt: now.addingTimeInterval(-30),
+            validUntil: now.addingTimeInterval(-1),
+            source: "driver.memory",
+            quality: .estimated
+        )
+        let unknownQueue = ExecutionObservation<UInt64>(
+            unknownReason: "provider does not expose queue depth"
+        )
+        let providerID = ExecutionProviderID(rawValue: "provider.qualification-test")!
+        let deviceState = ExecutionDeviceStateSnapshot(
+            capturedAt: now,
+            availability: .available,
+            availableMemoryBytes: staleMemory,
+            queueDepth: freshZero,
+            estimatedQueueDelayNanoseconds: .init(unknownReason: "not reported"),
+            utilizationFraction: .init(unknownReason: "not reported")
+        )
+        let device = QualificationTestDevice(
+            identifier: "device.0",
+            providerID: providerID,
+            capturedAt: now,
+            state: deviceState
+        )
+        let providerState = ExecutionProviderStateSnapshot(
+            capturedAt: now,
+            availability: .available,
+            queueDepth: unknownQueue,
+            estimatedQueueDelayNanoseconds: freshZero
+        )
+        let provider = QualificationTestProvider(
+            devices: [device],
+            capturedAt: now,
+            state: providerState
+        )
+
+        let report = try await makeReport(provider: provider, now: now)
+        let candidate = try #require(report.qualifiedCandidates.first)
+        let observations = candidate.environmentObservations
+
+        #expect(report.evaluations.first?.disposition == .qualified)
+        #expect(observations.environmentSnapshotIdentifier == report.environmentSnapshot)
+        #expect(observations.assessedAt == now)
+        #expect(observations.deviceState?.availableMemoryBytes.source == "driver.memory")
+        #expect(observations.deviceState?.availableMemoryBytes.quality == .estimated)
+        #expect({
+            guard let state = observations.deviceAvailableMemoryState,
+                  case .stale(0) = state else { return false }
+            return true
+        }())
+        #expect({
+            guard let state = observations.deviceQueueDepthState,
+                  case .known(0) = state else { return false }
+            return true
+        }())
+        #expect({
+            guard case .unknown(reason: "provider does not expose queue depth") =
+                observations.providerQueueDepthState else { return false }
+            return true
+        }())
     }
 
     @Test

@@ -23,6 +23,53 @@ public struct QualificationFreshnessPolicy: Hashable, Sendable {
     }
 }
 
+/// Immutable provider/device telemetry captured by the exact environment snapshot
+/// used to qualify a candidate. Optional metrics are assessed independently at
+/// the resolver's evaluation time; they are evidence for later ranking, not
+/// additional hard eligibility requirements.
+public struct CandidateEnvironmentObservations: Sendable {
+    public let environmentSnapshotIdentifier: RuntimeEnvironmentSnapshotIdentifier
+    public let providerState: ExecutionProviderStateSnapshot
+    public let deviceState: ExecutionDeviceStateSnapshot?
+    public let assessedAt: Date
+
+    public init(
+        environmentSnapshotIdentifier: RuntimeEnvironmentSnapshotIdentifier,
+        providerState: ExecutionProviderStateSnapshot,
+        deviceState: ExecutionDeviceStateSnapshot?,
+        assessedAt: Date
+    ) {
+        self.environmentSnapshotIdentifier = environmentSnapshotIdentifier
+        self.providerState = providerState
+        self.deviceState = deviceState
+        self.assessedAt = assessedAt
+    }
+
+    public var providerQueueDepthState: ExecutionObservationState<UInt64> {
+        providerState.queueDepth.state(at: assessedAt)
+    }
+
+    public var providerQueueDelayState: ExecutionObservationState<UInt64> {
+        providerState.estimatedQueueDelayNanoseconds.state(at: assessedAt)
+    }
+
+    public var deviceAvailableMemoryState: ExecutionObservationState<UInt64>? {
+        deviceState?.availableMemoryBytes.state(at: assessedAt)
+    }
+
+    public var deviceQueueDepthState: ExecutionObservationState<UInt64>? {
+        deviceState?.queueDepth.state(at: assessedAt)
+    }
+
+    public var deviceQueueDelayState: ExecutionObservationState<UInt64>? {
+        deviceState?.estimatedQueueDelayNanoseconds.state(at: assessedAt)
+    }
+
+    public var deviceUtilizationState: ExecutionObservationState<ExecutionFraction>? {
+        deviceState?.utilizationFraction.state(at: assessedAt)
+    }
+}
+
 public enum CandidateQualificationDisposition: String, Hashable, Sendable {
     case qualified
     case rejected
@@ -91,6 +138,8 @@ public struct QualifiedOperationImplementation: Sendable {
     public let context: any ExecutionContext
     /// Exact immutable image revisions and targets used during qualification.
     public let imageInputContext: ImageOperationInputContext?
+    /// Provider/device telemetry from the same environment snapshot as qualification.
+    public let environmentObservations: CandidateEnvironmentObservations
     /// Source-resource accesses implied by the implementation's input roles.
     public let inputResourceAccesses: [ExecutionResourceAccess]
 }

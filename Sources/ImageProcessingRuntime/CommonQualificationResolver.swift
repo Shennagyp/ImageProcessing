@@ -320,6 +320,12 @@ public actor CommonQualificationResolver {
                             target: target,
                             context: context,
                             imageInputContext: imageInputContext,
+                            environmentObservations: CandidateEnvironmentObservations(
+                                environmentSnapshotIdentifier: environment.identifier,
+                                providerState: provider.state,
+                                deviceState: provider.devices.first(where: { $0.target == target })?.state,
+                                assessedAt: now
+                            ),
                             inputResourceAccesses: inputResourceAccesses
                         )
                         evaluations.append(

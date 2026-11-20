@@ -54,6 +54,27 @@ struct ExecutionContractsTests {
     }
 
     @Test
+    func futureObservationIsStaleUntilItsObservedAtTime() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let future = try ExecutionObservation(
+            value: UInt64(42),
+            observedAt: now.addingTimeInterval(5),
+            validUntil: now.addingTimeInterval(10),
+            source: "provider.telemetry",
+            quality: .reported
+        )
+
+        #expect({
+            if case .stale(42) = future.state(at: now) { return true }
+            return false
+        }())
+        #expect({
+            if case .known(42) = future.state(at: now.addingTimeInterval(5)) { return true }
+            return false
+        }())
+    }
+
+    @Test
     func invalidObservationExpiryIsRejected() throws {
         let now = Date(timeIntervalSince1970: 1_000)
         #expect(throws: ExecutionObservationError.expirationPrecedesObservation) {
