@@ -239,7 +239,7 @@ struct ImageStateTests {
         )
         var resource: ImageStateTestResource? = try makeResource(pixels: pixels)
         weak var weakResource = resource
-        let storage = try PixelStorageBinding(
+        var storage: PixelStorageBinding? = try PixelStorageBinding(
             descriptor: pixels,
             planeBindings: [PixelPlaneResourceBinding(
                 resource: try #require(resource),
@@ -250,11 +250,12 @@ struct ImageStateTests {
             snapshot: document,
             storageBindings: [LayerPixelStorageBinding(
                 reference: raster.reference(in: document.identifier),
-                storage: storage
+                storage: try #require(storage)
             )]
         )
         var captured: ImageStateSnapshot? = image.snapshot()
         resource = nil
+        storage = nil
 
         _ = try image.replace(
             expectedRevision: .initial,
