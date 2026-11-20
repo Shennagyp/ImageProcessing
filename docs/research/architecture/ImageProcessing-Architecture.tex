@@ -513,7 +513,11 @@ If operation $A$ maps type $X$ to type $Y$, and operation $B$ maps $Y$ to $Z$, t
   B\circ A : X \rightarrow Z.
 \]
 
-The Swift-facing API may express this using a method such as \texttt{then}: the first operation's output contract must satisfy the second operation's input contract. The composition object records the ordered operations and their parameter instances. It is immutable once created or executed.
+The current Swift API represents a sequential function as \texttt{ImageFunction<Input, Output>}. Constructing it from an \texttt{ImageOperation} preserves that operation's associated input/output value types. \texttt{followed(by:)} composes two functions only when the left output type is exactly the right input type; an overload appends one compatible operation directly. The identity function is represented by an empty step sequence.
+
+The function stores an immutable ordered array of heterogeneous \texttt{AnyImageOperationStep} values. Each step retains its operation instance, erased operation specification, and an \texttt{OperationStepIdentifier}. The identifier names this occurrence in the composed sequence, not the operation definition. When a function is composed on the right, its step occurrences receive fresh identifiers to avoid duplicate identity when a function is reused; \texttt{sourceIdentifier} preserves the original step identity for traceability. Composition does not execute operations. The later runtime resolves implementations for the ordered steps.
+
+The public abstraction is sequential typed composition, not a public graph.
 
 Illustrative API sketch (not a frozen signature):
 \begin{lstlisting}
