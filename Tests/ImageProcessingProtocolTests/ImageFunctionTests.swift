@@ -89,7 +89,7 @@ struct ImageFunctionTests {
             operation: AddNumberOperation(amount: 1),
             stepIdentifier: firstID
         )
-        let composed = first.followed(
+        let composed = try first.followed(
             by: FormatNumberOperation(prefix: "n="),
             stepIdentifier: secondID
         )
@@ -129,7 +129,7 @@ struct ImageFunctionTests {
     }
 
     @Test
-    func compositionPreservesOrderAcrossMultipleFunctions() {
+    func compositionPreservesOrderAcrossMultipleFunctions() throws {
         let add = ImageFunction(operation: AddNumberOperation(amount: 1))
         let format = ImageFunction(operation: FormatNumberOperation(prefix: "value="))
         let summarize = ImageFunction(operation: SummarizeTextOperation(suffix: "!"))
