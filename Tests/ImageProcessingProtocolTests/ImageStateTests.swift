@@ -244,7 +244,7 @@ struct ImageStateTests {
         #expect(captured?.storageBindings.boundLayerCount == 1)
 
         captured = nil
-        #expect(weakResource == nil)
+        #expect(weakResource.map { _ in true } == nil)
     }
 
     private func makeResource(pixels: PixelDataDescriptor) throws -> ImageStateTestResource {
