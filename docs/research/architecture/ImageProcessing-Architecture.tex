@@ -178,17 +178,19 @@ Concrete execution-provider packages and image-operation implementation packages
 \begin{tabularx}{0.96\textwidth}{@{}>{\centering\arraybackslash}X@{}}
 \fbox{\parbox{0.88\textwidth}{\centering\textbf{Image document and target layer}\\[2pt] Logical identity, layer semantics, resource references}}\\[5pt]
 $\Downarrow$\\[5pt]
-\fbox{\parbox{0.88\textwidth}{\centering\textbf{Immutable operation object or composed operation}\\[2pt] Stable semantic identity, parameters, contracts}}\\[5pt]
+\fbox{\parbox{0.88\textwidth}{\centering\textbf{Immutable operation or composed function}\\[2pt] Stable operation identity, parameters, operation specification, pipeline policy}}\\[5pt]
 $\Downarrow$\\[5pt]
-\fbox{\parbox{0.88\textwidth}{\centering\textbf{Qualification}\\[2pt] Determine which registered implementations can preserve the required semantics}}\\[5pt]
+\fbox{\parbox{0.88\textwidth}{\centering\textbf{Common qualification/resolution function}\\[2pt] Evaluates operation and implementation specifications, actual environment state, requirements and preferences; excludes invalid candidates and ranks eligible ones}}\\[5pt]
 $\Downarrow$\\[5pt]
-\fbox{\parbox{0.88\textwidth}{\centering\textbf{Implementation selection and execution planning}\\[2pt] Account for data residency, conversions, synchronization, cost and constraints}}\\[5pt]
+\fbox{\parbox{0.88\textwidth}{\centering\textbf{Selected operation implementation}\\[2pt] For example, CPUGaussianBlur, CUDAGaussianBlur, or MetalGaussianBlur}}\\[5pt]
 $\Downarrow$\\[5pt]
-\fbox{\parbox{0.88\textwidth}{\centering\textbf{Execution provider}\\[2pt] CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, or a managed runtime}}\\[5pt]
+\fbox{\parbox{0.88\textwidth}{\centering\textbf{Execution provider and resources}\\[2pt] CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, or a managed runtime}}\\[5pt]
 $\Downarrow$\\[5pt]
 \fbox{\parbox{0.88\textwidth}{\centering\textbf{New image result or atomic replacement}\\[2pt] Logical semantics are stable; physical allocation is an implementation decision}}
 \end{tabularx}
 \end{center}
+
+The resolver is one common mechanism, not a custom qualifier and selector implemented by every backend. Its internal eligibility and ranking steps share the same declarative inputs and never allow a preference score to override a failed requirement. The selected operation implementation performs the algorithm; its execution provider supplies the generic execution and resource lifecycle where required.
 
 \subsection{Protocol-library boundary and dependency direction}
 
