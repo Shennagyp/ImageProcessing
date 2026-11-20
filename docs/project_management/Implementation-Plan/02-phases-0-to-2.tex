@@ -85,6 +85,7 @@
   \item A state/availability observation model for device health, availability, memory pressure, outstanding submissions, queue depth, and estimated delay where available.
   \item Observation timestamps and freshness/quality metadata. Unsupported telemetry is represented as unknown, never as zero load.
   \item Structured provider errors, device-loss behavior, allocation/retention, and release rules.
+  \item Provider-neutral failure categories and advisory recovery dispositions for unavailable/lost targets, capability failures, resource allocation/import, work submission/dependency/execution, and synchronization.
   \item Fake/test provider and conformance doubles whose capabilities and state can be controlled deterministically.
   \item Reusable test-only provider conformance harness for device ownership/discovery, opaque provider-managed targets, context identity/capability truthfulness, resource allocation/import, work submission/completion, and synchronization.
 \end{enumerate}
@@ -102,6 +103,7 @@
   \item Native provider differences remain behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
   \item Stale or unknown state is never misreported as current or idle.
   \item A context-scoped capability requirement succeeds only when the prepared context reports it and implements the corresponding optional context protocol.
+  \item Provider failures carry provider/target identity and machine-readable failure/recovery categories; optional native diagnostics do not replace those categories.
   \item The reusable conformance harness passes against the in-memory provider fixture and can be applied to each concrete provider implementation without adding image-specific assertions.
 \end{itemize}
 
