@@ -248,7 +248,7 @@ Validate whether actor isolation and revision compare-and-swap can be represente
 
 ## ADR-009 — Layer identity is scoped to an image
 
-**Status:** Proposed
+**Status:** Baseline
 
 ### Decision
 
@@ -260,9 +260,9 @@ When deriving a new image, unchanged logical layers may retain their local Layer
 
 Layer references cannot accidentally resolve against the wrong image. Sharing the same physical resource does not imply that two document layers have the same logical identity.
 
-### Open validation
+### Validation
 
-Confirm that preserving local IDs across derived images matches the intended identity semantics for serialization, annotations, and external references.
+The initial Swift model implements the scoped pair as LayerReference and tests that identical local LayerID values in different ImageID scopes are distinct references. Serialization and annotation persistence remain separate future concerns.
 
 ---
 
@@ -421,6 +421,50 @@ The common resolver first checks provider/device facts from the environment snap
 
 An implementation can require work submission or resource allocation without assuming every context created by the same provider exposes that capability. Different contexts from one provider/device may advertise different capabilities.
 
+---
+
+## ADR-017 — Typed image semantics and checked pixel storage descriptors
+
+**Status:** Baseline for the initial descriptor model
+
+### Decision
+
+Keep image meaning in ImageProcessingProtocol and generic allocation/lifetime in GeneralExecutionProtocol.
+
+The initial image-domain model includes:
+
+- ImageIdentifier, LayerIdentifier, LayerReference, ImageRevision, ImageExtent, and ImageCanvasDescriptor;
+- immutable ImageDocumentSnapshot containing the image identity, revision, canvas, and ordered layer descriptors;
+- LayerContentDescriptor variants for raster, mask, label map, and annotation content;
+- PixelDataDescriptor containing component type, channel identities/roles, explicit color or scientific interpretation, channel ranges, and storage layout.
+
+Color interpretation explicitly identifies color space, channel model (gray, RGB, YCbCr, or named custom model), transfer function, and alpha mode. Scientific interpretation can identify a measurement unit and does not acquire an implicit color space.
+
+Storage layout is interleaved or planar. Every plane describes byte offset, row/pixel/slice strides, channel mapping, and spatial subsampling. The descriptor validates channel mapping, stride sufficiency, and arithmetic overflow, then calculates the minimum required storage capacity. Binding that descriptor to one or more generic ExecutionResource handles is a separate responsibility.
+
+### Invariants
+
+- LayerIdentifier is unique within one ImageIdentifier; a LayerReference contains both identities.
+- ImageRevision never wraps; overflow is an explicit error.
+- ImageDocumentSnapshot is immutable and rejects duplicate layer IDs and foreign layer references.
+- Pixel/channel/color/scientific semantics never enter GeneralExecutionProtocol.
+- Raster, mask, label-map, and annotation semantics remain distinct.
+- Label maps require one integer label-identifier channel.
+- A mask is a single scientific channel with explicit binary/coverage/probability semantics.
+- A pixel descriptor does not own or allocate memory. Its minimum storage requirement is checked against the actual resource binding.
+- Unknown channel ranges remain unknown; a descriptor does not infer numerical values from the component type.
+
+### Consequence
+
+Image-domain meaning is validated before runtime qualification, while execution resources remain provider-neutral. The current immutable snapshot is a value descriptor, not yet the mutable Image handle or its concurrency/commit implementation.
+
+### Deferred
+
+- Mapping a logical multi-plane descriptor to one resource or a set of independently allocated plane resources.
+- World-coordinate transforms and registration between layers with different spatial extents.
+- Mutable Image actor/state-owner API and revision-checked commit mechanics.
+- Per-operation default color spaces, resampling defaults, and scientific-unit conversion policies.
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
@@ -429,8 +473,8 @@ An implementation can require work submission or resource allocation without ass
 - [x] Separate environment discovery/telemetry from resolver evaluation.
 - [x] Define candidate identity as implementation plus execution binding.
 - [x] Define hard/soft policy semantics and conflict validation.
-- [ ] Validate Image reference/state ownership and concurrent replacement API.
-- [ ] Validate layer identity and reference semantics.
+- [ ] Validate mutable Image reference/state ownership and concurrent replacement API; only immutable document snapshots and revision values exist so far.
+- [x] Establish document-scoped layer identity and test that references include ImageIdentifier.
 - [ ] Validate Swift package targets and the initial OS/architecture/toolchain matrix.
 - [ ] Validate the first operation families' color and scientific-data contracts.
 - [x] Defer a dynamic plug-in loader until a concrete deployment requirement exists.
