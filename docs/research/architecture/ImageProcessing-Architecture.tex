@@ -782,31 +782,40 @@ These inputs are complementary, not competing preference sets. The operation spe
 
 The functional pipeline MAY expose a fluent configuration extension that builds an immutable policy value. It configures the common resolver; it does not inject code into an operation or implementation class.
 
-Illustrative API (names and overloads are provisional):
+The current Swift API attaches the immutable policy to an \texttt{ImageFunction} value. It configures the common resolver; it does not inject code into an operation or implementation class.
 
 \begin{lstlisting}
-let pipeline = ImagePipeline {
-    GaussianBlur(sigma: 1.5)
-    ColorCorrection(...)
-    Resize(width: 1024, height: 768)
-}
-.qualifying {
-    // Hard requirement applied to applicable numeric operations.
-    .require(.precision(.computation, .fp32))
+let correction = ImageFunction(operation: ColorCorrection(...))
+let blur = ImageFunction(
+    operation: GaussianBlur(sigma: 1.5),
+    stepIdentifier: blurStep
+)
+let resize = ImageFunction(operation: Resize(width: 1024, height: 768))
 
-    // Soft objective: rank valid candidates for end-to-end latency.
-    .prefer(.lowLatency)
+let pipeline = try correction
+    .followed(by: blur)
+    .followed(by: resize)
+    .qualifying { policy in
+        policy.require(.precision(.computation, .float32))
+        policy.prefer(.lowLatency, priority: 10)
 
-    // Optional rule scoped to a particular operation type/step.
-    .for(GaussianBlur.self) {
-        .require(.borderMode(.reflect))
+        policy.forStep(blurStep) {
+            $0.require(.executionCapability(
+                .init(scope: .context, requirement: .exact(.workSubmission, .boolean(true)))
+            ))
+        }
     }
-}
 \end{lstlisting}
 
-A pipeline-wide requirement is inherited by all applicable operations. An operation-scoped policy narrows or refines the policy for that operation occurrence/type. Composition preserves step-scoped policy and does not leak one operation's local preference into unrelated steps. The builder validates that each policy dimension applies to its target operations; ambiguous applicability must produce a diagnostic rather than be silently ignored.
+\texttt{QualificationPolicyBuilder} has separate \texttt{require} and \texttt{prefer} methods. Requirements include exact/allowed provider identities, generic execution-capability constraints, dimensioned precision requirements, and deterministic-result guarantees. Preferences identify objectives such as low latency, low memory, low energy, high throughput, and deterministic results; explicit priority and optional positive finite weight control trade-offs.
 
-The policy is independent of concrete provider names by default. The caller normally states a requirement or objective such as FP32 computation, low latency, low memory use, deterministic results, or bounded energy. The resolver discovers which implementation/provider combination best satisfies it. An explicit provider restriction MAY exist for reproducibility or deployment control, but it is a hard constraint, not a platform-conditioned preference.
+The supported scopes are pipeline-wide and a concrete \texttt{OperationStepIdentifier}. A step-scoped declaration applies only to that operation occurrence. The builder retains a unique declaration identity and optional source label so later diagnostics can report where each constraint came from. Reusing a function while composing it reidentifies the copied step occurrences and rebases their step-scoped policy declarations to the new occurrence identities. Pipeline-scoped declarations remain pipeline-scoped.
+
+Precision is an operation-applicability dimension. An \texttt{OperationSpecification} declares which policy dimensions it exposes. A precision requirement scoped to one step is rejected if that step does not declare precision applicability. A pipeline precision requirement is rejected when no step in the function exposes that dimension; numerical operations consume it, while metadata-only operations do not claim numerical precision semantics.
+
+The builder validates step references, allowed-provider and allowed-precision intersections, capability requirement type compatibility, preference consistency at the same scope, weight validity, and dimension applicability. Effective provider/precision intersections are checked for the pipeline and for each step after applying inherited pipeline declarations. This catches three-way empty intersections that pairwise checks alone would miss. Conflict diagnostics retain all prior declarations contributing to the empty intersection and the incoming conflicting declaration. An empty intersection is rejected when building or composing the function.
+
+A pipeline-wide requirement is inherited by every applicable operation. Composition preserves step-scoped requirements/preferences without leaking one operation's local preference into unrelated steps. Preferences are not intersected as sets: different priorities can be used at pipeline and step scopes, while contradictory declarations for the same objective at the same scope are rejected. The immutable policy remains attached to the function; execution and candidate ranking are still the responsibility of the not-yet-implemented runtime.
 
 \subsection{Requirements and preferences are different}
 
