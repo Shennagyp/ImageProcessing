@@ -62,6 +62,7 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
     public let precisionContract: OperationPrecisionContract
     public let numericalContract: OperationNumericalContract?
     public let effectContract: OperationEffectContract
+    public let layerContract: OperationLayerContract
     private let explicitlyDeclaredQualificationDimensions: Set<OperationQualificationDimension>
 
     public init(
@@ -71,7 +72,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         parameterSpecifications: [OperationParameterSpecification] = [],
         precisionContract: OperationPrecisionContract = .none,
         numericalContract: OperationNumericalContract? = nil,
-        effectContract: OperationEffectContract = .pure
+        effectContract: OperationEffectContract = .pure,
+        layerContract: OperationLayerContract = .none
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
@@ -81,6 +83,7 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         self.precisionContract = precisionContract
         self.numericalContract = numericalContract
         self.effectContract = effectContract
+        self.layerContract = layerContract
         self.parameterSpecifications = parameterSpecifications
 
         var dimensions = qualificationDimensions
@@ -131,7 +134,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             parameterSpecifications: parameterSpecifications,
             precisionContract: precisionContract,
             numericalContract: numericalContract,
-            effectContract: effectContract
+            effectContract: effectContract,
+            layerContract: layerContract
         )
     }
 }
@@ -147,6 +151,7 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let precisionContract: OperationPrecisionContract
     public let numericalContract: OperationNumericalContract?
     public let effectContract: OperationEffectContract
+    public let layerContract: OperationLayerContract
 
     public func validateContract() throws {
         let precisionDimensions = Set(qualificationDimensions.filter {
@@ -189,7 +194,8 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         parameterSpecifications: [OperationParameterSpecification] = [],
         precisionContract: OperationPrecisionContract = .none,
         numericalContract: OperationNumericalContract? = nil,
-        effectContract: OperationEffectContract = .pure
+        effectContract: OperationEffectContract = .pure,
+        layerContract: OperationLayerContract = .none
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
@@ -202,6 +208,7 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         self.precisionContract = precisionContract
         self.numericalContract = numericalContract
         self.effectContract = effectContract
+        self.layerContract = layerContract
     }
 }
 
