@@ -4,25 +4,43 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-This repository contains the proposed architecture baseline (0.3) and a phase-gated implementation plan (0.2). These are design documents; they are not evidence that the described protocols, resolver, or runtime have already been implemented.
+The repository contains the architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), and the initial SwiftPM protocol foundation. The implementation is in progress; the runtime, image/resource model, generic submission lifecycle, and concrete image operations are not yet complete.
+
+See [Implementation Status](docs/project_management/Implementation-Status.md) for the exact implemented and pending scope. Do not treat a package skeleton or a related type as evidence that a full phase is complete.
 
 ## Architecture
 
 - **Image documents and typed layers** are separate from physical pixel storage and execution residency.
 - **Operation definitions** are separate from concrete implementation classes. One operation, such as Gaussian blur, can have CPU, CUDA, Metal, OpenCV, or other independent implementations.
-- **Operation specifications** describe semantic requirements and permitted behavior. **Implementation specifications** describe the tested capabilities, precision modes, provider requirements, parameter limits, and resource characteristics of one implementation.
+- **Operation specifications** describe semantic requirements and permitted behavior. **Implementation specifications** describe tested support, precision modes, provider requirements, parameter limits, and resource characteristics of one implementation.
 - **ImageProcessingProtocol** is the primary image-domain contract. **GeneralExecutionProtocol** is the lower-level, image-agnostic execution contract it consumes.
-- **Execution providers** (CPU, Metal, CUDA, OpenCL, Direct3D 12, potentially Vulkan) are distinct from **operation-implementation packages** (for example, CPU/GPU Gaussian blur implementations or OpenCV adapters).
-- Static implementation support is distinct from the live execution environment: discovered providers/devices, capabilities, availability, memory pressure, queue state, and telemetry freshness.
-- A **common resolver** evaluates operation semantics, implementation specifications, current environment observations, and declarative pipeline policy. Implementations publish specifications; they do not each implement custom qualification functions.
-- Pipeline qualification is fluent and declarative. Requirements filter candidates; preferences rank only eligible candidates. Contradictory policies are rejected during construction or composition with diagnostics preserving their origins.
-- Platform is discovered as an environmental fact; there is no hard-coded platform-to-provider preference table. A low-latency preference may route to CPU when a compatible GPU is busy, but a required provider or precision mode cannot be silently relaxed.
-- The core protocols/runtime do not depend on concrete implementation packages. The consuming application selects and registers provider packs and operation-implementation packs.
+- **Execution providers** are distinct from **operation-implementation packages**. The consuming application selects and registers both.
+- A **common resolver** will evaluate operation semantics, implementation specifications, current environment observations, and declarative pipeline policy. Implementations publish specifications; they do not each implement custom qualification functions.
+- Pipeline qualification is fluent and declarative. Requirements filter candidates; preferences rank only eligible candidates. Conflicting policies are rejected during construction or composition with diagnostics preserving their origins.
+- Platform and current hardware state are environmental facts, not hard-coded platform-to-provider preference rules. A low-latency preference may route to CPU when a compatible GPU is busy, but a required provider or precision mode cannot be silently relaxed.
 - The public processing model is operation-oriented and compositional. No node editor or visual graph frontend is part of the design.
+
+## Swift package products
+
+The root SwiftPM package currently publishes two modules:
+
+- `GeneralExecutionProtocol` — provider/device identity, generic capability requirements, environment observations, and provider/device context contracts.
+- `ImageProcessingProtocol` — typed operation specifications and the generic operation-implementation contract.
+
+`ImageProcessingProtocol` depends on `GeneralExecutionProtocol`. The generic execution module has no image-processing dependency. `ImageProcessingRuntime` and concrete provider/operation implementation packages have not yet been added.
+
+## Build and test
+
+Requires Swift 6.2.1 or a compatible Swift 6 toolchain. Xcode IDE projects are not required; Swift Package Manager command-line commands are the canonical workflow:
+
+    swift build
+    swift test
+
+CI builds and tests the core package on Linux and macOS. Provider-specific packages will have their own platform and hardware test requirements.
 
 ## Architecture decisions
 
-The [Architecture Decision Register](docs/research/architecture/decisions/Decision-Register.md) records the Phase 0 working baseline, proposed public-API decisions, and deliberately deferred questions. It is the companion decision log for the architecture paper.
+The [Architecture Decision Register](docs/research/architecture/decisions/Decision-Register.md) records the Phase 0 working baseline, proposed public-API decisions, and deliberately deferred questions.
 
 ## Design paper
 
@@ -30,25 +48,22 @@ The authoritative design baseline is:
 
 - [ImageProcessing — Architecture and Semantic Contracts](docs/research/architecture/ImageProcessing-Architecture.tex)
 
-## Building the paper
-
-Requires a standard LaTeX installation with latexmk, pdflatex, and the packages used by the source (including lmodern, microtype, geometry, amsmath, booktabs, tabularx, enumitem, listings, fancyhdr, hyperref, and cleveref).
+## Building the design documents
 
 Build the architecture paper from the repository root:
 
     latexmk -pdf -interaction=nonstopmode -halt-on-error docs/research/architecture/ImageProcessing-Architecture.tex
 
-Build the phased implementation plan from its document directory (its section files are included by relative path):
+Build the implementation plan from its document directory because its section files are included by relative path:
 
     cd docs/project_management
     latexmk -pdf -interaction=nonstopmode -halt-on-error Implementation-Plan.tex
 
-The generated PDFs are build artifacts; the committed .tex entry points and included section sources are canonical.
+The generated PDFs are build artifacts; the committed `.tex` entry points and included section sources are canonical.
 
 ## Implementation plan
 
-The phase-gated core-library roadmap is:
-
 - [Implementation Plan — Phases, Deliverables, and Acceptance Gates](docs/project_management/Implementation-Plan.tex)
+- [Implementation Status](docs/project_management/Implementation-Status.md)
 
-The roadmap covers Phase 0 (architecture decisions) through Phase 9 (production readiness). Concrete execution providers and operation implementations are independent packages/workstreams, not sequential phases of core-library development. Each core phase defines deliverables, exit criteria, and constraints on what must not be started prematurely.
+The core-library roadmap covers Phase 0 through Phase 9. Concrete execution providers and operation implementations are independent packages/workstreams, not sequential phases of core-library development.
