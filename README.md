@@ -4,7 +4,7 @@ A cross-platform image-processing library focused on a stable semantic API over 
 
 ## Project status
 
-The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner and revision-scoped resource bindings exist, while processing composition, runtime resolution, and concrete image operations are not yet complete.
+The repository contains architecture baseline (0.3), the Phase 0 decision register, the phase-gated implementation plan (0.2), the generic execution contracts, and the first immutable image/layer/pixel descriptor model, including explicit affine layer-to-canvas registration. The implementation is in progress; the thread-safe Image state owner and revision-scoped resource bindings exist, while function execution, qualification policy, runtime resolution, and concrete image operations are not yet complete.
 
 See [Implementation Status](docs/project_management/Implementation-Status.md) for the exact implemented and pending scope. Do not treat a package skeleton or a related type as evidence that a full phase is complete.
 
@@ -36,7 +36,7 @@ Requires Swift 6.2.1 or a compatible Swift 6 toolchain. Xcode IDE projects are n
     swift build
     swift test
 
-The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 80-test suite (12 suites), including plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting a green cross-platform CI run. Provider-specific packages will have their own platform and hardware test requirements.
+The GitHub Actions Swift 6.2.1 matrix previously passed on Ubuntu 24.04 and macOS with 22 tests. A later 53-test image-domain/spatial/chroma-siting suite was verified locally on Linux. The current 86-test suite (13 suites), including typed function composition, plane/resource alignment, layer storage bindings, and concurrent Image replacement, is awaiting a green cross-platform CI run. Provider-specific packages will have their own platform and hardware test requirements.
 
 ## Architecture decisions
 
