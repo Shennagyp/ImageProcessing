@@ -337,7 +337,11 @@ PixelResource
   OwnershipAndLifetime
 \end{lstlisting}
 
-The exact concrete Swift types remain an API-design decision. The semantic separation is not optional: image identity, layer identity, and resource identity answer different questions.
+The initial Swift domain surface uses immutable value descriptors: \texttt{ImageIdentifier}, \texttt{ImageRevision}, \texttt{ImageCanvasDescriptor}, \texttt{LayerIdentifier}, \texttt{LayerDescriptor}, and \texttt{ImageDocumentSnapshot}. These descriptors establish identity and semantic invariants without prematurely fixing the mutable public \Image{} handle or its actor/transaction implementation.
+
+An \texttt{ImageIdentifier} identifies one logical document. A \texttt{LayerIdentifier} is unique within that document; an external layer reference is the pair \texttt{(ImageIdentifier, LayerIdentifier)}. Two derived documents may retain the same local layer identifier for unchanged logical layers because their image identifiers differ. A \texttt{PixelResource} identity is separate again: two layer references may share one immutable allocation, and one logical layer may refer to a replacement allocation in a later revision.
+
+\texttt{ImageRevision} is monotonically increasing and detects exhaustion rather than wrapping. \texttt{ImageDocumentSnapshot} is an immutable value containing document identity, revision, canvas extent, and ordered layer descriptors. It rejects duplicate layer identifiers and refuses to resolve a layer reference belonging to another image. This snapshot is the input boundary for processing; mutable image ownership, optimistic replacement commit, and concurrency control remain a separate decision recorded in the Architecture Decision Register.
 
 \subsection{Layer kinds and semantics}
 
@@ -353,7 +357,7 @@ Annotation & Points, paths, contours, boxes, measurements, text anchors & Geomet
 \bottomrule
 \end{longtable}
 
-This is a semantic classification, not a requirement to create a deep class-inheritance hierarchy. Prefer a small shared layer identity/property contract with typed content representations. Composition and tagged content are often safer than a sprawling subclass tree. A layer type MUST NOT inherit raster-only assumptions merely to reuse a common base class.
+This is a semantic classification, not a requirement to create a deep class-inheritance hierarchy. Prefer a small shared layer identity/property contract with typed content representations. Composition and tagged content are often safer than a sprawling subclass tree. A layer type MUST NOT inherit raster-only assumptions merely to reuse a common base class. The initial tagged content model is \texttt{LayerContentDescriptor}: \texttt{raster}, \texttt{mask}, \texttt{labelMap}, or \texttt{annotation}. Mask descriptors require one scientific channel and declare binary, coverage, or probability semantics; a known coverage/probability range must remain within the unit interval. Label-map descriptors require one integer channel explicitly marked as a label identifier and reference a label-set identity. Annotation descriptors identify their schema and coordinate space (pixel, normalized canvas, or a named world coordinate system). These constraints keep label values discrete and annotations separate from raster storage.
 
 Adjustment or procedural layers may be useful later, but they should not be part of the first implementation until evaluation order, parameter persistence, blending, and export semantics are specified.
 
@@ -367,17 +371,24 @@ The image's displayed composite is a rendering result. It is not a replacement f
 
 A \PixelResource{} refers to the numerical content used by a layer. It separates logical content from its physical allocation. A resource may refer to host memory, a Metal texture, a CUDA allocation, an OpenCL memory object, a Direct3D resource, an OpenCV allocation, or an externally owned camera buffer. The semantic descriptor belongs to \texttt{ImageProcessing\allowbreak Protocol}; the opaque execution allocation/handle belongs to \texttt{GeneralExecution\allowbreak Protocol}. The former says what the bytes mean (shape, format, channels, precision, color or scientific interpretation); the latter says how the allocation is owned, accessed, submitted to, synchronized, imported, or released. The image protocol may hold or reference a generic execution resource, but the general execution protocol must never acquire pixel or layer semantics.
 
+The first \texttt{PixelDataDescriptor} is a validated semantic/storage-layout descriptor, not a data allocation. It carries an \texttt{ImageExtent} (width, height, and depth), component type, ordered channel descriptors, data interpretation, and an explicit storage layout. A pixel channel has a stable channel identifier, semantic role, and optional declared numerical value range.
+
+Color and scientific data are separate interpretations. Color interpretation explicitly states color-space identity, channel model, transfer function, and alpha mode. The initial channel-model vocabulary includes grayscale, RGB, YCbCr, and named custom models such as CMYK or Lab; physical channel order is represented separately through the plane mapping. Scientific interpretation may carry a measurement-unit identity and does not invent a color space. The component type (UInt8/UInt16/UInt32, Int16/Int32, FP16/FP32/FP64) does not by itself establish the numerical range or meaning.
+
+Storage layout is either interleaved or planar. Each plane records byte offset, row stride, slice stride, pixel stride, spatial subsampling factors, and the channel indices stored in that plane. This permits channel order to differ from semantic order (for example BGR), supports planar/subsampled YCbCr, and represents volumetric planes. The descriptor verifies that every channel is mapped exactly once, strides can contain each plane, and size arithmetic does not overflow. It calculates the minimum byte capacity required by the described layout; a later resource binding checks that the actual generic execution resource is large enough. The current descriptor describes planes within one byte-addressable storage block; separate allocations for separate planes require an explicit multi-resource binding in a later resource-integration step.
+
 The descriptor MUST separate at least the following dimensions:
 \begin{itemize}
-  \item width, height, depth/volume extent where applicable, and plane count;
-  \item component type and precision (for example integer, FP16, FP32, or FP64 where supported);
-  \item channel count and channel model/order;
-  \item memory layout, row/plane stride, alignment, and offset;
-  \item numeric range and interpretation;
-  \item color space and transfer function when the data represents color;
-  \item alpha mode (none, straight, or premultiplied) when alpha is present;
-  \item ownership, mutability, lifetime, and synchronization state.
+  \item width, height, depth/volume extent, and explicit spatial subsampling per plane;
+  \item component type and precision (integer, FP16, FP32, or FP64 where supported);
+  \item channel identity, role, channel model, and physical channel mapping;
+  \item interleaved or planar storage, byte offset, row/pixel/slice strides, and alignment requirements;
+  \item optional per-channel numerical range and scientific measurement unit;
+  \item color-space identity, transfer function, and explicit channel model for color data;
+  \item alpha mode (none, straight, or premultiplied) when alpha is present.
 \end{itemize}
+
+The semantic descriptor does not own the underlying storage. Ownership, mutability, residency, synchronization, and asynchronous lifetime are properties of the resource binding defined through \texttt{GeneralExecution\allowbreak Protocol}. \texttt{PixelDataDescriptor.validateStorageCapacity} verifies the byte capacity of a bound resource against the precomputed minimum; it does not allocate, retain, import, or synchronize that resource.
 
 A color space is not a synonym for a pixel format. An RGBA32F buffer does not, by itself, specify whether RGB is linear or transfer-encoded, whether values are scene-referred or display-referred, or how alpha is interpreted. Scientific intensity data may have no color space at all. The model must allow that without inventing an RGB interpretation.
 
