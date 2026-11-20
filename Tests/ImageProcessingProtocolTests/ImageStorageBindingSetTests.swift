@@ -91,7 +91,7 @@ struct ImageStorageBindingSetTests {
             bindings: [LayerPixelStorageBinding(reference: reference, storage: storage)]
         )
 
-        #expect(try set.binding(for: reference) != nil)
+        #expect(try set.binding(for: reference).map { _ in true } == true)
         #expect(set.boundLayerCount == 1)
         #expect(try set.unboundPixelLayers(in: snapshot).isEmpty)
     }
