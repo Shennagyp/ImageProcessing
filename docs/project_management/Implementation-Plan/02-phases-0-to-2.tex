@@ -67,6 +67,7 @@
 \begin{enumerate}
   \item Provider identity/version and platform-aware provider discovery.
   \item Device identity, properties, supported features, execution contexts, and static capability descriptors.
+  \item Context-local capability descriptors and standardized generic capability identifiers for allocation/import, work submission/dependencies, and synchronization. Context-scoped requirements are checked against the actual created context.
   \item Generic resource identifiers scoped by execution target, descriptors for buffer/texture/opaque resource kinds, capacity/alignment/memory-domain metadata, and validated allocation requests.
   \item Optional allocation/import context capabilities. Imported handles retain their source resources; no image/pixel semantics enter \GEP{}.
   \item Resource access declarations for read, write, and read/write use, with reference-based lifetime semantics.
@@ -87,6 +88,7 @@
   \item A submitting provider retains the work item and declared resources until completion, even if caller references are dropped.
   \item Dependencies complete successfully before dependent work starts; failed dependencies do not silently execute dependent work.
   \item Typed submission output is valid after successful completion. Cancellation and provider errors preserve resource lifetime until work is no longer in use.
+  \item Context-scoped capability requirements are checked against the created context and cannot be satisfied by a provider/device declaration alone.
   \item Optional synchronization is scoped and does not require every provider to expose the same native primitive.
   \item Native provider differences remain behind optional/provider-specific capabilities; no universal command-buffer fiction is introduced.
   \item Stale or unknown state is never misreported as current or idle.
