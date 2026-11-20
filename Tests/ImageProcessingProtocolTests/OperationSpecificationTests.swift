@@ -169,3 +169,52 @@ struct OperationSpecificationTests {
         #expect(erased.layerContract == specification.layerContract)
     }
 }
+
+
+extension OperationSpecificationTests {
+    @Test
+    func pixelBackedLayerKindsRequireMatchingPixelRepresentationDomains() throws {
+        let specification = OperationSpecification<SpecificationInput, SpecificationOutput>(
+            identifier: identifier(),
+            semanticVersion: version(),
+            layerContract: OperationLayerContract(
+                acceptedInputKinds: [.raster],
+                producedOutputKinds: [.mask]
+            )
+        )
+
+        #expect(throws: OperationSpecificationValidationError.invalidPixelDataContract) {
+            try specification.validateContract()
+        }
+    }
+
+    @Test
+    func annotationOnlyLayerContractDoesNotRequirePixelStorage() throws {
+        let specification = OperationSpecification<SpecificationInput, SpecificationOutput>(
+            identifier: identifier(),
+            semanticVersion: version(),
+            layerContract: OperationLayerContract(
+                acceptedInputKinds: [.annotation],
+                producedOutputKinds: [.annotation]
+            )
+        )
+
+        try specification.validateContract()
+    }
+
+    @Test
+    func requiredEffectsMustBeWithinPermittedEffects() {
+        let specification = OperationSpecification<SpecificationInput, SpecificationOutput>(
+            identifier: identifier(),
+            semanticVersion: version(),
+            effectContract: OperationEffectContract(
+                requiredEffects: [.randomness],
+                permittedEffects: [.externalIO]
+            )
+        )
+
+        #expect(throws: OperationSpecificationValidationError.invalidEffectContract) {
+            try specification.validateContract()
+        }
+    }
+}
