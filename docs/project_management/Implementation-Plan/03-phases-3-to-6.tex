@@ -15,11 +15,11 @@
   \item The generic associated-type implementation protocol and public specification descriptors.
   \item Typed sequential ImageFunction<Input,Output> composition, a zero-step identity function, and heterogeneous operation-step descriptors carrying immutable operation instances/specifications.
   \item Unique per-occurrence OperationStepIdentifier values; right-hand steps are reidentified during composition while source identifiers remain available for diagnostics.
-  \item A fluent \texttt{qualifying} builder that produces an immutable normalized \texttt{QualificationPolicy}.
+  \item A fluent \texttt{qualifying} builder on \texttt{ImageFunction} that attaches an immutable \texttt{QualificationPolicy}; declarations retain scope and source provenance.
   \item Separate policy fields for hard requirements and optimization preferences; precision policies identify storage, computation, accumulation, or output precision.
-  \item A builder that prevents contradictory values from accumulating in the same policy dimension and reports conflicts with declaration provenance.
-  \item Composition rules: pipeline-wide hard requirements apply to applicable steps; operation/step policies remain scoped; hard allowed sets combine by intersection; preferences combine only through explicit objective/priority/weight semantics.
-  \item Applicability validation so a pipeline rule cannot be silently ignored by an operation that does not expose the constrained semantic dimension.
+  \item A builder that validates provider/precision allowed-set intersections at effective pipeline/step scope, detects incompatible execution-capability value requirements, validates finite positive preference weights, and rejects contradictory same-objective preferences at one scope.
+  \item Composition rules: pipeline-wide hard requirements apply to applicable steps; step policies remain scoped and are rebased when the right-hand function's step occurrences are reidentified; hard allowed sets combine by intersection; preferences combine only through explicit objective/priority/weight semantics.
+  \item Applicability validation through OperationSpecification. A step-scoped precision rule is rejected for a step without precision applicability; a pipeline precision rule is rejected if no step exposes that dimension.
   \item Private type-erasure adapters for heterogeneous registration while preserving typed public APIs.
   \item Explicit layer/composite targets and new-image/replacement result semantics.
 \end{enumerate}
@@ -38,6 +38,9 @@
   \item Identity composition leaves the sequence unchanged and no operation executes during composition.
   \item Builder tests reject incompatible required precision/provider declarations and contradictory objective declarations at construction/finalization.
   \item Composition tests reject empty intersections and report both conflicting sources and the affected operation/step.
+  \item Policy tests cover three-way allowed-set intersections (not only pairwise conflicts), execution-capability value-type conflicts, unknown step scopes, duplicate step IDs, invalid weights, and same-scope objective conflicts.
+  \item Pipeline and step preferences for the same objective may use different priorities without leaking scope; differing priorities at the same scope are rejected.
+  \item Right-hand step-scoped policy declarations are rebased to the new occurrence IDs when functions are composed.
   \item A valid pipeline-level FP32 computation requirement is preserved through composition and is not silently weakened by a local preference.
   \item Public APIs expose no provider-native resource classes and no public node/graph editor model.
 \end{itemize}
