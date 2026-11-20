@@ -113,7 +113,7 @@ struct ExecutionProviderRegistryTests {
             "provider.b"
         ])
 
-        #expect(throws: ExecutionProviderRegistryError.duplicateProvider(providerID("provider.a"))) {
+        await #expect(throws: ExecutionProviderRegistryError.duplicateProvider(providerID("provider.a"))) {
             try await registry.register(second)
         }
     }
