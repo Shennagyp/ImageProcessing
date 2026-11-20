@@ -13,7 +13,8 @@
   \item PixelStorageBinding maps every plane exactly once to one or more generic ExecutionResource handles, supports shared-allocation or per-plane allocation topology, checks capacity per assigned resource, and retains resource handles.
   \item ImageStorageBindingSet associates layer storage bindings with one exact ImageIdentifier/ImageRevision, verifies layer content/PixelDataDescriptor identity, and reports unbound pixel layers without rejecting non-resident document content.
   \item The generic associated-type implementation protocol and public specification descriptors.
-  \item Typed sequential function composition with stable operation/step identity for policy scope and diagnostics.
+  \item Typed sequential ImageFunction<Input,Output> composition, a zero-step identity function, and heterogeneous operation-step descriptors carrying immutable operation instances/specifications.
+  \item Unique per-occurrence OperationStepIdentifier values; right-hand steps are reidentified during composition while source identifiers remain available for diagnostics.
   \item A fluent \texttt{qualifying} builder that produces an immutable normalized \texttt{QualificationPolicy}.
   \item Separate policy fields for hard requirements and optimization preferences; precision policies identify storage, computation, accumulation, or output precision.
   \item A builder that prevents contradictory values from accumulating in the same policy dimension and reports conflicts with declaration provenance.
@@ -33,7 +34,8 @@
   \item Pixel storage-binding tests cover one shared allocation, independent per-plane allocations, capacity validation, complete/unique plane assignment, duplicate resource grouping, resource base-alignment compatibility, and retained handle lifetime.
   \item ImageStorageBindingSet tests reject foreign/unknown/annotation layers, duplicate bindings, descriptor mismatch, and stale revision association; partial sets report unbound pixel layers.
   \item Operation tests prove immutable parameters and versioned semantic identity.
-  \item Composition rejects incompatible input/output contracts and preserves policy scope.
+  \item Composition enforces exact generic input/output type compatibility, preserves step order, and produces unique occurrence IDs when functions are reused.
+  \item Identity composition leaves the sequence unchanged and no operation executes during composition.
   \item Builder tests reject incompatible required precision/provider declarations and contradictory objective declarations at construction/finalization.
   \item Composition tests reject empty intersections and report both conflicting sources and the affected operation/step.
   \item A valid pipeline-level FP32 computation requirement is preserved through composition and is not silently weakened by a local preference.
