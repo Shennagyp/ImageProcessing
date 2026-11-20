@@ -17,7 +17,7 @@ private struct PrecisionAwareOperation: ImageOperation {
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "policy.precision-aware")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
-        qualificationDimensions: [.precision, .deterministicResults]
+        qualificationDimensions: [.inputStoragePrecision, .computationPrecision, .accumulationPrecision, .outputPrecision, .deterministicResults]
     )
 }
 
