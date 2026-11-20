@@ -4,12 +4,12 @@
 \toprule
 \textbf{Field} & \textbf{Definition} \\
 \midrule
-Purpose & Define an executable, phase-gated path from the accepted architecture to a tested and distributable image-processing library. \\
-Authority & The architecture paper \emph{ImageProcessing: Architecture and Semantic Contracts}, baseline 0.2, is the normative design reference. If this plan conflicts with it, the architecture paper governs until both are revised. \\
-Phase completion & Every phase has required artifacts, tests, evidence, and an explicit exit gate. A partially completed phase remains open. \\
+Purpose & Define a dependency-ordered path for implementing the core protocols, declarative qualification model, environment-aware resolver, and execution runtime, while keeping concrete implementations in independent packages. \\
+Authority & The architecture paper \emph{ImageProcessing: Architecture and Semantic Contracts}, baseline 0.3, is the normative design reference. If this plan conflicts with it, the architecture paper governs until both are revised. \\
+Phase completion & Every core phase has required artifacts, tests, evidence, and an explicit exit gate. A partially completed phase remains open. \\
 Schedule & No calendar estimates are assigned. Phase size depends on implementation findings, platform access, available hardware, and test evidence. \\
 Scope exclusion & No node editor, visual graph frontend, or public graph-programming framework is planned. \\
-Implementation principle & Prefer the smallest contract that preserves the required semantics. Do not create abstractions for hypothetical providers or operations without a demonstrated extension need. \\
+Implementation principle & Prefer the smallest contract that preserves semantics. The core defines contracts and runtime behavior; applications select and register external provider and operation-implementation packages. \\
 \bottomrule
 \end{longtable}
 
@@ -17,49 +17,63 @@ Implementation principle & Prefer the smallest contract that preserves the requi
 
 \subsection{The governing dependency direction}
 
-The domain API is the architectural priority. \IPP{} defines images, layers, operations, operation-implementation contracts, and image-specific qualification. It consumes generic execution capabilities from \GEP{}. The latter is deliberately domain-neutral and MUST NOT import or define image-processing concepts.
+The domain API is the architectural priority. \IPP{} defines images, layers, operations, operation specifications, the generic operation-implementation contract, implementation specifications, and declarative qualification-policy types. It consumes generic execution capabilities and environment observations from \GEP{}. The latter is deliberately domain-neutral and MUST NOT import or define image-processing concepts.
 
-The distinction between architectural priority and implementation build order is important. The \IPP{} contract is designed first so that the lower-level execution library is shaped by real domain requirements rather than allowing a generic compute abstraction to dictate the image model. Once those requirements are explicit, \GEP{} is implemented first as a source dependency; \IPP{} then compiles against it.
+The build dependency remains one-way: \IPP{} may import \GEP{}, but \GEP{} must never import \IPP{}. The runtime integrates the two. Concrete execution providers implement \GEP{}; concrete image-operation classes implement \IPP{}. Both kinds of package are selected by the consuming application.
 
 \begin{center}
 \begin{tabularx}{0.94\textwidth}{@{}>{\centering\arraybackslash}X@{}}
-\fbox{\parbox{0.87\textwidth}{\centering\textbf{Domain contract first}\quad \IPP{}\\[2pt] Image, Layer, Operation, implementation contract, qualifying function}}\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Image domain contracts}\quad \IPP{}\\[2pt] Operation semantics, operation specifications, implementation contract/specifications, composition and policy}}\\[6pt]
 $\Downarrow$\\[6pt]
-\fbox{\parbox{0.87\textwidth}{\centering\textbf{Generic execution dependency}\quad \GEP{}\\[2pt] Provider, Device, Context, Resource, Submission, Completion, Synchronization}}\\[6pt]
-$\Downarrow$\\[6pt]
-\fbox{\parbox{0.87\textwidth}{\centering\textbf{Domain runtime and implementation adapters}\quad \IPR{}\\[2pt] Registry, Qualification, Selection, Execution, Image result/replace}}\\[6pt]
-$\Downarrow$\\[6pt]
-\fbox{\parbox{0.87\textwidth}{\centering\textbf{Execution technologies and libraries}\\[2pt] CPU, Metal, CUDA, OpenCL, Direct3D 12; OpenCV, Core Image, Accelerate, model runtimes}}
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Generic execution contracts}\quad \GEP{}\\[2pt] Providers, devices, resources, static capabilities, availability and state observations}}\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Runtime and resolver}\quad \IPR{}\\[2pt] Registration, environment snapshots, qualification, routing, planning, execution and result publication}}\\[6pt]
+\fbox{\parbox{0.87\textwidth}{\centering\textbf{Application-selected packages}\\[2pt] Provider packs and operation-implementation packs, registered without modifying the core}}
 \end{tabularx}
 \end{center}
 
-The arrows show the conceptual dependency and integration direction, not necessarily the order in which each source file is written. In particular, no provider protocol is allowed to become image-aware merely to simplify an adapter.
+This diagram separates three different things that must not be collapsed:
+\begin{itemize}
+  \item an \textbf{operation}, such as \texttt{GaussianBlur}, defines what the result means;
+  \item an \textbf{operation implementation}, such as \texttt{CUDAGaussianBlur}, implements that operation and declares its static support;
+  \item an \textbf{execution provider}, such as CUDA or Metal, supplies generic execution resources and lifecycle.
+\end{itemize}
 
-\subsection{Phase map}
+One operation may have multiple implementation classes. Many implementations may use one provider. A managed algorithm library may act as an opaque implementation/runtime adapter rather than as a general provider.
+
+\subsection{Core phase map}
 
 \begin{longtable}{@{}L{0.08\textwidth}L{0.27\textwidth}p{0.54\textwidth}@{}}
 \toprule
 \textbf{Phase} & \textbf{Name} & \textbf{Completion outcome} \\
 \midrule
-0 & Contract decisions and repository foundation & Open design decisions are resolved or explicitly deferred; CI, package boundaries, and architecture decision records are established. \\
-1 & \IPP{} domain contract & Stable first-version contracts for image/layer semantics, operation objects, implementation declarations, and qualification. \\
-2 & \GEP{} generic execution contract & Minimal provider, device, resource, submission, completion, and synchronization contracts, verified by a fake provider. \\
-3 & \IPP{} core implementation & Image/layer/resource descriptors and operation/composition types compile and enforce their domain invariants. \\
-4 & Reference CPU provider & A CPU implementation passes the generic execution-provider lifecycle tests. \\
-5 & Core operations and CPU references & The initial operation set has frozen semantics, CPU implementations, and a reusable conformance suite. \\
-6 & \IPR{} qualification and execution runtime & Registry, qualification, selection, execution, diagnostics, and atomic image result/replace are integrated. \\
-7 & Apple implementations & CPU/Accelerate, Core Image adapters, and native Metal provider/kernels are integrated without changing public semantics. \\
-8 & OpenCV and C/C++ interoperability & OpenCV implementations can be used through adapters with explicit storage and lifetime boundaries. \\
-9 & CUDA and OpenCL providers & Native heterogeneous providers and operation implementations are qualified and tested on supported hardware. \\
-10 & Direct3D 12 and optional Vulkan & Additional platform providers are added only with a verified platform/test matrix. \\
-11 & Model and inference integration & ONNX Runtime and/or Core ML are integrated as model runtimes, not confused with low-level compute providers. \\
-12 & Planner optimization and production hardening & End-to-end routing, memory behavior, packaging, diagnostics, benchmarks, and compatibility are release-ready. \\
+0 & Architecture decisions and package boundaries & Operation/implementation/environment/policy ownership, numerical dimensions, conflict semantics, environment observability, and package dependencies are decided or explicitly deferred. \\
+1 & Image operation and implementation contracts & One typed operation model, one generic implementation protocol, declarative operation/implementation specifications, stable identities and semantic versions. \\
+2 & GeneralExecutionProtocol & Generic providers/devices/resources, static capabilities, availability/state observations, telemetry freshness, and asynchronous lifecycle contracts. \\
+3 & ImageProcessingProtocol core & Image/layer/function/operation types, composition, normalized fluent policy values, validation, and internal type-erasure boundary. \\
+4 & Environment discovery and registries & Provider and implementation discovery/registration, current environment snapshots, and diagnostic provenance. \\
+5 & Common qualification and resolution & Shared spec-driven eligibility and ranking using hard requirements, preferences, hardware state, and complete cost estimates. \\
+6 & Execution coordination and pipeline planning & Resource reservation/revalidation, residency-aware planning, execution, cancellation, and atomic result publication. \\
+7 & Independent implementation packs and reference application & External provider and operation-implementation packages apply the interfaces; a consuming app registers multiple implementations of the same operation without core changes. \\
+8 & Measured optimization & End-to-end routing, cost calibration, memory reuse, and safe pipeline optimizations backed by measurements and conformance tests. \\
+9 & Production readiness & Versioned distribution, tested support matrix, diagnostics, documentation, consumer integration, and release governance. \\
 \bottomrule
 \end{longtable}
 
+\subsection{Implementation packages are workstreams, not core phases}
+
+The core roadmap does not schedule CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, or Core Image as sequential core-library phases.
+
+There are two independent implementation-package families:
+\begin{enumerate}
+  \item \textbf{Execution-provider packages} implement \GEP{} for a technology and expose devices, capabilities, resources, submission, completion, and state observations.
+  \item \textbf{Operation-implementation packages} implement one or more \IPP{} operation contracts, publish an \texttt{ImplementationSpecification} for each class, and use an execution provider or managed algorithm runtime.
+\end{enumerate}
+
+These packages can be developed independently after their required contracts stabilize. Each is selected by a consuming application according to its target platforms and workloads. A provider package does not automatically provide Gaussian blur, resize, or any other image operation; an operation package does not need to bundle a new provider if it can use an existing one.
+
 \subsection{What is deliberately not a phase}
 
-The roadmap does not include a node editor, public graph editor, visual programming surface, or a second processing engine. Composition is an API feature. The runtime may create private plans for execution, but these are internal implementation details. Nor does the roadmap include a new neural-network training framework: training can remain in PyTorch or another specialist environment, while inference integration is treated separately.
+The roadmap does not include a node editor, public graph editor, visual programming surface, or a second processing engine. Composition is a typed API feature. The runtime may create private execution plans, but those are internal implementation details. Nor does the roadmap include a new neural-network training framework: inference adapters may be added as independent operation implementations when required.
 
 \section{Global rules for phase execution}
 
@@ -93,4 +107,4 @@ A fake provider proves that the contract can be exercised; it does not prove GPU
 
 \subsection{Compatibility and change control}
 
-An observable change to operation meaning, output interpretation, mutation behavior, or a provider contract requires an explicit version/decision update and regression tests. An implementation optimization that preserves the contract need not change the operation's semantic version. Provider-specific limitations must be represented as qualification results rather than undocumented special cases.
+An observable change to operation meaning, output interpretation, mutation behavior, or a provider contract requires an explicit version/decision update and regression tests. An implementation optimization that preserves the contract need not change the operation's semantic version. Provider-specific limitations must be declared in implementation specifications and reflected in resolver diagnostics rather than scattered through platform checks in application code.
