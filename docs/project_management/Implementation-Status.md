@@ -49,7 +49,7 @@ Local verification performed on Swift 6.2.1, Linux x86_64:
 - swift build — passed.
 - swift test — passed, 18 tests.
 
-GitHub Actions Linux build/test passed on the first matrix run. The first macOS build exposed use of Date.now (macOS 12+); source defaults have been changed to Date() and the corrected cross-platform run is pending.
+GitHub Actions Swift 6.2.1 matrix passed on ubuntu-24.04 and macos-latest at commit 0895a034b8b75c13336c0a08036c250a61d66cc4. Both jobs completed swift build and swift test successfully. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
