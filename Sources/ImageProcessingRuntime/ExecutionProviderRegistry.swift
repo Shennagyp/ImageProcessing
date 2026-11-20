@@ -1,3 +1,4 @@
+import Foundation
 import GeneralExecutionProtocol
 
 public struct RegisteredExecutionProvider: Hashable, Sendable {
