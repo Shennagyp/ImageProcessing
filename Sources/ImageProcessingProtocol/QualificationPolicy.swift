@@ -117,7 +117,7 @@ public struct QualificationPolicy: Hashable, Sendable {
         self.preferences = preferences
     }
 
-    fileprivate func combined(
+    func combined(
         with other: Self,
         for steps: [AnyImageOperationStep]
     ) throws -> Self {
@@ -129,7 +129,7 @@ public struct QualificationPolicy: Hashable, Sendable {
         return policy
     }
 
-    fileprivate func reidentified(
+    func reidentified(
         stepIdentifiers: [OperationStepIdentifier: OperationStepIdentifier]
     ) throws -> Self {
         func rebase(_ origin: PolicyDeclarationOrigin) throws -> PolicyDeclarationOrigin {
@@ -157,7 +157,7 @@ public struct QualificationPolicy: Hashable, Sendable {
         return Self(requirements: rebasedRequirements, preferences: rebasedPreferences)
     }
 
-    fileprivate func validate(for steps: [AnyImageOperationStep]) throws {
+    func validate(for steps: [AnyImageOperationStep]) throws {
         let stepsByID = Dictionary(uniqueKeysWithValues: steps.map { ($0.identifier, $0) })
 
         for declaration in requirements {
@@ -398,7 +398,7 @@ public struct QualificationPolicyBuilder {
         preferences.append(contentsOf: nested.preferences)
     }
 
-    fileprivate func build(for steps: [AnyImageOperationStep]) throws -> QualificationPolicy {
+    func build(for steps: [AnyImageOperationStep]) throws -> QualificationPolicy {
         let policy = QualificationPolicy(requirements: requirements, preferences: preferences)
         try policy.validate(for: steps)
         return policy
