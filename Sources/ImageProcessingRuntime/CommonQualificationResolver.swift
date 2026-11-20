@@ -65,6 +65,9 @@ public actor CommonQualificationResolver {
         }
 
         var evaluations: [OperationImplementationCandidateEvaluation] = []
+        var didResolveResourcePlan = false
+        var sharedResourcePlan: OperationResourcePlan?
+        var resourcePlanFailure: String?
 
         for implementation in implementationCandidates {
             guard implementation.specification.supports(step) else {
@@ -109,15 +112,25 @@ public actor CommonQualificationResolver {
                 continue
             }
 
-            let operationResourcePlan: OperationResourcePlan
-            do {
-                operationResourcePlan = try step.resourcePlan(for: input)
-            } catch {
+            if !didResolveResourcePlan {
+                didResolveResourcePlan = true
+                do {
+                    sharedResourcePlan = try step.resourcePlan(for: input)
+                } catch {
+                    resourcePlanFailure = String(describing: error)
+                }
+            }
+
+            guard let operationResourcePlan = sharedResourcePlan else {
                 evaluations.append(
                     evaluation(
                         implementation,
                         target: nil,
-                        rejections: [.resourcePlanningFailed(String(describing: error))],
+                        rejections: [
+                            .resourcePlanningFailed(
+                                resourcePlanFailure ?? "Operation resource planning did not produce a plan."
+                            )
+                        ],
                         uncertainties: []
                     )
                 )
