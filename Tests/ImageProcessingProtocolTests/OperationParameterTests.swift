@@ -218,3 +218,25 @@ struct OperationParameterTests {
         #expect(composed.stepCount == 2)
     }
 }
+
+
+extension OperationParameterTests {
+    @Test
+    func supportAcceptanceRejectsDuplicateSupportWithoutTrapping() {
+        let support = [
+            OperationParameterSupport(
+                identifier: ParameterFixture.radius,
+                domain: .real(minimum: 0.1, maximum: 5)
+            ),
+            OperationParameterSupport(
+                identifier: ParameterFixture.radius,
+                domain: .real(minimum: 0.1, maximum: 10)
+            )
+        ]
+        let values = [entry(ParameterFixture.radius, .real(1))]
+        #expect(!OperationParameterSupportValidation.accepts(
+            values,
+            implementationSupport: support
+        ))
+    }
+}
