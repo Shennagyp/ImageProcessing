@@ -228,8 +228,13 @@ public struct QualificationPolicy: Hashable, Sendable {
             }
 
             switch declaration.requirement {
-            case .precision(_, _), .allowedPrecisions(_, _):
-                try validateApplicability(.precision, for: declaration.origin, stepsByID: stepsByID, steps: steps)
+            case let .precision(dimension, _), let .allowedPrecisions(dimension, _):
+                try validateApplicability(
+                    Self.operationQualificationDimension(for: dimension),
+                    for: declaration.origin,
+                    stepsByID: stepsByID,
+                    steps: steps
+                )
             case .deterministicResults:
                 try validateApplicability(.deterministicResults, for: declaration.origin, stepsByID: stepsByID, steps: steps)
             default:
@@ -431,6 +436,17 @@ public struct QualificationPolicy: Hashable, Sendable {
         case let .provider(provider): return [provider]
         case let .allowedProviders(values): return values
         default: return nil
+        }
+    }
+
+    private static func operationQualificationDimension(
+        for dimension: PrecisionDimension
+    ) -> OperationQualificationDimension {
+        switch dimension {
+        case .inputStorage: .inputStoragePrecision
+        case .computation: .computationPrecision
+        case .accumulation: .accumulationPrecision
+        case .output: .outputPrecision
         }
     }
 
