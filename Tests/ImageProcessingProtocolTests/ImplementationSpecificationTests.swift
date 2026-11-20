@@ -171,6 +171,64 @@ private struct BlurImplementationFixture {
     }
 }
 
+private struct CPUBlurImplementation: ImageOperationImplementation {
+    typealias Operation = BlurOperation
+
+    let specification = BlurImplementationFixture.specification()
+
+    func execute(
+        operation: BlurOperation,
+        input: BlurInput,
+        context: any ExecutionContext
+    ) async throws -> BlurOutput {
+        BlurOutput()
+    }
+}
+
+private struct MetalBlurImplementation: ImageOperationImplementation {
+    typealias Operation = BlurOperation
+
+    let specification = ImplementationSpecification(
+        identifier: OperationImplementationIdentifier(rawValue: "image.gaussian-blur.metal")!,
+        version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        operationIdentifier: BlurOperation.specification.identifier,
+        supportedOperationVersions: SemanticVersionRange(
+            lowerBound: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            upperBound: SemanticVersion(major: 2, minor: 0, patch: 0)!
+        )!,
+        inputType: BlurInput.typeIdentifier,
+        outputType: BlurOutput.typeIdentifier,
+        requiredProviderID: ExecutionProviderID(rawValue: "provider.metal")!,
+        parameterSupport: [
+            .init(identifier: BlurFixture.radius, domain: .real(minimum: 0.1, maximum: 100)),
+            .init(identifier: BlurFixture.border, domain: .options([
+                BlurFixture.reflect, BlurFixture.clamp, BlurFixture.wrap
+            ]))
+        ],
+        precisionSupport: .init(computation: [.float32, .float64]),
+        determinism: .deterministic,
+        numericalSupport: .init(
+            roundingModes: [.nearestEven],
+            overflowBehaviors: [.saturate],
+            outputRangeBehaviors: [.preserve],
+            maximumAbsoluteError: 0.00005
+        ),
+        layerSupport: .init(inputKinds: [.raster], outputKinds: [.raster]),
+        pixelDataSupport: OperationPixelDataContract(
+            input: BlurFixture.operationPixelDomain,
+            output: BlurFixture.operationPixelDomain
+        )
+    )
+
+    func execute(
+        operation: BlurOperation,
+        input: BlurInput,
+        context: any ExecutionContext
+    ) async throws -> BlurOutput {
+        BlurOutput()
+    }
+}
+
 struct ImplementationSpecificationTests {
     @Test
     func acceptsNarrowerParameterPrecisionAndLayerSupport() throws {
@@ -787,5 +845,24 @@ extension ImplementationSpecificationTests {
         )
 
         try implementation.validate(implements: operation.erased)
+    }
+}
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func twoImplementationClassesDeclareDifferentSupportForOneOperation() throws {
+        let cpu = CPUBlurImplementation()
+        let metal = MetalBlurImplementation()
+        let operation = BlurOperation(radius: 8, border: BlurFixture.clamp)
+        let step = AnyImageOperationStep(operation: operation)
+
+        try cpu.specification.validate(implements: BlurOperation.specification.erased)
+        try metal.specification.validate(implements: BlurOperation.specification.erased)
+
+        #expect(cpu.specification.operationIdentifier == metal.specification.operationIdentifier)
+        #expect(cpu.specification.identifier != metal.specification.identifier)
+        #expect(!cpu.supports(operation))
+        #expect(metal.supports(operation))
     }
 }
