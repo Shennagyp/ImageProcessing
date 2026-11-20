@@ -36,8 +36,8 @@
   \item Operation tests prove immutable parameters and versioned semantic identity.
   \item Composition enforces exact generic input/output type compatibility, preserves step order, and produces unique occurrence IDs when functions are reused.
   \item Identity composition leaves the sequence unchanged and no operation executes during composition.
-  \item Builder tests reject incompatible required precision/provider declarations and contradictory objective declarations at construction/finalization.
-  \item Composition tests reject empty intersections and report both conflicting sources and the affected operation/step.
+  \item Builder tests reject incompatible required precision/provider declarations, empty allowed sets, incompatible execution-capability value kinds, invalid weights, unknown scopes, and contradictory objective declarations at construction/finalization.
+  \item Composition tests reject empty intersections (including three-way intersections that are pairwise nonempty) and report every prior contributing source plus the incoming conflicting declaration and affected operation/step.
   \item Policy tests cover three-way allowed-set intersections (not only pairwise conflicts), execution-capability value-type conflicts, unknown step scopes, duplicate step IDs, invalid weights, and same-scope objective conflicts.
   \item Pipeline and step preferences for the same objective may use different priorities without leaking scope; differing priorities at the same scope are rejected.
   \item Right-hand step-scoped policy declarations are rebased to the new occurrence IDs when functions are composed.
