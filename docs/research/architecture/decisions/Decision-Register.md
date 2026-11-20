@@ -461,9 +461,44 @@ Image-domain meaning is validated before runtime qualification, while execution 
 ### Deferred
 
 - Mapping a logical multi-plane descriptor to one resource or a set of independently allocated plane resources.
-- World-coordinate transforms and registration between layers with different spatial extents.
+- Non-affine spatial deformation fields and calibrated world-coordinate transforms.
 - Mutable Image actor/state-owner API and revision-checked commit mechanics.
 - Per-operation default color spaces, resampling defaults, and scientific-unit conversion policies.
+
+---
+
+## ADR-018 — Pixel layers require explicit registration to the image canvas
+
+**Status:** Baseline for the initial spatial model
+
+### Decision
+
+A raster, mask, or label-map layer has its own pixel sample grid. ImageDocumentSnapshot validates its relationship to the document canvas:
+
+- If the layer pixel extent equals the canvas extent and no mapping is supplied, the effective mapping is identity.
+- If the extents differ, LayerSpatialMapping is mandatory.
+- A mapping may also be supplied for equal extents when the layer is shifted, rotated, scaled, sheared, or otherwise registered differently.
+
+The initial LayerSpatialMapping is an invertible 4-by-4 affine transformation from layer sample-centre index coordinates to image-canvas sample-centre index coordinates. Integer coordinate positions denote sample centres. A 2D plane uses z = 0. The mapping is geometric metadata only; it does not resample pixels.
+
+### Invariants
+
+- A snapshot cannot contain a pixel layer with a different extent and no explicit mapping.
+- Mapping matrices must contain 16 finite values, have an affine final row, and have a nonsingular linear component.
+- A renderer or operation must use the declared mapping; equal dimensions alone are not proof of spatial alignment.
+- Resampling is an explicit operation with its own interpolation, border, and output-grid semantics.
+- Annotation descriptors retain their own coordinate-space declaration.
+- The generic execution protocol remains unaware of layer mapping and canvas semantics.
+
+### Consequence
+
+Multi-resolution layers, crops, and affine-registered layers can coexist in one document without silent alignment assumptions. The initial model has a clear boundary for later non-affine registration and world-coordinate calibration.
+
+### Deferred
+
+- Non-affine deformation fields and local registration maps.
+- Physical/world coordinate calibration, including units, origin, orientation, and transforms between named coordinate systems.
+- Resampling and rendering policies that consume the mapping; they belong to explicit operation contracts, not the descriptor itself.
 
 ## Phase 0 completion checklist
 
