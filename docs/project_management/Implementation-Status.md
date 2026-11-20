@@ -62,9 +62,9 @@ The current test suite covers identifiers/capabilities, provider/device/context 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - swift build — passed.
-- swift test — passed, 59 tests in 10 suites on Linux x86_64.
+- swift test — passed, 66 tests in 11 suites on Linux x86_64.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain, spatial-registration, chroma-siting, and resource-binding suite is locally verified (59 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. The expanded image-domain, spatial-registration, chroma-siting, and resource-binding suite is locally verified (66 tests); cross-platform CI for this latest revision is pending. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
