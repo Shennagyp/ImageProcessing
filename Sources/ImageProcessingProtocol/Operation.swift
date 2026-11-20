@@ -48,6 +48,7 @@ public enum OperationSpecificationValidationError: Error, Equatable, Sendable {
     case missingNumericalContract
     case invalidNumericalContract
     case invalidParameterSchema(OperationParameterValidationError)
+    case invalidPixelDataContract
 }
 
 /// A typed operation specification. Input/output identifiers are derived from
@@ -63,6 +64,7 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
     public let numericalContract: OperationNumericalContract?
     public let effectContract: OperationEffectContract
     public let layerContract: OperationLayerContract
+    public let pixelDataContract: OperationPixelDataContract
     private let explicitlyDeclaredQualificationDimensions: Set<OperationQualificationDimension>
 
     public init(
@@ -73,7 +75,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         precisionContract: OperationPrecisionContract = .none,
         numericalContract: OperationNumericalContract? = nil,
         effectContract: OperationEffectContract = .pure,
-        layerContract: OperationLayerContract = .none
+        layerContract: OperationLayerContract = .none,
+        pixelDataContract: OperationPixelDataContract = .none
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
@@ -84,6 +87,7 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         self.numericalContract = numericalContract
         self.effectContract = effectContract
         self.layerContract = layerContract
+        self.pixelDataContract = pixelDataContract
         self.parameterSpecifications = parameterSpecifications
 
         var dimensions = qualificationDimensions
@@ -116,6 +120,10 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
         }
+        if !(pixelDataContract.input?.isValid ?? true)
+            || !(pixelDataContract.output?.isValid ?? true) {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
 
         do {
             try OperationParameterValidation.validateSpecifications(parameterSpecifications)
@@ -135,7 +143,8 @@ public struct OperationSpecification<Input: OperationValue, Output: OperationVal
             precisionContract: precisionContract,
             numericalContract: numericalContract,
             effectContract: effectContract,
-            layerContract: layerContract
+            layerContract: layerContract,
+            pixelDataContract: pixelDataContract
         )
     }
 }
@@ -152,6 +161,7 @@ public struct AnyOperationSpecification: Hashable, Sendable {
     public let numericalContract: OperationNumericalContract?
     public let effectContract: OperationEffectContract
     public let layerContract: OperationLayerContract
+    public let pixelDataContract: OperationPixelDataContract
 
     public func validateContract() throws {
         let precisionDimensions = Set(qualificationDimensions.filter {
@@ -178,6 +188,10 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         if let numericalContract, !numericalContract.isValid {
             throw OperationSpecificationValidationError.invalidNumericalContract
         }
+        if !(pixelDataContract.input?.isValid ?? true)
+            || !(pixelDataContract.output?.isValid ?? true) {
+            throw OperationSpecificationValidationError.invalidPixelDataContract
+        }
         do {
             try OperationParameterValidation.validateSpecifications(parameterSpecifications)
         } catch let error as OperationParameterValidationError {
@@ -195,7 +209,8 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         precisionContract: OperationPrecisionContract = .none,
         numericalContract: OperationNumericalContract? = nil,
         effectContract: OperationEffectContract = .pure,
-        layerContract: OperationLayerContract = .none
+        layerContract: OperationLayerContract = .none,
+        pixelDataContract: OperationPixelDataContract = .none
     ) {
         self.identifier = identifier
         self.semanticVersion = semanticVersion
@@ -209,6 +224,7 @@ public struct AnyOperationSpecification: Hashable, Sendable {
         self.numericalContract = numericalContract
         self.effectContract = effectContract
         self.layerContract = layerContract
+        self.pixelDataContract = pixelDataContract
     }
 }
 
