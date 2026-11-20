@@ -681,3 +681,46 @@ extension ImplementationSpecificationTests {
         }
     }
 }
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func scientificOnlyImplementationCanNarrowMixedColorAndScientificOperationDomain() throws {
+        let operationDomain = PixelRepresentationDomain(
+            layouts: [.interleaved, .planar],
+            interpretations: [.color, .scientific],
+            colorModels: [.rgb],
+            alphaModes: [.none, .straight],
+            transferFunctions: [.linear, .sRGB],
+            colorSpaces: [BlurFixture.srgb, BlurFixture.linearSRGB],
+            channelRoles: [.red, .green, .blue, .intensity],
+            measurementUnits: [MeasurementUnitIdentifier(rawValue: "um")!,
+                               MeasurementUnitIdentifier(rawValue: "mm")!]
+        )
+        let scientificImplementationDomain = PixelRepresentationDomain(
+            layouts: [.planar],
+            interpretations: [.scientific],
+            channelRoles: [.intensity],
+            measurementUnits: [MeasurementUnitIdentifier(rawValue: "um")!]
+        )
+        let operation = OperationSpecification<BlurInput, BlurOutput>(
+            identifier: OperationIdentifier(rawValue: "image.scientific-domain-op")!,
+            semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            pixelDataContract: OperationPixelDataContract(input: operationDomain)
+        )
+        let implementation = ImplementationSpecification(
+            identifier: OperationImplementationIdentifier(rawValue: "image.scientific-domain-impl")!,
+            version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            operationIdentifier: operation.identifier,
+            supportedOperationVersions: SemanticVersionRange(
+                lowerBound: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+                upperBound: SemanticVersion(major: 2, minor: 0, patch: 0)!
+            )!,
+            inputType: BlurInput.typeIdentifier,
+            outputType: BlurOutput.typeIdentifier,
+            pixelDataSupport: OperationPixelDataContract(input: scientificImplementationDomain)
+        )
+
+        try implementation.validate(implements: operation.erased)
+    }
+}
