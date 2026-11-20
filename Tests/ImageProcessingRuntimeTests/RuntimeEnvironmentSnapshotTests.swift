@@ -34,6 +34,33 @@ private struct WorkSnapshotContext: ExecutionContext {
     let target: ExecutionTargetReference
 }
 
+private final class ReservedResourceFixture: ExecutionResource, Sendable {
+    let descriptor: ExecutionResourceDescriptor
+
+    init(
+        target: ExecutionTargetReference,
+        identifier: String,
+        capacityBytes: UInt64 = 4096
+    ) throws {
+        descriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: identifier)!,
+            target: target,
+            kind: .buffer,
+            capacityBytes: capacityBytes,
+            alignmentBytes: 16,
+            memoryDomain: .host
+        )
+    }
+}
+
+private final class WeakReservedResourceBox {
+    weak var value: ReservedResourceFixture?
+
+    init(_ value: ReservedResourceFixture) {
+        self.value = value
+    }
+}
+
 struct RuntimeEnvironmentSnapshotTests {
     private func providerID(_ raw: String) -> ExecutionProviderID {
         ExecutionProviderID(rawValue: raw)!
@@ -188,7 +215,11 @@ struct RuntimeEnvironmentSnapshotTests {
         try await providers.register(WorkSnapshotProvider(identifier: "provider.partial"))
         let ledger = RuntimeWorkLedger()
         let target = target("provider.partial")
-        let lease = try await ledger.reserveWork(on: target)
+        let resource = try ReservedResourceFixture(target: target, identifier: "snapshot-resource")
+        let lease = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: resource, mode: .read)]
+        )
 
         let coordinator = RuntimeEnvironmentSnapshotCoordinator(
             providers: providers,
@@ -199,6 +230,163 @@ struct RuntimeEnvironmentSnapshotTests {
         #expect(snapshot.failures.isEmpty)
         #expect(snapshot.environment.providers.count == 1)
         #expect(snapshot.runtimeWorkLoad.load(for: target)?.reservedWorkCount == 1)
+        #expect(snapshot.runtimeWorkLoad.reservationLoad(for: resource.descriptor.reference)?.reservedReadCount == 1)
         try await ledger.cancelReservation(lease)
+    }
+}
+
+
+extension RuntimeEnvironmentSnapshotTests {
+    @Test
+    func workLeaseAllowsSharedReadersAndExcludesWriters() async throws {
+        let ledger = RuntimeWorkLedger()
+        let target = target("provider.cpu", "cpu.0")
+        let resource = try ReservedResourceFixture(target: target, identifier: "shared-buffer")
+        let readA = ExecutionResourceAccess(resource: resource, mode: .read)
+        let readB = ExecutionResourceAccess(resource: resource, mode: .read)
+        let first = try await ledger.reserveWork(on: target, accessing: [readA])
+        let second = try await ledger.reserveWork(on: target, accessing: [readB])
+
+        await #expect(throws: RuntimeWorkLedgerError.resourceAccessConflict(
+            resource: resource.descriptor.reference,
+            requested: .write,
+            active: .read
+        )) {
+            _ = try await ledger.reserveWork(
+                on: target,
+                accessing: [ExecutionResourceAccess(resource: resource, mode: .write)]
+            )
+        }
+
+        try await ledger.cancelReservation(first)
+        try await ledger.cancelReservation(second)
+
+        let writer = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: resource, mode: .write)]
+        )
+        await #expect(throws: RuntimeWorkLedgerError.resourceAccessConflict(
+            resource: resource.descriptor.reference,
+            requested: .read,
+            active: .write
+        )) {
+            _ = try await ledger.reserveWork(on: target, accessing: [readA])
+        }
+        try await ledger.cancelReservation(writer)
+    }
+
+    @Test
+    func multiResourceWorkReservationIsAtomicWhenOneResourceConflicts() async throws {
+        let ledger = RuntimeWorkLedger()
+        let target = target("provider.cpu", "cpu.0")
+        let firstResource = try ReservedResourceFixture(target: target, identifier: "first")
+        let secondResource = try ReservedResourceFixture(target: target, identifier: "second")
+        let held = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: secondResource, mode: .write)]
+        )
+
+        await #expect(throws: RuntimeWorkLedgerError.resourceAccessConflict(
+            resource: secondResource.descriptor.reference,
+            requested: .read,
+            active: .write
+        )) {
+            _ = try await ledger.reserveWork(
+                on: target,
+                accessing: [
+                    ExecutionResourceAccess(resource: firstResource, mode: .write),
+                    ExecutionResourceAccess(resource: secondResource, mode: .read)
+                ]
+            )
+        }
+
+        let snapshot = await ledger.snapshot()
+        #expect(snapshot.reservationLoad(for: firstResource.descriptor.reference) == nil)
+        #expect(snapshot.reservationLoad(for: secondResource.descriptor.reference)?.reservedWriteCount == 1)
+
+        let firstWriter = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: firstResource, mode: .write)]
+        )
+        try await ledger.cancelReservation(firstWriter)
+        try await ledger.cancelReservation(held)
+    }
+
+    @Test
+    func revalidationAndCompletionUseOneWorkResourceLeaseLifecycle() async throws {
+        let ledger = RuntimeWorkLedger()
+        let target = target("provider.gpu", "gpu.0")
+        let resource = try ReservedResourceFixture(target: target, identifier: "image-plane")
+        let readAccess = ExecutionResourceAccess(resource: resource, mode: .read)
+        let lease = try await ledger.reserveWork(on: target, accessing: [readAccess])
+
+        await #expect(throws: RuntimeWorkLedgerError.submissionRequiresRevalidation(lease.identifier)) {
+            try await ledger.markSubmitted(lease)
+        }
+        try await ledger.revalidate(lease, accessing: [readAccess])
+
+        let changedDescriptor = try ReservedResourceFixture(
+            target: target,
+            identifier: "image-plane",
+            capacityBytes: 8192
+        )
+        await #expect(throws: RuntimeWorkLedgerError.resourceDescriptorChanged(resource.descriptor.reference)) {
+            try await ledger.revalidate(
+                lease,
+                accessing: [ExecutionResourceAccess(resource: changedDescriptor, mode: .read)]
+            )
+        }
+
+        await #expect(throws: RuntimeWorkLedgerError.resourceAccessSetChanged(lease.identifier)) {
+            try await ledger.revalidate(
+                lease,
+                accessing: [ExecutionResourceAccess(resource: resource, mode: .write)]
+            )
+        }
+        await #expect(throws: RuntimeWorkLedgerError.submissionRequiresRevalidation(lease.identifier)) {
+            try await ledger.markSubmitted(lease)
+        }
+
+        try await ledger.revalidate(lease, accessing: [readAccess])
+        let snapshotTime = Date(timeIntervalSince1970: 60_000)
+        try await ledger.markSubmitted(lease)
+        let snapshot = await ledger.snapshot(capturedAt: snapshotTime)
+        #expect(snapshot.capturedAt == snapshotTime)
+        #expect(snapshot.load(for: target)?.submittedWorkCount == 1)
+        #expect(snapshot.reservationLoad(for: resource.descriptor.reference)?.submittedReadCount == 1)
+
+        await #expect(throws: RuntimeWorkLedgerError.invalidTransition(
+            lease: lease.identifier,
+            expected: .reserved,
+            actual: .submitted
+        )) {
+            try await ledger.cancelReservation(lease)
+        }
+
+        try await ledger.completeSubmission(lease)
+        #expect(await ledger.activeLeaseCount == 0)
+        #expect(await ledger.snapshot().resourceReservations.isEmpty)
+    }
+
+    @Test
+    func workLeaseRetainsResourceUntilItsTerminalTransition() async throws {
+        let ledger = RuntimeWorkLedger()
+        let target = target("provider.cpu", "cpu.0")
+        var resource: ReservedResourceFixture? = try ReservedResourceFixture(
+            target: target,
+            identifier: "retained-resource"
+        )
+        let weakResource = WeakReservedResourceBox(try #require(resource))
+        var accesses = [
+            ExecutionResourceAccess(resource: try #require(resource), mode: .read)
+        ]
+        let lease = try await ledger.reserveWork(on: target, accessing: accesses)
+
+        accesses.removeAll()
+        resource = nil
+        #expect(weakResource.value != nil)
+
+        try await ledger.cancelReservation(lease)
+        #expect(weakResource.value == nil)
     }
 }

@@ -682,7 +682,7 @@ Policy is declarative and travels with the typed function value. Runtime resolut
 
 ## ADR-024 — Operation semantics and implementation support are complementary validated contracts
 
-**Status:** Implemented static contract baseline; resolver integration pending
+**Status:** Static contract baseline implemented; static and context qualification integrated partially; input-bound qualification and ranking pending
 
 ### Decision
 
@@ -754,7 +754,7 @@ Recovery dispositions are advisory: retry the same target, refresh the environme
 
 ## ADR-026 — Operation implementation registration is a runtime concern with checked private type erasure
 
-**Status:** Initial registry implemented; environment integration pending
+**Status:** Registry and provider/context environment integration implemented partially; exact candidate-instance pinning and execution integration pending
 
 ### Decision
 
@@ -791,7 +791,7 @@ Provider packages and operation implementation packages can be selected independ
 
 ## ADR-027 — Provider registration and discovery preserve partial environment results
 
-**Status:** Initial registry and discovery snapshot implemented; runtime accounting pending
+**Status:** Provider registry and partial discovery implemented; runtime accounting is implemented separately; discovery timeouts and cancellation remain deferred
 
 ### Decision
 
@@ -824,7 +824,7 @@ A provider returning no devices is valid because it may represent an opaque mana
 
 ## ADR-028 — Runtime workload accounting and environment snapshot identity are separate from provider telemetry
 
-**Status:** Implemented initial ledger and snapshot coordinator; resource reservation/freshness policy pending
+**Status:** Work ledger and snapshot coordinator implemented; work leases now atomically include generic resource-access reservations and revalidation. Physical capacity/residency reservation and full observation freshness policy remain pending
 
 ### Decision
 

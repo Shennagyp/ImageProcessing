@@ -829,9 +829,9 @@ extension ImplementationSpecificationTests {
             numericalContract: OperationNumericalContract(
                 rounding: .nearestEven,
                 overflow: .saturate,
+                determinism: .implementationSelectable,
                 absoluteErrorTolerance: nil,
-                relativeErrorTolerance: nil,
-                determinism: .implementationSelectable
+                relativeErrorTolerance: nil
             ),
             layerContract: base.layerContract,
             pixelDataContract: base.pixelDataContract
@@ -855,8 +855,6 @@ extension ImplementationSpecificationTests {
         let cpu = CPUBlurImplementation()
         let metal = MetalBlurImplementation()
         let operation = BlurOperation(radius: 8, border: BlurFixture.clamp)
-        let step = AnyImageOperationStep(operation: operation)
-
         try cpu.specification.validate(implements: BlurOperation.specification.erased)
         try metal.specification.validate(implements: BlurOperation.specification.erased)
 

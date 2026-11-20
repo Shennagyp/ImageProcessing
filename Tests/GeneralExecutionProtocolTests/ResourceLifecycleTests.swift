@@ -256,13 +256,11 @@ struct ResourceLifecycleTests {
             target: ExecutionTargetReference(providerID: providerID, deviceID: deviceID)
         )
         let work = IncrementWork(input: 41, resourceAccesses: [], dependencies: [])
-        let output = try await ExecutionProviderConformanceHarness.submit(
-            work,
-            using: context
-        )
+        let submission = try await context.submit(work)
+        let output = try await submission.value()
 
         #expect(output == 42)
-        #expect(try await submission.wait() == ())
+        try await submission.wait()
         #expect(await submission.cancel() == .tooLate)
     }
 
@@ -606,7 +604,7 @@ extension ResourceLifecycleTests {
         let synchronizer = TestSynchronizingContext(target: target)
         try await ExecutionProviderConformanceHarness.synchronize(.context, using: synchronizer)
 
-        #expect(throws: ExecutionProviderConformanceError.contextDoesNotSupportSynchronization) {
+        await #expect(throws: ExecutionProviderConformanceError.contextDoesNotSupportSynchronization) {
             try await ExecutionProviderConformanceHarness.synchronize(.context, using: submitter)
         }
     }

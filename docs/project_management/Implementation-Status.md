@@ -2,7 +2,7 @@
 
 **Architecture baseline:** 0.3  
 **Implementation plan:** 0.2  
-**Current state:** SwiftPM protocol foundation, image-domain state/storage model, typed function composition, policy validation, declarative operation/implementation compatibility contracts, and the initial runtime implementation registry are implemented; provider discovery, qualification, and execution are not.
+**Current state:** SwiftPM protocol boundaries, image-domain state/storage model, typed function composition, policy validation, declarative operation/implementation contracts, both runtime registries, partial environment discovery, work/resource-access lease accounting, and the first common qualification/context-preparation pass are implemented. Input-bound qualification, ranking/cost evaluation, planning, and execution remain incomplete.
 
 This file records actual repository state. The architecture and implementation plan remain normative for intended behavior; a listed design or deliverable is not considered complete merely because a related type exists.
 
@@ -26,10 +26,12 @@ This file records actual repository state. The architecture and implementation p
 - Actor-backed ExecutionProviderRegistry independently stores selected provider packages by provider identifier and rejects duplicate registrations.
 - Provider discovery assembles an ExecutionEnvironmentSnapshot from provider/device descriptors and state observations. Partial failures are retained alongside the snapshot; failed observations are represented as unknown rather than available or zero load.
 - Provider/device ownership violations and duplicate device identifiers are reported as structured provider contract failures; a provider with no discovered devices remains valid for opaque managed execution.
-- RuntimeWorkLedger tracks per-target reserved and submitted work leases. A submitted lease remains active until provider completion is observed; a cancellation request alone does not release it.
+- RuntimeWorkLedger atomically tracks per-target reserved/submitted work and exact generic resource-access reservations. Read-only reservations may coexist; any write/read-write access is exclusive. Multi-resource acquisition is all-or-nothing, current bindings must be revalidated before a resource-bearing lease can be submitted, and retained handles are released only on pre-submit cancellation or observed completion.
 - RuntimeEnvironmentSnapshotCoordinator composes provider discovery with runtime-owned workload state into uniquely identified snapshots with monotonically increasing generations.
 - Provider-reported queue/load observations remain separate from runtime-owned reserved/submitted counts.
-- The runtime does not yet track resource reservation details, prepare candidate contexts, qualify operation candidates, rank providers, or execute functions.
+- CommonQualificationResolver performs the first static/provider/device/hard-policy eligibility pass, prepares contexts for surviving bindings, and verifies context capability claims against optional protocol conformance. It returns qualified, rejected, and indeterminate evaluations; it does not yet rank or execute.
+- Resource-access reservations are runtime-owned and generic. They do not allocate resources, reserve provider memory capacity, establish residency, or prove that a provider can still execute after device loss.
+- Candidate contexts and implementation metadata are represented in qualification results, but the resolver does not yet pin a concrete implementation/provider registration instance for later dispatch.
 
 ### GeneralExecutionProtocol foundation
 
@@ -88,21 +90,21 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers generic provider/device/context capabilities, provider/environment snapshots, generic resource allocation/import contracts, typed asynchronous work/dependencies/cancellation/synchronization, typed operation implementation execution, typed ImageFunction composition and step rebasing, operation parameter schemas and values, precision-domain typing and applicability, numerical/effect/layer/pixel operation contracts, implementation support subset validation, parameter/precision/format/numerical/effect/resource/capability mismatch diagnostics, qualification-policy scope/conflicts/provenance, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, centered/co-sited chroma origins, plane-to-layer coordinate conversion, pixel-resource topology/capacity/alignment binding, revision-scoped image/layer storage bindings, retained resource handles, label/mask/annotation semantics, layer spatial registration, affine transform validation, image replacement atomicity, stale revision rejection, concurrent writer conflict, and overflow.
+The suite contains 210 test declarations across 17 Swift test files, plus the shared provider-conformance harness. Coverage spans generic execution contracts, resource lifecycle, both runtime registries, partial environment discovery, work/resource lease lifecycle, operation/implementation contracts, policy validation, image/layer/pixel semantics, and concurrent Image replacement.
 
-Local verification performed on Swift 6.2.1, Linux x86_64:
+Historical verification: an earlier descriptor milestone passed Swift 6.2.1 build and test on Linux x86_64; earlier CI milestones also passed on Ubuntu and macOS. These results do not validate the current branch.
 
-- The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
-
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 194 tests across 16 Swift test files, plus one shared provider-conformance support file. Coverage includes generic resource lifecycle and provider conformance, structured provider failures, typed operation implementation registration, provider discovery/partial failure handling, runtime work lease transitions, identity-bearing environment snapshots, operation/implementation support compatibility, numerical/effect/pixel contracts, qualification-policy validation, image storage bindings, and mutable Image concurrency. GitHub Actions passed swift build and all 108 tests across 15 suites on ubuntu-24.04 at source commit f036e11bc6253708d9c12d5d74e60760a94f1649. The corresponding macOS job had not completed at that source revision. The current 161-test suite adds parameter-domain, operation semantic-contract, implementation support, numerical conformance, pixel-representation, and resource/capability validation tests. The 153-test predecessor compiled but exposed three test-fixture mismatches; those fixtures and subsequent edge cases have been corrected. The current 194-test revision, including both runtime registries and snapshot/workload accounting, is awaiting CI. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
-
+The latest workflow for base commit `c931ccd493ca65594cc11e516f3e7f45369c2ee4` built all three package products on Ubuntu and macOS, then failed while compiling test targets. The reported failures were three test-source issues: one initializer argument-order error, a submission handle not retained by a lifecycle test, and a missing `await` in an async assertion. `version-0.1` contains source corrections for those failures and adds resource-reservation contract coverage. No build, test, or workflow has been run for this branch, so its current compile/test status remains unverified.
 ## Not implemented
 
 - Non-affine spatial deformation fields and calibrated world-coordinate transform model.
 - Concrete provider implementations of resource allocation/import/export, residency transitions, and safe native release.
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
-- Runtime-owned resource reservation/revalidation, context preparation, common environment-aware resolver, and end-to-end cost ranking.
-- Execution planner, resource reservation/revalidation, and execution coordinator.
+- Provider-backed memory-capacity reservation, resource allocation/reuse, and data-residency validation. RuntimeWorkLedger currently coordinates access to already-existing generic resource handles; it does not reserve physical memory.
+- Input-bound qualification against an actual ImageStateSnapshot, target layer, PixelDataDescriptor, PixelStorageBinding, and output requirements.
+- Candidate-instance pinning across qualification and dispatch, including safe behavior when registrations change.
+- Preference ranking and end-to-end cost estimation using queue delay, transfer/conversion, allocation, context, compute, synchronization, and materialization observations.
+- Whole-pipeline planning and the execution coordinator, including reservation refresh, provider submission, completion/cancellation, output validation, and transactional Image publication.
 - CPU provider and numerical reference image operations.
 - Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, Accelerate, or model-runtime implementation packs.
 
@@ -114,12 +116,17 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 1 — Operation/implementation contracts | In progress | Typed operation schemas, parameter validation, precision/numerical/effect/layer/pixel semantics, implementation support subsets, static resource requirements, and compatibility validation are implemented. Qualification result vocabulary and representative multi-implementation operation examples remain. |
 | 2 — GeneralExecutionProtocol | In progress | Generic resource/work lifecycle contracts, structured provider failure categories/recovery guidance, and a reusable test-only conformance harness are implemented and exercised against an in-memory provider; a production provider and hardware conformance remain. |
 | 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, validated QualificationPolicy, and static operation/implementation conformance contracts are implemented; end-to-end image function execution remains. |
-| 4 — Environment discovery and registries | In progress | Operation/provider registries, partial provider/device discovery, structured discovery failures, per-target reserved/submitted work accounting, and identity-bearing snapshot generations are implemented; resource reservation, provider/context binding qualification, and freshness policy remain. |
-| 5–9 | Not started | Depend on provider discovery, resolver, planning, and execution coordination. |
+| 4 — Environment discovery and registries | In progress | Registries, partial provider/device discovery, structured discovery failures, work accounting, resource-access reservations/revalidation, and identity-bearing snapshots are implemented. Physical memory-capacity/residency reservation and provider timeout/refresh policy remain. |
+| 5 — Common qualification/resolution | In progress | Static operation/parameter/implementation checks, provider/device capabilities, snapshot-age checks, context preparation, and context protocol validation are implemented. Actual input/storage binding checks, candidate-instance pinning, freshness-aware ranking, preferences, and cost evaluation remain. |
+| 6 — Execution coordination and planning | Not started | No complete resource acquisition/submission coordinator, whole-pipeline planner, completion/recovery lifecycle, or transactional result publication. |
+| 7 — Independent packs and reference application | Not started | No production provider package, reference algorithm pack, or consuming sample application. |
+| 8 — Measured optimization | Not started | No end-to-end cost calibration, residency-aware optimization, or performance benchmark baseline. |
+| 9 — Production readiness | Not started | Platform support matrix, packaging, diagnostics, compatibility, and release evidence remain. |
 
 ## Next implementation order
 
-1. Define snapshot refresh/freshness policy and add runtime-owned resource reservation/revalidation alongside the existing reserved/submitted work ledger.
-2. Implement the common resolver: operation/implementation static eligibility first, provider/device binding and capability checks second, context preparation/validation third, then ranking of eligible candidates using fresh state and whole-path cost.
-3. Implement the execution planner and coordinator, including synchronization, cancellation, structured failure recovery, and transactional result publication.
-4. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice; only then add GPU and managed-runtime adapters.
+1. Finish the resource/freshness boundary: retain the current atomic work-plus-resource-access lease model, add provider-backed capacity/residency feasibility, and define how stale/unknown per-observation telemetry affects decisions without turning unknown into zero or automatically rejecting otherwise valid candidates.
+2. Extend qualification to consume the actual input (x): immutable image/document snapshot, target layer, pixel descriptor, storage bindings, and concrete output requirements. Pin the exact implementation/provider binding so a qualified candidate cannot change meaning after registry mutation.
+3. Complete Phase 5 ranking over fully eligible bindings only. Apply immutable preferences as soft objectives and estimate complete path cost, including queueing, transfers, conversions, allocation, context setup, compute, synchronization, and materialization.
+4. Implement the Phase 6 planner/coordinator with reservation revalidation, opaque managed-runtime handling, completion/cancellation/device-loss cleanup, output validation, and atomic Image publication.
+5. Add a CPU provider and a small numerical reference operation as the first end-to-end vertical slice after the runtime lifecycle is correct; then add GPU and managed-runtime adapters independently.
