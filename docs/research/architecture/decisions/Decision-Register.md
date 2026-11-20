@@ -957,6 +957,41 @@ The resolver can produce a candidate-bound, data-derived output allocation requi
 
 ---
 
+## ADR-032 — Context resource capabilities constrain output feasibility
+
+**Status:** Context resource-kind and memory-domain feasibility implemented; allocation and capacity reservation pending
+
+### Decision
+
+An implementation's output and temporary resource requirements declare the generic kind and allowed memory-domain set. The prepared execution context separately advertises which generic resource kinds it can allocate and which memory domains it supports. Qualification verifies the corresponding context capability and computes the intersection of the implementation's allowed domains with the context's allocatable memory domains. An empty intersection rejects the candidate before ranking.
+
+The standard context capability identifiers use Boolean values for buffer and texture resource support, a string set for provider-defined opaque resource-kind identifiers, and a string set of exact `ExecutionMemoryDomain.rawValue` values for supported allocation domains. These are static support declarations. They do not report free bytes, reserve capacity, or guarantee that a subsequent allocation succeeds.
+
+A qualified output allocation requirement retains both its implementation-allowed domains and the non-empty context-supported intersection. The later coordinator selects a domain, requests an allocation, and validates the actual returned resource descriptor.
+
+### Invariants
+
+- Resource-kind support, allocation protocol conformance, and allocation capability claims must agree.
+- Context memory-domain support uses exact generic domain identifiers; unknown identifiers are invalid capability data.
+- The candidate's allocatable domains are a subset of both implementation-allowed and context-supported domains.
+- Missing resource-kind or memory-domain evidence cannot be treated as support.
+- Available-memory telemetry is not a resource capability and is not a capacity reservation.
+- Output/temporary feasibility is checked after context preparation; physical allocation remains in the execution lifecycle.
+
+### Consequence
+
+Qualification no longer labels an output/temporary resource path eligible merely because a context implements a generic allocation method. It verifies the resource kind and memory-domain intersection before exposing a candidate to ranking.
+
+### Deferred
+
+- Selecting one allocatable domain using policy and full-path cost.
+- Provider allocation, physical capacity reservation/reuse, and allocation-failure handling.
+- Actual resource descriptor validation and resource binding to typed output values.
+- Temporary resource size planning.
+- Residency/import/synchronization transitions and output postcondition validation.
+
+---
+
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.

@@ -36,6 +36,11 @@ public struct ExecutionCapabilityID: RawRepresentable, Hashable, Sendable, Custo
 public extension ExecutionCapabilityID {
     static let bufferResources = Self(rawValue: "execution.resource.buffer")!
     static let textureResources = Self(rawValue: "execution.resource.texture")!
+    /// String-set capability containing exact opaque resource-kind identifiers.
+    static let opaqueResourceKinds = Self(rawValue: "execution.resource.opaque-kinds")!
+    /// String-set capability containing ExecutionMemoryDomain.rawValue entries
+    /// that the context can allocate. This is support, not free-capacity telemetry.
+    static let resourceMemoryDomains = Self(rawValue: "execution.resource.memory-domains")!
     static let resourceAllocation = Self(rawValue: "execution.resource.allocation")!
     static let resourceImport = Self(rawValue: "execution.resource.import")!
     static let workSubmission = Self(rawValue: "execution.work.submission")!

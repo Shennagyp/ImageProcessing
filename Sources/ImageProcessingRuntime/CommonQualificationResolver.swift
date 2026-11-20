@@ -343,6 +343,12 @@ public actor CommonQualificationResolver {
                         requirements: applicableRequirements,
                         rejections: &rejections
                     )
+                    let feasibleOutputResourceAllocations = evaluateOutputResourceFeasibility(
+                        staticAllocations: outputResourceAllocations,
+                        implementation: implementation.specification,
+                        context: context,
+                        rejections: &rejections
+                    )
 
                     if rejections.isEmpty {
                         let qualified = QualifiedOperationImplementation(
@@ -359,7 +365,7 @@ public actor CommonQualificationResolver {
                                 deviceState: provider.devices.first(where: { $0.target == target })?.state,
                                 assessedAt: now
                             ),
-                            outputResourceAllocations: outputResourceAllocations,
+                            outputResourceAllocations: feasibleOutputResourceAllocations,
                             inputResourceAccesses: inputResourceAccesses
                         )
                         evaluations.append(
@@ -896,7 +902,8 @@ public actor CommonQualificationResolver {
                         planned.minimumAlignmentBytes,
                         declared.minimumAlignmentBytes
                     ),
-                    access: declared.access
+                    access: declared.access,
+                    allocatableMemoryDomains: []
                 )
             )
         }
@@ -916,6 +923,32 @@ public actor CommonQualificationResolver {
             .resourceAllocation,
             protocolAvailable: context is any ExecutionResourceAllocatingContext,
             capabilities: capabilities,
+            rejections: &rejections
+        )
+        validateCapabilityClaim(
+            .bufferResources,
+            protocolAvailable: context is any ExecutionResourceAllocatingContext,
+            capabilities: capabilities,
+            rejections: &rejections
+        )
+        validateCapabilityClaim(
+            .textureResources,
+            protocolAvailable: context is any ExecutionResourceAllocatingContext,
+            capabilities: capabilities,
+            rejections: &rejections
+        )
+        validateStringSetCapabilityClaim(
+            .resourceMemoryDomains,
+            protocolAvailable: context is any ExecutionResourceAllocatingContext,
+            capabilities: capabilities,
+            validValues: Set(ExecutionMemoryDomain.allCases.map(\.rawValue)),
+            rejections: &rejections
+        )
+        validateStringSetCapabilityClaim(
+            .opaqueResourceKinds,
+            protocolAvailable: context is any ExecutionResourceAllocatingContext,
+            capabilities: capabilities,
+            validValues: nil,
             rejections: &rejections
         )
         validateCapabilityClaim(
@@ -961,6 +994,30 @@ public actor CommonQualificationResolver {
             return
         }
         rejections.append(.contextProtocolMismatch(identifier))
+    }
+
+    private func validateStringSetCapabilityClaim(
+        _ identifier: ExecutionCapabilityID,
+        protocolAvailable: Bool,
+        capabilities: ExecutionCapabilities,
+        validValues: Set<String>?,
+        rejections: inout [CandidateQualificationRejection]
+    ) {
+        guard let value = capabilities[identifier] else { return }
+        guard case let .stringSet(values) = value else {
+            rejections.append(.contextCapabilityInvalid(identifier))
+            return
+        }
+        guard values.isEmpty || protocolAvailable else {
+            rejections.append(.contextProtocolMismatch(identifier))
+            return
+        }
+        if let validValues, !values.isSubset(of: validValues) {
+            rejections.append(.contextCapabilityInvalid(identifier))
+        }
+        if values.contains("") {
+            rejections.append(.contextCapabilityInvalid(identifier))
+        }
     }
 
     private func evaluateContextCapabilities(
@@ -1013,6 +1070,83 @@ public actor CommonQualificationResolver {
                     rejections: &rejections
                 )
             }
+        }
+    }
+
+    private func evaluateOutputResourceFeasibility(
+        staticAllocations: [QualifiedOutputResourceAllocation],
+        implementation: ImplementationSpecification,
+        context: any ExecutionContext,
+        rejections: inout [CandidateQualificationRejection]
+    ) -> [QualifiedOutputResourceAllocation] {
+        let resourceRequirements = implementation.resourceRequirements.filter {
+            switch $0.role {
+            case .output(_), .temporary(_): true
+            case .input(_): false
+            }
+        }
+        guard !resourceRequirements.isEmpty else { return staticAllocations }
+
+        let reportedDomains: Set<String>
+        if case let .stringSet(values)? = context.capabilities[.resourceMemoryDomains] {
+            reportedDomains = values
+        } else {
+            rejections.append(.contextCapabilityMissing(.resourceMemoryDomains))
+            reportedDomains = []
+        }
+        let supportedDomains = Set(
+            ExecutionMemoryDomain.allCases.filter { reportedDomains.contains($0.rawValue) }
+        )
+
+        var allocatableDomainsByOutput: [Int: Set<ExecutionMemoryDomain>] = [:]
+        for requirement in resourceRequirements {
+            switch requirement.kind {
+            case .buffer:
+                guard case .boolean(true)? = context.capabilities[.bufferResources] else {
+                    rejections.append(.contextCapabilityMissing(.bufferResources))
+                    continue
+                }
+            case .texture:
+                guard case .boolean(true)? = context.capabilities[.textureResources] else {
+                    rejections.append(.contextCapabilityMissing(.textureResources))
+                    continue
+                }
+            case let .opaque(identifier):
+                guard case let .stringSet(kinds)? = context.capabilities[.opaqueResourceKinds] else {
+                    rejections.append(.contextCapabilityMissing(.opaqueResourceKinds))
+                    continue
+                }
+                guard kinds.contains(identifier) else {
+                    rejections.append(.contextResourceKindUnsupported(requirement.role, requirement.kind))
+                    continue
+                }
+            }
+
+            let allocatableDomains = requirement.allowedMemoryDomains.intersection(supportedDomains)
+            guard !allocatableDomains.isEmpty else {
+                rejections.append(
+                    .contextResourceMemoryDomainsUnsupported(
+                        requirement.role,
+                        requirement.allowedMemoryDomains
+                    )
+                )
+                continue
+            }
+            if case let .output(index) = requirement.role {
+                allocatableDomainsByOutput[index] = allocatableDomains
+            }
+        }
+
+        return staticAllocations.map { allocation in
+            QualifiedOutputResourceAllocation(
+                outputIndex: allocation.outputIndex,
+                kind: allocation.kind,
+                allowedMemoryDomains: allocation.allowedMemoryDomains,
+                minimumCapacityBytes: allocation.minimumCapacityBytes,
+                minimumAlignmentBytes: allocation.minimumAlignmentBytes,
+                access: allocation.access,
+                allocatableMemoryDomains: allocatableDomainsByOutput[allocation.outputIndex] ?? []
+            )
         }
     }
 

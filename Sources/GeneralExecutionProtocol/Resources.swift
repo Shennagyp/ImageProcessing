@@ -17,7 +17,7 @@ public enum ExecutionResourceKind: Hashable, Sendable {
 
 /// A generic storage domain. These cases describe access/residency classes,
 /// not a promise that two providers use identical native allocation mechanisms.
-public enum ExecutionMemoryDomain: String, Hashable, Sendable {
+public enum ExecutionMemoryDomain: String, Hashable, Sendable, CaseIterable {
     case host
     case deviceLocal
     case shared

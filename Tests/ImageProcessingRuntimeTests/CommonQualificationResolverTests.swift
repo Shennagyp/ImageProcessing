@@ -408,7 +408,12 @@ struct CommonQualificationResolverTests {
     func candidateCombinesOperationOutputSizeWithImplementationMinimum() async throws {
         let now = Date(timeIntervalSince1970: 50_025)
         let allocationCapabilities = try ExecutionCapabilities([
-            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true))
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(
+                identifier: .resourceMemoryDomains,
+                value: .stringSet(["host"])
+            )
         ])
         let provider = QualificationTestProvider(
             contextCapabilities: allocationCapabilities,
@@ -425,6 +430,54 @@ struct CommonQualificationResolverTests {
         #expect(allocation.minimumCapacityBytes == 4_096)
         #expect(allocation.minimumAlignmentBytes == 256)
         #expect(allocation.access == .write)
+        #expect(allocation.allocatableMemoryDomains == [.host])
+    }
+
+    @Test
+    func outputResourceKindMustBeAdvertisedByPreparedContext() async throws {
+        let now = Date(timeIntervalSince1970: 50_028)
+        let capabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(
+                identifier: .resourceMemoryDomains,
+                value: .stringSet(["host"])
+            )
+        ])
+        let provider = QualificationTestProvider(
+            contextCapabilities: capabilities,
+            capturedAt: now,
+            allocatesResources: true
+        )
+        let report = try await makeOutputReport(provider: provider, now: now)
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].rejections.contains(
+            .contextCapabilityMissing(.bufferResources)
+        ))
+    }
+
+    @Test
+    func outputMemoryDomainMustIntersectContextAllocationDomains() async throws {
+        let now = Date(timeIntervalSince1970: 50_029)
+        let capabilities = try ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(
+                identifier: .resourceMemoryDomains,
+                value: .stringSet(["deviceLocal"])
+            )
+        ])
+        let provider = QualificationTestProvider(
+            contextCapabilities: capabilities,
+            capturedAt: now,
+            allocatesResources: true
+        )
+        let report = try await makeOutputReport(provider: provider, now: now)
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].rejections.contains(
+            .contextResourceMemoryDomainsUnsupported(.output(0), [.host])
+        ))
     }
 
     @Test

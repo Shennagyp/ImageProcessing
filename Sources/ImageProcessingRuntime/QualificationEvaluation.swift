@@ -99,6 +99,9 @@ public enum CandidateQualificationRejection: Hashable, Sendable {
     case inputResourceMemoryDomainUnsupported(Int, ExecutionResourceReference, ExecutionMemoryDomain)
     case inputResourceAccessInsufficient(Int, ExecutionResourceReference, actual: ExecutionResourceAccessMode, required: ExecutionResourceAccessMode)
     case inputResourceNotAccessibleFromTarget(Int, ExecutionResourceReference, ExecutionTargetReference)
+    case contextCapabilityInvalid(ExecutionCapabilityID)
+    case contextResourceKindUnsupported(ImplementationResourceRole, ExecutionResourceKind)
+    case contextResourceMemoryDomainsUnsupported(ImplementationResourceRole, Set<ExecutionMemoryDomain>)
     case outputResourcePlanningFailed(String)
     case outputResourceNotDeclaredByImplementation(Int)
     case implementationOutputResourceNotPlanned(Int)
@@ -138,6 +141,9 @@ public struct QualifiedOutputResourceAllocation: Hashable, Sendable {
     public let minimumCapacityBytes: UInt64
     public let minimumAlignmentBytes: UInt64
     public let access: ExecutionResourceAccessMode
+    /// Domains supported by this prepared context and permitted by the implementation.
+    /// This is not a reservation or a statement about currently free bytes.
+    public let allocatableMemoryDomains: Set<ExecutionMemoryDomain>
 }
 
 public struct QualifiedOperationImplementation: Sendable {
