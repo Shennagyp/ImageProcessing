@@ -16,6 +16,32 @@ private enum BlurFixture {
     static let reflect = OperationOptionIdentifier(rawValue: "reflect")!
     static let clamp = OperationOptionIdentifier(rawValue: "clamp")!
     static let wrap = OperationOptionIdentifier(rawValue: "wrap")!
+    static let srgb = ColorSpaceIdentifier(rawValue: "srgb")!
+    static let linearSRGB = ColorSpaceIdentifier(rawValue: "linear-srgb")!
+
+    static let operationPixelDomain = PixelRepresentationDomain(
+        layouts: [.interleaved],
+        interpretations: [.color],
+        colorModels: [.rgb, .gray],
+        alphaModes: [.none, .straight, .premultiplied],
+        transferFunctions: [.linear, .sRGB],
+        colorSpaces: [srgb, linearSRGB],
+        channelRoles: [.gray, .red, .green, .blue, .alpha]
+    )
+
+    static let implementationPixelDomain = PixelRepresentationDomain(
+        layouts: [.interleaved],
+        interpretations: [.color],
+        colorModels: [.rgb],
+        alphaModes: [.none],
+        transferFunctions: [.sRGB],
+        colorSpaces: [srgb],
+        channelRoles: [.red, .green, .blue]
+    )
+    static let implementationPixelSupport = OperationPixelDataContract(
+        input: implementationPixelDomain,
+        output: implementationPixelDomain
+    )
 }
 
 private struct BlurOperation: ImageOperation {
@@ -53,6 +79,10 @@ private struct BlurOperation: ImageOperation {
         layerContract: OperationLayerContract(
             acceptedInputKinds: [.raster],
             producedOutputKinds: [.raster]
+        ),
+        pixelDataContract: OperationPixelDataContract(
+            input: BlurFixture.operationPixelDomain,
+            output: BlurFixture.operationPixelDomain
         )
     )
 }
@@ -72,6 +102,7 @@ private struct BlurImplementationFixture {
             inputKinds: [.raster],
             outputKinds: [.raster]
         ),
+        pixelSupport: OperationPixelDataContract = BlurFixture.implementationPixelSupport,
         resources: [ImplementationResourceRequirement] = [
             .init(
                 role: .input(0),
@@ -105,6 +136,7 @@ private struct BlurImplementationFixture {
             determinism: determinism,
             effectContract: effects,
             layerSupport: layerSupport,
+            pixelDataSupport: pixelSupport,
             resourceRequirements: resources,
             performanceHints: .init(
                 fixedOverheadNanoseconds: 500,
@@ -300,6 +332,63 @@ struct ImplementationSpecificationTests {
         )
         #expect(throws: ImplementationSpecificationValidationError.invalidPerformanceHints) {
             try invalidHintsImplementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+}
+
+
+extension ImplementationSpecificationTests {
+    @Test
+    func acceptsNarrowerPixelLayoutColorAndChannelSupport() throws {
+        let implementation = BlurImplementationFixture.specification()
+        try implementation.validate(implements: BlurOperation.specification.erased)
+    }
+
+    @Test
+    func rejectsPixelLayoutOutsideOperationContract() throws {
+        let unsupportedLayout = PixelRepresentationDomain(
+            layouts: [.planar],
+            interpretations: [.color],
+            colorModels: [.rgb],
+            alphaModes: [.none],
+            transferFunctions: [.sRGB],
+            colorSpaces: [BlurFixture.srgb],
+            channelRoles: [.red, .green, .blue]
+        )
+        let implementation = BlurImplementationFixture.specification(
+            pixelSupport: OperationPixelDataContract(
+                input: unsupportedLayout,
+                output: BlurFixture.implementationPixelDomain
+            )
+        )
+
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "input")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func rejectsMissingPixelRepresentationDeclarationForPixelOperation() throws {
+        let implementation = BlurImplementationFixture.specification(pixelSupport: .none)
+        #expect(throws: ImplementationSpecificationValidationError.pixelRepresentationMismatch(inputOutput: "input")) {
+            try implementation.validate(implements: BlurOperation.specification.erased)
+        }
+    }
+
+    @Test
+    func rejectsEmptyPixelRepresentationDomainsInOperationContract() throws {
+        let invalid = PixelRepresentationDomain(
+            layouts: [],
+            interpretations: [.scientific]
+        )
+        let operation = OperationSpecification<BlurInput, BlurOutput>(
+            identifier: OperationIdentifier(rawValue: "image.empty-pixel-domain")!,
+            semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            pixelDataContract: OperationPixelDataContract(input: invalid)
+        )
+
+        #expect(throws: OperationSpecificationValidationError.invalidPixelDataContract) {
+            try operation.validateContract()
         }
     }
 }
