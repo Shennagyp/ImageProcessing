@@ -54,10 +54,10 @@
 
 \deliverables
 \begin{enumerate}
-  \item Provider registry and discovery over the provider packages selected by the application.
+  \item Provider registry and discovery over the provider packages selected by the application. **Implemented:** an actor-backed registry rejects duplicate provider identities, provides deterministic registration snapshots, and discovers provider/device descriptors and state.
   \item Operation implementation registry that records operation identity/version, implementation identity/version, and declarative implementation specification. **Implemented:** an actor-backed registry validates registration, stores implementation versions independently, and enumerates candidates by operation or concrete step without ranking them.
   \item Internal type-erased registry entries that recover the concrete associated operation/input types before dispatch. **Implemented:** erased execution is module-internal and requires an explicit implementation key; public callers cannot bypass resolver qualification.
-  \item Environment snapshot assembly from discovered provider/device descriptors, resource state, provider observations, and runtime-owned outstanding-work accounting.
+  \item Environment snapshot assembly from discovered provider/device descriptors, resource state, provider observations, and runtime-owned outstanding-work accounting. **Partially implemented:** provider/device snapshots and partial failures are preserved; runtime-owned outstanding-work accounting and snapshot lifecycle identity remain.
   \item Snapshot identity, observation time, freshness, and source-quality metadata.
   \item Registration/version compatibility checks and diagnostics for missing provider dependencies or unsupported operation versions.
   \item Test doubles for multiple implementations of one operation and for providers whose availability/load changes between snapshots.
@@ -73,6 +73,10 @@
   \item Environment snapshots distinguish capability from availability and distinguish unknown load from idle load.
   \item Heterogeneous registry dispatch is type-safe at the operation boundary and tested for mismatched operation/implementation pairs.
   \item Provider/implementation version incompatibilities produce explicit diagnostics.
+  \item A provider whose state observation or device discovery fails does not erase other successful providers from the same environment snapshot; failures remain separately inspectable.
+  \item A device whose state observation fails remains represented with unknown availability, not false availability or idle metrics.
+  \item Duplicate device IDs and devices owned by another provider are rejected from the snapshot and reported as provider contract violations.
+  \item A provider with no discovered devices can still represent an opaque managed target.
 \end{itemize}
 
 \textbf{Gate.} No routing decisions based only on platform name, package presence, or a static provider list.
