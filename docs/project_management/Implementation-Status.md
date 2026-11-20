@@ -43,6 +43,10 @@ This file records actual repository state. The architecture and implementation p
 - OperationStepIdentifier identifies each step occurrence; reused right-hand functions are reidentified on composition while source identifiers remain available.
 - Declarative implementation specifications describe operation/version compatibility, optional provider binding, and scoped generic capability requirements.
 - The protocol has no per-implementation qualification hook.
+- OperationSpecification declares applicable policy dimensions; the initial dimension is numerical precision.
+- ImageFunction attaches an immutable QualificationPolicy with hard requirements and soft optimization objectives, each scoped to the pipeline or a concrete step occurrence.
+- Policy validation checks provider/precision set intersections over effective scopes, execution-capability type contradictions, same-scope preference conflicts, invalid weights, step identity, and precision applicability.
+- Step-scoped policy declarations are rebased when a right-hand function is composed and its step occurrences receive new identifiers.
 
 ### ImageProcessingProtocol image semantics
 
@@ -61,13 +65,13 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, explicit centered/co-sited chroma origins, plane-to-layer coordinate conversion, pixel-resource topology/capacity/alignment binding, resource-handle retention, revision-scoped image/layer binding sets, partial-binding diagnostics, stable Image identity, atomic revision replacement, validation failure atomicity, concurrent writer conflict, captured-snapshot resource retention, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
+The current test suite covers identifiers/capabilities, provider/device/context capability scope, version/operation compatibility, provider snapshot integrity, unavailable/unknown/stale state, resource request validation, import retention, resource identity, work/resource retention through completion and cancellation, dependency ordering, provider context creation, typed implementation execution, typed ImageFunction chaining, operation-step identity/rebasing, identity composition, qualification-policy requirement/preference separation, pipeline/step scoping, precision applicability, provider and precision intersections, three-way intersection conflicts, execution-capability conflicts, objective priority/weight validation, scope rebasing during composition, image/layer identity and snapshots, pixel channel/color/scientific descriptors, planar/volumetric storage calculations, explicit centered/co-sited chroma origins, plane-to-layer coordinate conversion, pixel-resource topology/capacity/alignment binding, resource-handle retention, revision-scoped image/layer binding sets, partial-binding diagnostics, stable Image identity, atomic revision replacement, validation failure atomicity, concurrent writer conflict, captured-snapshot resource retention, label/mask/annotation semantics, layer spatial registration, affine transform validation, capacity validation, and overflow.
 
 Local verification performed on Swift 6.2.1, Linux x86_64:
 
 - The last independently verified descriptor milestone passed swift build and swift test with 53 tests in 9 suites on Linux x86_64. Later binding-set and Image-state tests have not yet completed a green CI run.
 
-GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 86 tests across 13 suites, including pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests; cross-platform CI is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
+GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-latest at commit 9b1f27318439199c5ee97b12d72838601e477688 with 22 tests in 4 suites. A later 53-test image-domain/spatial/chroma-siting suite was locally verified on Linux. The current suite contains 104 tests across 14 suites, including typed function composition, qualification-policy conflict/applicability checks, pixel resource binding/alignment, revision-scoped layer bindings, and mutable Image concurrency tests. Cross-platform CI for this revision is pending. An intervening CI test build caught a missing try in a test helper, which has been corrected. The initial macOS failure exposed Date.now availability (macOS 12+); replacing the defaults with Date() resolved it.
 
 ## Not implemented
 
@@ -76,7 +80,6 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 - Provider conformance tests proving resource retention through asynchronous work, cancellation, device loss, and failure.
 - Provider discovery aggregation and runtime registry.
 - Operation implementation registry and safe type-erased execution dispatch.
-- QualificationPolicy, fluent policy builder, scope composition, and conflict diagnostics.
 - Common environment-aware resolver and end-to-end cost ranking.
 - Execution planner, resource reservation/revalidation, and execution coordinator.
 - CPU provider and numerical reference image operations.
@@ -89,14 +92,13 @@ GitHub Actions Swift 6.2.1 matrix previously passed on ubuntu-24.04 and macos-la
 | 0 — Architecture decisions | In progress | Decision register exists; image concurrency, layer identity, target platform matrix, and per-operation color policy remain proposed/open. |
 | 1 — Operation/implementation contracts | In progress | Typed contract skeleton exists; semantic descriptors, numerical contracts, and complete implementation-support schema remain. |
 | 2 — GeneralExecutionProtocol | In progress | Resource and asynchronous lifecycle contracts now exist; no complete provider implementation or provider conformance suite yet. |
-| 3 — ImageProcessingProtocol core | In progress | Identity, immutable snapshot, layer-content, pixel semantic descriptors, affine layer-to-canvas registration, and pixel-plane resource binding are implemented; Image identity, immutable snapshots, and atomic revision/resource-set replacement are implemented; policy builder and runtime type-erased implementation registry remain. |
+| 3 — ImageProcessingProtocol core | In progress | Image/document/resource descriptors, atomic Image state, typed ImageFunction composition, and validated QualificationPolicy builder are implemented; complete operation/implementation support specifications and the internal type-erased implementation registry remain. |
 | 4–9 | Not started | Depend on the preceding contracts and runtime. |
 
 ## Next implementation order
 
-1. Build a reusable test-only provider conformance harness for allocation/import, access retention, dependencies, completion, cancellation, and synchronization.
-2. Bind PixelDataDescriptor/LayerDescriptor values to generic execution resources with explicit plane ownership and lifetime.
-3. Complete typed function composition.
-4. Add immutable qualification-policy values and construction/composition conflict validation.
-5. Implement the runtime registry and common resolver only after the specification and environment models are sufficient to qualify real candidates.
-6. Add a CPU provider and one small operation vertical slice before GPU providers.
+1. Complete OperationSpecification and ImplementationSpecification with the semantic modes, precision support, parameter limits, input/output representations, and resource requirements needed by the resolver. The current policy values are declarative; the runtime cannot yet evaluate a candidate against a complete operation/implementation support matrix.
+2. Build a reusable test-only provider conformance harness for allocation/import, access retention, dependencies, completion, cancellation, and synchronization.
+3. Implement the private type-erased operation-implementation registry while preserving associated-type dispatch at the typed boundary.
+4. Implement environment aggregation, context preparation, the common resolver, and structured candidate diagnostics.
+5. Implement the execution planner and a CPU provider with one numerical reference operation before adding GPU providers.
