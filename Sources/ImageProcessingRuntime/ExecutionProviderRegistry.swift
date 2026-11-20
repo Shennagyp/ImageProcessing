@@ -153,7 +153,7 @@ public actor ExecutionProviderRegistry {
                     providerID: providerID,
                     target: nil,
                     error: error,
-                    kind: .providerUnavailable,
+                    kind: .deviceDiscoveryFailed,
                     recovery: .refreshEnvironment,
                     message: "Provider device discovery failed."
                 ))
