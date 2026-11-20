@@ -401,3 +401,27 @@ extension QualificationPolicyTests {
         #expect(qualified.qualificationPolicy.preferences.count == 1)
     }
 }
+
+
+extension QualificationPolicyTests {
+    @Test
+    func storagePrecisionUsesPixelComponentRepresentation() throws {
+        let function = numericFunction()
+        let qualified = try function.qualifying {
+            $0.require(.precision(.inputStorage, .uint8))
+            $0.require(.precision(.output, .storageFloat32))
+        }
+
+        #expect(qualified.qualificationPolicy.requirements.count == 2)
+    }
+
+    @Test
+    func arithmeticPrecisionCannotUsePixelStoragePrecisionValue() throws {
+        let function = numericFunction()
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.require(.precision(.computation, .uint8))
+            }
+        }
+    }
+}
