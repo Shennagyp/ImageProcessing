@@ -205,12 +205,12 @@ The intended package relationship is shown below. The arrow denotes a source-lev
 \texttt{GeneralExecution\allowbreak Protocol} & The lower-level, reusable execution contract: providers, devices, contexts, generic resources, submission, completion, synchronization, transfer, static capabilities, and observable dynamic execution state. It has no dependency on \texttt{ImageProcessing\allowbreak Protocol}. \\
 Concrete execution providers & Implement \texttt{GeneralExecution\allowbreak Protocol} for CPU, Metal, CUDA, OpenCL, Direct3D 12, or another execution technology. \\
 Image-operation implementation packages & Supply independent classes conforming to the generic operation-implementation contract. Each class declares an implementation specification and uses a provider or managed algorithm runtime. They are selected and registered by the consuming application. \\
-\texttt{ImageProcessingRuntime} & Integrates the two protocols, discovers and snapshots the execution environment, registers heterogeneous implementations, evaluates qualification and routing, plans composed execution, and coordinates result creation or replacement. \\
+\texttt{ImageProcessingRuntime} & Integrates the two protocols. The initial operation implementation registry exists; provider discovery, environment snapshots, qualification/routing, planning, and result coordination remain runtime responsibilities to implement. \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-This direction avoids two errors. First, a generic execution library must not acquire image-specific concepts merely because image processing is its first consumer. Second, the image-processing API must not expose native GPU mechanisms as its public semantic model. Provider implementations depend on the general protocol; operation adapters depend on the image-processing protocol and whichever provider or library they use. The runtime is the composition point.
+This direction avoids two errors. First, a generic execution library must not acquire image-specific concepts merely because image processing is its first consumer. Second, the image-processing API must not expose native GPU mechanisms as its public semantic model. Provider implementations depend on the general protocol; operation adapters depend on the image-processing protocol and whichever provider or library they use. The runtime is the composition point. Its first implemented component is an actor-backed operation implementation registry; it records implementation metadata, enumerates static operation/step support, and uses private checked type erasure for explicit dispatch. It does not yet own a provider registry, environment snapshot, resolver, or execution coordinator.
 
 \subsection{Decisions recorded in this baseline}
 
@@ -580,8 +580,9 @@ let pipeline = try correction
         policy.prefer(.lowLatency)
     }
 
-// The Image runtime/application API is still pending.
-// Image.applying and ImageProcessingRuntime are planned, not implemented yet.
+// The Image API and full runtime orchestration are still pending.
+// ImageProcessingRuntime currently provides the initial operation implementation registry;
+// provider discovery, qualification, planning, and processing are still pending.
 let result = try await source.applying(
     pipeline,
     to: .layer(sourceLayer.id)
