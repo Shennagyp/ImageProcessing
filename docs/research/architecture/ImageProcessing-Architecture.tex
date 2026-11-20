@@ -1077,6 +1077,8 @@ The library should expose structured failures rather than backend-specific error
 
 Diagnostics should identify the operation and semantic version, input descriptor, candidate provider/device, implementation version, rejection reason, and any attempted preparation step. Sensitive pointers, driver internals, or large pixel buffers should not be exposed as diagnostic payloads.
 
+The generic execution contract exposes ExecutionProviderFailure with a provider-neutral category and advisory recovery disposition. Categories distinguish provider/device unavailability and device loss, capability failure, resource allocation/import, invalid resource, work submission, dependency failure, work execution, and synchronization. The failure records provider identity and, when known, the execution target. Optional nativeCode and message fields preserve useful diagnostics without becoming the decision surface. Recovery guidance distinguishes retrying the same target, refreshing the environment, trying another target, and permanent failure. It is advisory: the runtime must revalidate the original operation semantics and hard policy constraints before any retry or reroute.
+
 A fallback decision should be observable. The caller or log should be able to determine which implementation was selected and why, including provider/device, conversions, precision, and materialization points. This is necessary for reproducibility and performance analysis.
 
 \section{Illustrative API shape}
