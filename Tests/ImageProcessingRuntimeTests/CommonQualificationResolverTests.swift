@@ -207,6 +207,7 @@ struct CommonQualificationResolverTests {
         implementation: QualificationImplementation = QualificationImplementation(),
         policy: QualificationPolicy = .unrestricted,
         now: Date,
+        snapshotCapturedAt: Date? = nil,
         freshness: QualificationFreshnessPolicy? = nil
     ) async throws -> OperationImplementationQualificationReport {
         let implementationRegistry = OperationImplementationRegistry()
@@ -223,7 +224,7 @@ struct CommonQualificationResolverTests {
         )
         let environment = try await coordinator.capture(
             platform: platform(),
-            capturedAt: now
+            capturedAt: snapshotCapturedAt ?? now
         )
         let resolver = CommonQualificationResolver(
             implementations: implementationRegistry,
@@ -294,6 +295,7 @@ struct CommonQualificationResolverTests {
         let report = try await makeReport(
             provider: provider,
             now: now,
+            snapshotCapturedAt: old,
             freshness: freshness(snapshot: 5, provider: 5, device: 5)
         )
 
