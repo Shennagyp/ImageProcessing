@@ -30,8 +30,14 @@ public protocol OperationValue: Sendable {
 }
 
 public enum OperationQualificationDimension: String, Hashable, Sendable {
-    /// The operation has a meaningful numerical precision contract.
-    case precision
+    /// Input pixels may have implementation-selectable storage component types.
+    case inputStoragePrecision
+    /// The operation permits implementation-selectable arithmetic precision.
+    case computationPrecision
+    /// The operation permits implementation-selectable accumulation precision.
+    case accumulationPrecision
+    /// The operation permits implementation-selectable output storage types.
+    case outputPrecision
     /// The operation permits implementation variation in determinism.
     case deterministicResults
 }
