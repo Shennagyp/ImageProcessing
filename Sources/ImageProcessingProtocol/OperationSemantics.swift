@@ -78,6 +78,37 @@ public struct OperationPrecisionContract: Hashable, Sendable {
     }
 }
 
+/// Image-layer kinds an operation accepts and produces. Empty sides mean that
+/// the corresponding value is not represented as a layer.
+public struct OperationLayerContract: Hashable, Sendable {
+    public let acceptedInputKinds: Set<LayerKind>
+    public let producedOutputKinds: Set<LayerKind>
+
+    public init(
+        acceptedInputKinds: Set<LayerKind> = [],
+        producedOutputKinds: Set<LayerKind> = []
+    ) {
+        self.acceptedInputKinds = acceptedInputKinds
+        self.producedOutputKinds = producedOutputKinds
+    }
+
+    public static let none = Self()
+}
+
+/// Static layer-kind subset supported by one implementation.
+public struct ImplementationLayerSupport: Hashable, Sendable {
+    public let inputKinds: Set<LayerKind>
+    public let outputKinds: Set<LayerKind>
+
+    public init(
+        inputKinds: Set<LayerKind> = [],
+        outputKinds: Set<LayerKind> = []
+    ) {
+        self.inputKinds = inputKinds
+        self.outputKinds = outputKinds
+    }
+}
+
 public enum OperationRoundingMode: String, Hashable, Sendable {
     case nearestEven
     case towardZero
