@@ -750,6 +750,43 @@ Recovery dispositions are advisory: retry the same target, refresh the environme
 - Common runtime mapping from provider errors to candidate outcomes and retry policy.
 - Backoff, circuit-breaking, repeated failure suppression, and provider health scoring.
 - Provider-specific native error translation tests against real CPU/GPU packages.
+---
+
+## ADR-026 — Operation implementation registration is a runtime concern with checked private type erasure
+
+**Status:** Initial registry implemented; environment integration pending
+
+### Decision
+
+OperationImplementationRegistry lives in the separate ImageProcessingRuntime product. It depends on ImageProcessingProtocol and GeneralExecutionProtocol; neither protocol depends on the runtime. The registry is an actor because registration, removal, and metadata snapshots are mutable shared runtime state.
+
+An implementation is keyed by its implementation identifier and implementation version. Different versions of one implementation identity may coexist; an exact duplicate key is rejected. Registration validates the implementation specification against the associated operation's semantic specification before storing it.
+
+Public registry operations expose immutable registration metadata and enumerate implementations compatible with an operation specification or a concrete operation step. Enumeration is deterministic and checks static support only; it does not rank, select, or claim current executability.
+
+Heterogeneous implementation storage uses a private type-erased entry. The public implementation protocol remains associated-type based. The internal dispatch closure checks concrete Operation and Input Swift types, validates the returned Output value identifier, and is accessible only inside the runtime module. Execution requires an explicit implementation key; the registry does not choose one.
+
+### Invariants
+
+- GEP and IPP remain independent of ImageProcessingRuntime.
+- Registration validates static semantic compatibility before mutating registry state.
+- Implementation identity is the pair of stable identifier and implementation version.
+- Candidate enumeration is not routing and does not consult live provider/device state.
+- Type erasure is private; application-facing registration remains generic and typed.
+- The dispatch entry is not public until the common resolver can enforce provider, context, policy, and resource constraints.
+- Removing one implementation version does not remove another version sharing the same implementation identifier.
+
+### Consequence
+
+Provider packages and operation implementation packages can be selected independently by a consuming application. The runtime can hold multiple implementation classes for one operation without introducing backend-specific branches into IPP.
+
+### Deferred
+
+- Provider registry, discovery, and environment snapshot aggregation.
+- Common resolver and candidate outcome diagnostics.
+- Context preparation/validation and resource reservation.
+- Cost ranking, execution planning, and execution coordination.
+- Persistent registry metadata and dynamic plug-in loading.
 ## Phase 0 completion checklist
 
 - [x] Separate operation, implementation, and provider ownership.
