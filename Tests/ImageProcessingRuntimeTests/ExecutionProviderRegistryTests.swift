@@ -38,12 +38,14 @@ private struct RegistryTestProvider: ExecutionProvider {
     let devices: [RegistryTestDevice]
     let failsStateObservation: Bool
     let failsDiscovery: Bool
+    let contextRegistrationIdentifierOverride: UUID?
 
     init(
         identifier: String,
         devices: [RegistryTestDevice] = [],
         failsStateObservation: Bool = false,
-        failsDiscovery: Bool = false
+        failsDiscovery: Bool = false,
+        contextRegistrationIdentifierOverride: UUID? = nil
     ) {
         let providerID = ExecutionProviderID(rawValue: identifier)!
         self.descriptor = ExecutionProviderDescriptor(
@@ -54,6 +56,7 @@ private struct RegistryTestProvider: ExecutionProvider {
         self.devices = devices
         self.failsStateObservation = failsStateObservation
         self.failsDiscovery = failsDiscovery
+        self.contextRegistrationIdentifierOverride = contextRegistrationIdentifierOverride
     }
 
     func observeState() async throws -> ExecutionProviderStateSnapshot {
@@ -79,10 +82,31 @@ private struct RegistryTestProvider: ExecutionProvider {
         }
         return RegistryTestContext(target: target)
     }
+
+    func makeContext(
+        for target: ExecutionTargetReference,
+        registrationIdentifier: UUID
+    ) async throws -> any ExecutionContext {
+        guard target.providerID == descriptor.identifier,
+              target.deviceID == nil || devices.contains(where: {
+                  $0.descriptor.identifier == target.deviceID
+              }) else {
+            throw ProviderRegistryFixtureError.discovery
+        }
+        return RegistryBoundTestContext(
+            target: target,
+            providerRegistrationIdentifier: contextRegistrationIdentifierOverride ?? registrationIdentifier
+        )
+    }
 }
 
 private struct RegistryTestContext: ExecutionContext {
     let target: ExecutionTargetReference
+}
+
+private struct RegistryBoundTestContext: ExecutionProviderRegistrationBoundContext {
+    let target: ExecutionTargetReference
+    let providerRegistrationIdentifier: UUID
 }
 
 struct ExecutionProviderRegistryTests {
@@ -318,6 +342,27 @@ struct ExecutionProviderRegistryTests {
             registrationIdentifier: replacementRegistration.registrationIdentifier
         )
         #expect(context.target == target)
+        #expect((context as? any ExecutionProviderRegistrationBoundContext)?.providerRegistrationIdentifier == replacementRegistration.registrationIdentifier)
+    }
+
+    @Test
+    func rejectsContextCreatedForAnotherProviderRegistration() async throws {
+        let registry = ExecutionProviderRegistry()
+        let identifier = providerID("provider.context-registration-mismatch")
+        let provider = RegistryTestProvider(
+            identifier: identifier.rawValue,
+            contextRegistrationIdentifierOverride: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        )
+        try await registry.register(provider)
+        let registered = try #require(await registry.registeredProviders().first)
+
+        await #expect(throws: ExecutionProviderRegistryError.contextRegistrationMismatch(identifier)) {
+            try await registry.makeContext(
+                for: ExecutionTargetReference(providerID: identifier),
+                expecting: provider.descriptor,
+                registrationIdentifier: registered.registrationIdentifier
+            )
+        }
     }
 
     @Test
