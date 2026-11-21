@@ -126,10 +126,19 @@ public struct OperationExecutionResources: Sendable {
         bindings.isEmpty && importedInputBindings.isEmpty
     }
 
+    /// Returns one resource for a singular role. For an imported input role,
+    /// this returns a handle only when exactly one imported binding exists;
+    /// use importedInputResources(for:) for planar or composite inputs.
     public func resource(
         for role: ImplementationResourceRole
     ) -> (any ExecutionResource)? {
-        resourcesByRole[role]
+        switch role {
+        case let .input(index):
+            let imported = importedInputResources(for: index)
+            return imported.count == 1 ? imported[0].resource : nil
+        case .output(_), .temporary(_):
+            return resourcesByRole[role]
+        }
     }
 
     /// Returns destination-context handles imported for one logical input.
