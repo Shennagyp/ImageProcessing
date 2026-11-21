@@ -134,7 +134,7 @@ public actor ImageFunctionExecutionCoordinator {
             )
         }
 
-        let knownStepIdentifiers = Set(function.steps.map(\\.identifier))
+        let knownStepIdentifiers = Set(function.steps.map(\.identifier))
         for selectedStep in memoryDomainSelections.keys where !knownStepIdentifiers.contains(selectedStep) {
             throw ImageFunctionExecutionCoordinatorError.memoryDomainSelectionsForUnknownStep(
                 selectedStep
