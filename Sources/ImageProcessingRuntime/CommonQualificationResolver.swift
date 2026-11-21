@@ -313,6 +313,7 @@ public actor CommonQualificationResolver {
                         resourceBindings: inputResourceBindings,
                         implementation: implementation.specification,
                         target: target,
+                        providerRegistrationIdentifier: providerRegistrationIdentifier,
                         rejections: &rejections
                     )
 
@@ -338,7 +339,8 @@ public actor CommonQualificationResolver {
                     } catch let error as ExecutionProviderRegistryError {
                         let rejection: CandidateQualificationRejection
                         switch error {
-                        case .providerNotRegistered, .providerRegistrationChanged, .providerDescriptorChanged:
+                        case .providerNotRegistered, .providerRegistrationChanged, .providerDescriptorChanged,
+                             .contextRegistrationMismatch:
                             rejection = .providerRegistrationChanged(provider.descriptor.identifier)
                         default:
                             rejection = .contextCreationFailed(String(describing: error))
@@ -528,6 +530,7 @@ public actor CommonQualificationResolver {
         resourceBindings: [OperationInputResourceBinding],
         implementation: ImplementationSpecification,
         target: ExecutionTargetReference,
+        providerRegistrationIdentifier: UUID,
         rejections: inout [CandidateQualificationRejection]
     ) -> [ExecutionResourceAccess] {
         let inputRequirements = implementation.resourceRequirements.compactMap {
@@ -648,6 +651,19 @@ public actor CommonQualificationResolver {
                             reference,
                             actual: binding.access,
                             required: requirement.access
+                        )
+                    )
+                }
+                if descriptor.target == target,
+                   descriptor.memoryDomain == .deviceLocal,
+                   descriptor.providerRegistrationIdentifier != providerRegistrationIdentifier {
+                    rejections.append(
+                        .inputResourceProviderRegistrationMismatch(
+                            inputIndex,
+                            reference,
+                            memoryDomain: descriptor.memoryDomain,
+                            expected: providerRegistrationIdentifier,
+                            actual: descriptor.providerRegistrationIdentifier
                         )
                     )
                 }
