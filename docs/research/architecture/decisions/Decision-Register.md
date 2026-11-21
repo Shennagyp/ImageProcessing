@@ -1145,7 +1145,7 @@ A long-lived GPU allocation can be reused by operations qualified against the sa
 
 ## ADR-036 — Single-operation execution uses a revalidated resource lease and atomic image publication
 
-**Status:** Single-operation dispatch, qualified output/temporary allocation, read-only input import/remapping, source/destination resource leases, source-provider pinning for registered imported resources, typed allocation failure, output plane-binding validation, completion-boundary accounting, destination provider-instance pinning, and in-place Image compare-and-swap publication implemented; physical residency/capacity policy, pipeline planning, and complete recovery remain pending
+**Status:** Single-operation dispatch, qualified output/temporary allocation, read-only input import/remapping, source/destination resource leases, source-provider pinning for registered imported resources, typed allocation failure, cooperative cancellation at safe boundaries, output plane-binding validation, completion-boundary accounting, destination provider-instance pinning, and in-place Image compare-and-swap publication implemented; physical residency/capacity policy, timeout/device-loss recovery, pipeline planning, and persistent releaser lifetime remain pending
 
 ### Decision
 
@@ -1161,6 +1161,7 @@ Before dispatch, the coordinator:
 6. Atomically reserves the direct/imported destination input accesses plus all allocated output/temporary resource accesses in `RuntimeWorkLedger`, then revalidates the same handles and descriptors before dispatch. Source resources remain under independent read leases and any known source provider-use lease through the implementation completion boundary.
 7. Marks runtime dispatch and invokes the exact implementation registration captured by the candidate.
 8. Releases the work/resource lease only after the implementation's `execute` call returns or throws. `ImageOperationImplementation.execute` is the completion boundary for all declared accesses: an implementation that submits asynchronous provider work must await every use that could still access its input, output, or temporary resources before returning.
+9. Cooperative cancellation is checked before allocation/import, before submission, and before image publication. A pre-submit cancellation cancels the reserved lease. Once submitted, a cancellation request does not release leases or handles early; the coordinator awaits the implementation completion boundary, then propagates cancellation rather than returning/publishing a result. The coordinator does not force-terminate an unresponsive implementation.
 
 The ledger's submitted state means runtime dispatch has begun; it is not a claim that hardware accepted work or a substitute for provider telemetry. The implementation must not return a valid output while work that can still access its declared resources remains outstanding.
 
@@ -1179,6 +1180,8 @@ The caller may instead request the validated output value without mutating an ex
 - Imported input mappings are invocation-scoped, must not escape into persistent image output storage, and do not rewrite the exact typed input or its immutable image revision.
 - A source provider registration with explicit provenance is retained while its resource is imported/in use; a removed or replaced owner fails closed before import.
 - Allocation failure is fail-closed and does not trigger implicit retry, domain selection, candidate substitution, or weakening of hard requirements. Caller-managed re-resolution uses a refreshed environment and the same original qualification policy.
+- Cancellation is cooperative. A request after submission does not permit early resource release; completion must still be observed at the implementation boundary.
+- Timeout enforcement and device-loss recovery require provider-specific cancellation/quiescence guarantees and are not claimed by the MVP cancellation checks.
 - The exact provider instance is retained before output/temporary allocation; a provider registration removed before provider-use acquisition cannot be used by a stale candidate.
 - Every qualified output/temporary role is allocated once, checked against its selected feasible memory domain and exact provider-registration identity, and passed to the implementation with its role and access mode.
 - A memory domain is inferred only when exactly one feasible domain exists; a choice among multiple feasible domains is explicit.
@@ -1196,7 +1199,7 @@ The caller may instead request the validated output value without mutating an ex
 
 - Provider-verified imported/output residency beyond the import completion boundary, production synchronization-route guarantees, and persistent source-provider/native-releaser ownership for resources that outlive the operation.
 - Separate physical capacity reservation/reuse, memory-pressure/eviction policy, allocation-failure re-resolution, and retry policy.
-- Full cancellation, timeout, device-loss cleanup, and whole-pipeline planning.
+- Timeout enforcement, device-loss cleanup/recovery, persistent provider/native releaser ownership beyond an invocation, and whole-pipeline planning.
 - Native provider releaser/package retention for image resources beyond the operation's provider-use lease and across plugin unload.
 
 
