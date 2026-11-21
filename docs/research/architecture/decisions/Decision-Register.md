@@ -1123,7 +1123,7 @@ A device-local resource is directly eligible as an input for a candidate only wh
 - Resource references, resource-access reservations, and revalidation preserve provider registration identity.
 - Missing registration provenance is unknown for device-local residency; it is never interpreted as a matching or zero-transfer state.
 - The runtime does not silently downgrade a mismatched device-local resource to direct access. A future import path must create a new target/registration-bound resource handle and remap the typed input before execution.
-- Persistent image resources remain owned by their image revision through reference-counted storage bindings. Registration provenance does not create a second global GPU cache or alter image-revision lifetime.
+- Persistent image resources remain owned by their image revision through reference-counted storage bindings. Registration provenance does not create a second global GPU cache or alter image-revision lifetime. The image-state retention test uses a registration-bound `deviceLocal` resource and verifies it survives replacement while an old snapshot is retained, then releases when that snapshot is dropped.
 
 ### Consequence
 
