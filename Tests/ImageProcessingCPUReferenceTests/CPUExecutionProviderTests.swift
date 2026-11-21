@@ -23,7 +23,7 @@ struct CPUExecutionProviderTests {
         ))
         let resource = try await allocator.allocateResource(request)
         let buffer = try #require(resource as? CPUBufferResource)
-        let bytes: [UInt8] = Array(0..<16)
+        let bytes: [UInt8] = (0..<16).map(UInt8.init)
 
         try buffer.writeBytes(bytes)
 
