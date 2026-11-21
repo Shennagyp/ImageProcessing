@@ -117,7 +117,7 @@ struct ReferenceNegateFloat32Tests {
         let outputState = result.output.imageOperationOutputDescriptor.imageState
         #expect(outputState.identifier == imageID)
         #expect(outputState.revision.rawValue == inputState.revision.rawValue + 1)
-        #expect(outputState.document.layers.map(\\.identifier) == [layer.identifier])
+        #expect(outputState.document.layers.map(\.identifier) == [layer.identifier])
         #expect(inputResource.copyBytes() == encode(inputSamples))
 
         let outputBinding = try #require(
