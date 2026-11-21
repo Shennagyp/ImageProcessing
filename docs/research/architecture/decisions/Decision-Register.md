@@ -809,7 +809,7 @@ A provider returning no devices is valid because it may represent an opaque mana
 - Provider registration does not imply provider availability.
 - Operation implementation registration and provider registration have independent identities and lifecycles.
 - The environment snapshot includes only validated provider/device ownership relationships.
-- Context creation is checked both before and after the asynchronous provider factory call; a context returned after unregister/replacement cannot escape qualification.
+- Context creation is checked both before and after the asynchronous provider factory call; a context returned after unregister/replacement cannot escape qualification. A controlled asynchronous test suspends the old factory, replaces the registration, and verifies the returned old context is rejected.
 - A context that reports a provider registration identity must report the exact identity supplied by the registry.
 - Unknown or failed state observations remain unknown; they are never rewritten as idle or available.
 - One failing provider/device cannot erase successful discoveries from another provider.
