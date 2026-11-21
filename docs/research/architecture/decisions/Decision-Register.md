@@ -1145,7 +1145,7 @@ A long-lived GPU allocation can be reused by operations qualified against the sa
 
 ## ADR-036 — Single-operation execution uses a revalidated resource lease and atomic image publication
 
-**Status:** Single-operation dispatch, qualified output/temporary allocation, read-only input import/remapping, source/destination resource leases, output plane-binding validation, completion-boundary accounting, provider-instance pinning, and in-place Image compare-and-swap publication implemented; physical residency/capacity policy, pipeline planning, and complete recovery remain pending
+**Status:** Single-operation dispatch, qualified output/temporary allocation, read-only input import/remapping, source/destination resource leases, source-provider pinning for registered imported resources, typed allocation failure, output plane-binding validation, completion-boundary accounting, destination provider-instance pinning, and in-place Image compare-and-swap publication implemented; physical residency/capacity policy, pipeline planning, and complete recovery remain pending
 
 ### Decision
 
@@ -1156,9 +1156,10 @@ Before dispatch, the coordinator:
 1. Acquires a provider-use lease for the exact target and provider-registration UUID. The lease strongly retains the exact provider instance through this operation. If the registration has already been removed or replaced, dispatch is rejected before allocation.
 2. For each qualified output/temporary role, chooses the only feasible memory domain when the feasible set has one member. If several domains are feasible, the caller must provide an explicit per-role selection; the coordinator does not rank or guess between domains.
 3. Calls the original context's `ExecutionResourceAllocatingContext.allocateResource` for each role and validates the returned handle against the requested kind, minimum capacity, alignment, selected domain, target, and exact provider-registration UUID. The role, handle, and declared access mode are passed to the typed implementation in an immutable `OperationExecutionResources` value. Existing implementations remain source-compatible for empty resource sets; an implementation receiving a non-empty set must explicitly implement the resource-aware execution overload.
-4. For each input role explicitly marked `requiresImport`, reserves a source-target read lease, calls the exact qualified context's `importResource`, and validates the returned destination handle against the candidate target, provider-registration UUID, kind, capacity, alignment, and allowed memory domain. The import call is the provider's readiness boundary; when the context exposes resource synchronization, the coordinator also synchronizes the imported resource. The typed input and its immutable image snapshots remain unchanged; remapped input handles are exposed separately by input index in `OperationExecutionResources`.
-5. Atomically reserves the direct/imported destination input accesses plus all allocated output/temporary resource accesses in `RuntimeWorkLedger`, then revalidates the same handles and descriptors before dispatch. Source resources on other targets remain under their independent read leases through the implementation completion boundary.
-6. Marks runtime dispatch and invokes the exact implementation registration captured by the candidate.
+4. If an output/temporary allocation fails, the coordinator releases any earlier allocation handles as the failed allocation scope unwinds. It preserves a structured `ExecutionProviderFailure` and its recovery guidance when supplied, wraps generic failures with the failed resource role, and propagates cancellation unchanged. It does not retry, select another memory domain, or substitute another candidate. The caller must refresh the environment and rerun qualification/resolution with the same original `QualificationPolicy` before executing a new candidate.
+5. For each input role explicitly marked `requiresImport`, the coordinator pins the source provider registration when the resource descriptor carries provenance, then reserves a source-target read lease, calls the exact qualified context's `importResource`, and validates the returned destination handle against the candidate target, provider-registration UUID, kind, capacity, alignment, and allowed memory domain. An already-unregistered or replaced source provider fails closed. The import call is the provider's readiness boundary; when the context exposes resource synchronization, the coordinator also synchronizes the imported resource. The typed input and its immutable image snapshots remain unchanged; remapped input handles are exposed separately by input index in `OperationExecutionResources` and are invocation-scoped.
+6. Atomically reserves the direct/imported destination input accesses plus all allocated output/temporary resource accesses in `RuntimeWorkLedger`, then revalidates the same handles and descriptors before dispatch. Source resources remain under independent read leases and any known source provider-use lease through the implementation completion boundary.
+7. Marks runtime dispatch and invokes the exact implementation registration captured by the candidate.
 6. Releases the work/resource lease only after the implementation's `execute` call returns or throws. `ImageOperationImplementation.execute` is the completion boundary for all declared accesses: an implementation that submits asynchronous provider work must await every use that could still access its input, output, or temporary resources before returning.
 
 The ledger's submitted state means runtime dispatch has begun; it is not a claim that hardware accepted work or a substitute for provider telemetry. The implementation must not return a valid output while work that can still access its declared resources remains outstanding.
@@ -1175,7 +1176,9 @@ The caller may instead request the validated output value without mutating an ex
 - Only `.read` input roles may declare `requiresImport`; imported writes are rejected until a separate write-back/publication contract is defined.
 - An imported destination handle must identify the exact candidate target and provider registration. A distinct imported resource reference must not conceal a writable alias of its source.
 - Source-target read leases and the destination execution lease protect their respective handles through the implementation completion boundary.
-- Imported input mappings are invocation-scoped and do not rewrite the exact typed input or its immutable image revision.
+- Imported input mappings are invocation-scoped, must not escape into persistent image output storage, and do not rewrite the exact typed input or its immutable image revision.
+- A source provider registration with explicit provenance is retained while its resource is imported/in use; a removed or replaced owner fails closed before import.
+- Allocation failure is fail-closed and does not trigger implicit retry, domain selection, candidate substitution, or weakening of hard requirements. Caller-managed re-resolution uses a refreshed environment and the same original qualification policy.
 - The exact provider instance is retained before output/temporary allocation; a provider registration removed before provider-use acquisition cannot be used by a stale candidate.
 - Every qualified output/temporary role is allocated once, checked against its selected feasible memory domain and exact provider-registration identity, and passed to the implementation with its role and access mode.
 - A memory domain is inferred only when exactly one feasible domain exists; a choice among multiple feasible domains is explicit.
@@ -1191,7 +1194,7 @@ The caller may instead request the validated output value without mutating an ex
 
 ### Deferred
 
-- Provider-verified imported/output residency beyond the import completion boundary and production synchronization-route guarantees.
+- Provider-verified imported/output residency beyond the import completion boundary, production synchronization-route guarantees, and persistent source-provider/native-releaser ownership for resources that outlive the operation.
 - Separate physical capacity reservation/reuse, memory-pressure/eviction policy, allocation-failure re-resolution, and retry policy.
 - Full cancellation, timeout, device-loss cleanup, and whole-pipeline planning.
 - Native provider releaser/package retention for image resources beyond the operation's provider-use lease and across plugin unload.
@@ -1255,6 +1258,8 @@ For the library MVP, `requiresImport` is valid only for an `.input(index)` role 
 
 The coordinator MUST:
 - Keep the original typed input and exact `ImageStateSnapshot` unchanged.
+- Treat imported mappings as invocation-scoped. An implementation must not retain an imported handle after completion or attach it to persistent output storage; image outputs are checked for this escape.
+- When source registration provenance exists, retain the exact registered source provider instance and fail closed if that registration is missing or replaced.
 - Retain the source resource under a read lease on its own target while import is performed and while the implementation may use the imported handle.
 - Require the imported handle to identify the exact qualified destination target and provider registration, and validate kind, capacity, alignment, and allowed memory domain.
 - Treat the asynchronous `importResource` return as the provider's readiness/completion boundary. When the context supports resource synchronization, request synchronization for the imported resource before dispatch.
@@ -1268,11 +1273,12 @@ Writable/read-write input imports remain rejected. Supporting them later require
 ### Invariants
 
 - Import does not mutate the input value or its image revision.
-- The source is read-protected for the entire import-and-execution interval.
+- The source is read-protected for the entire import-and-execution interval, and a registered source provider is retained for that same interval.
 - The destination handle is checked against the exact selected execution registration, not merely a stable provider identifier.
 - The implementation receives the destination mapping by input index and must use it instead of the original resource for that imported role.
 - Missing import capability, a mismatched destination descriptor, or failed synchronization fails the invocation before implementation dispatch.
 - Imported handles are not evidence of persistent provider residency or measured transfer cost.
+- Source-provider retention ends with the operation; it does not solve native releaser ownership for imported or source storage that outlives the invocation.
 
 ### Consequence
 
