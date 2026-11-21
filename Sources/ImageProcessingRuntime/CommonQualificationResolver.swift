@@ -39,6 +39,7 @@ public actor CommonQualificationResolver {
         let ranked = OperationImplementationCandidateRanker.rank(
             qualification.qualifiedCandidates,
             stepIdentifier: step.identifier,
+            requirements: policy.requirements,
             preferences: policy.preferences
         )
         return OperationImplementationResolutionReport(
@@ -82,9 +83,6 @@ public actor CommonQualificationResolver {
             throw OperationImplementationQualificationError.imageInputContextRequired
         }
 
-        let implementationCandidates = await implementations.implementations(
-            for: step.specification
-        )
         let applicableRequirements = policy.requirements.filter { declaration in
             switch declaration.origin.scope {
             case .pipeline:
@@ -93,6 +91,16 @@ public actor CommonQualificationResolver {
                 return identifier == step.identifier
             }
         }
+        if Self.constrainedPrecisionValues(
+            for: .inputStorage,
+            requirements: applicableRequirements
+        ) != nil, imageInputContext == nil {
+            throw OperationImplementationQualificationError.inputStoragePrecisionRequiresImageInputContext
+        }
+
+        let implementationCandidates = await implementations.implementations(
+            for: step.specification
+        )
 
         var evaluations: [OperationImplementationCandidateEvaluation] = []
         var didResolveResourcePlan = false
@@ -190,6 +198,7 @@ public actor CommonQualificationResolver {
                 imageInputContext,
                 operation: step.specification,
                 implementation: implementation.specification,
+                requirements: applicableRequirements,
                 rejections: &inputSemanticRejections
             )
             if !inputSemanticRejections.isEmpty {
@@ -411,7 +420,11 @@ public actor CommonQualificationResolver {
                                 assessedAt: now
                             ),
                             resourceAllocations: feasibleResourceAllocations,
-                            inputResourceAccesses: inputResourceAccesses
+                            inputResourceAccesses: inputResourceAccesses,
+                            executionPrecision: Self.executionPrecision(
+                                implementation: implementation.specification,
+                                requirements: applicableRequirements
+                            )
                         )
                         evaluations.append(
                             OperationImplementationCandidateEvaluation(
@@ -448,9 +461,15 @@ public actor CommonQualificationResolver {
         _ inputContext: ImageOperationInputContext?,
         operation: AnyOperationSpecification,
         implementation: ImplementationSpecification,
+        requirements: [QualificationRequirementDeclaration],
         rejections: inout [CandidateQualificationRejection]
     ) {
         guard let inputContext else { return }
+        let inputStorageConstraint = Self.constrainedPrecisionValues(
+            for: .inputStorage,
+            requirements: requirements
+        )
+        var observedPixelInput = false
 
         for input in inputContext.inputs {
             for reference in input.target.layerReferences {
@@ -487,6 +506,19 @@ public actor CommonQualificationResolver {
                     continue
                 }
                 guard let pixelDescriptor else { continue }
+                observedPixelInput = true
+
+                if let inputStorageConstraint,
+                   !inputStorageConstraint.contains(.storage(pixelDescriptor.componentType)) {
+                    rejections.append(
+                        .inputStoragePrecisionRequirementUnsupported(
+                            input.inputIndex,
+                            reference,
+                            actual: pixelDescriptor.componentType,
+                            allowed: inputStorageConstraint
+                        )
+                    )
+                }
 
                 if let operationDomain = operation.pixelDataContract.input,
                    !operationDomain.supports(pixelDescriptor) {
@@ -522,6 +554,10 @@ public actor CommonQualificationResolver {
                     )
                 }
             }
+        }
+
+        if inputStorageConstraint != nil && !observedPixelInput {
+            rejections.append(.inputStoragePrecisionNotObservable)
         }
     }
 
@@ -819,6 +855,67 @@ public actor CommonQualificationResolver {
                 break
             }
         }
+    }
+
+    private static func constrainedPrecisionValues(
+        for dimension: PrecisionDimension,
+        requirements: [QualificationRequirementDeclaration]
+    ) -> Set<PrecisionValue>? {
+        var intersection: Set<PrecisionValue>?
+        for declaration in requirements {
+            let values: Set<PrecisionValue>
+            switch declaration.requirement {
+            case let .precision(requiredDimension, value) where requiredDimension == dimension:
+                values = [value]
+            case let .allowedPrecisions(requiredDimension, allowed) where requiredDimension == dimension:
+                values = allowed
+            default:
+                continue
+            }
+            if let current = intersection {
+                intersection = current.intersection(values)
+            } else {
+                intersection = values
+            }
+        }
+        return intersection
+    }
+
+    private static func executionPrecision(
+        implementation: ImplementationSpecification,
+        requirements: [QualificationRequirementDeclaration]
+    ) -> OperationExecutionPrecision {
+        func narrowedValues(for dimension: PrecisionDimension) -> Set<PrecisionValue>? {
+            guard let constrained = constrainedPrecisionValues(for: dimension, requirements: requirements) else {
+                return nil
+            }
+            let supported = implementation.precisionSupport.values(for: dimension)
+            let effective = constrained.intersection(supported)
+            return effective == supported ? nil : effective
+        }
+        let computation: Set<ArithmeticPrecision>? = narrowedValues(for: .computation).map {
+            Set($0.compactMap { value in
+                guard case let .arithmetic(precision) = value else { return nil }
+                return precision
+            })
+        }
+        let accumulation: Set<ArithmeticPrecision>? = narrowedValues(for: .accumulation).map {
+            Set($0.compactMap { value in
+                guard case let .arithmetic(precision) = value else { return nil }
+                return precision
+            })
+        }
+        let outputStorage: Set<PixelComponentType>? = narrowedValues(for: .output).map {
+            Set($0.compactMap { value in
+                guard case let .storage(componentType) = value else { return nil }
+                return componentType
+            })
+        }
+        return OperationExecutionPrecision(
+            computation: computation,
+            accumulation: accumulation,
+            outputStorage: outputStorage
+        )
     }
 
     private func evaluateSnapshotFreshness(

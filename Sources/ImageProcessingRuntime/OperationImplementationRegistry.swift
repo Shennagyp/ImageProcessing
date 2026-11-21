@@ -49,6 +49,7 @@ private struct AnyRegisteredOperationImplementation: Sendable {
         any ImageOperation,
         any OperationValue,
         any ExecutionContext,
+        OperationExecutionPrecision,
         OperationExecutionResources
     ) async throws -> any OperationValue
 
@@ -110,7 +111,7 @@ public actor OperationImplementationRegistry {
             input in input is Implementation.Operation.Input
         }
         let execute: AnyRegisteredOperationImplementation.Execute = {
-            operation, input, context, resources in
+            operation, input, context, precision, resources in
             guard let typedOperation = operation as? Implementation.Operation,
                   let typedInput = input as? Implementation.Operation.Input else {
                 throw OperationImplementationRegistryError.typedDispatchMismatch(key)
@@ -119,6 +120,7 @@ public actor OperationImplementationRegistry {
                 operation: typedOperation,
                 input: typedInput,
                 context: context,
+                precision: precision,
                 resources: resources
             )
         }
@@ -269,7 +271,13 @@ public actor OperationImplementationRegistry {
             throw OperationImplementationRegistryError.typedDispatchMismatch(registered.key)
         }
 
-        let output = try await entry.execute(step.operation, input, context, resources)
+        let output = try await entry.execute(
+            step.operation,
+            input,
+            context,
+            candidate.executionPrecision,
+            resources
+        )
         guard output.valueTypeIdentifier == specification.outputType else {
             throw OperationImplementationRegistryError.outputTypeMismatch(
                 expected: specification.outputType,
@@ -280,7 +288,8 @@ public actor OperationImplementationRegistry {
             try step.validateOutput(
                 output,
                 for: input,
-                implementation: specification
+                implementation: specification,
+                executionPrecision: candidate.executionPrecision
             )
         } catch {
             throw OperationImplementationRegistryError.outputValidationFailed(

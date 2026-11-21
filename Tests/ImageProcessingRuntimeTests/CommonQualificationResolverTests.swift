@@ -20,7 +20,7 @@ private struct QualificationOperation: ImageOperation {
         identifier: OperationIdentifier(rawValue: "qualification.transform")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
         precisionContract: OperationPrecisionContract(
-            computation: [.float32, .float64]
+            computation: [.float16, .float32, .float64]
         ),
         numericalContract: OperationNumericalContract(
             rounding: .nearestEven,
@@ -1262,7 +1262,7 @@ struct CommonQualificationResolverTests {
                 ),
                 QualificationImplementation(
                     identifier: "qualification.precision.float64",
-                    precision: .init(computation: [.float64])
+                    precision: .init(computation: [.float32, .float64])
                 )
             ],
             policy: policy,
@@ -1277,5 +1277,96 @@ struct CommonQualificationResolverTests {
         )
         #expect(resolution.rankedCandidates[0].preferenceContributions.first?.weightedWinRate == 1)
         #expect(resolution.rankedCandidates[1].preferenceContributions.first?.weightedWinRate == 0)
+        #expect(resolution.rankedCandidates[0].candidate.executionPrecision.computation == [.float64])
+        #expect(resolution.rankedCandidates[1].candidate.executionPrecision.isUnconstrained)
+    }
+
+    @Test
+    func hardExactPrecisionIsBoundForMultiModeImplementation() async throws {
+        let now = Date(timeIntervalSince1970: 52_500)
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.require(.precision(.computation, .float32))
+        }.qualificationPolicy
+        let resolution = try await makePrecisionResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.precision.hard",
+                    delay: ExecutionObservation<UInt64>(unknownReason: "not reported"),
+                    capturedAt: now
+                )
+            ],
+            implementations: [
+                QualificationImplementation(
+                    identifier: "qualification.precision.multi",
+                    precision: .init(computation: [.float16, .float32, .float64])
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+        let candidate = try #require(resolution.rankedCandidates.first?.candidate)
+        #expect(candidate.executionPrecision.computation == [.float32])
+    }
+
+    @Test
+    func allowedPrecisionSetIsIntersectedWithImplementationSupport() async throws {
+        let now = Date(timeIntervalSince1970: 52_600)
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.require(.allowedPrecisions(.computation, [.float32, .float64]))
+        }.qualificationPolicy
+        let resolution = try await makePrecisionResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.precision.allowed",
+                    delay: ExecutionObservation<UInt64>(unknownReason: "not reported"),
+                    capturedAt: now
+                )
+            ],
+            implementations: [
+                QualificationImplementation(
+                    identifier: "qualification.precision.multi",
+                    precision: .init(computation: [.float16, .float32, .float64])
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+        let candidate = try #require(resolution.rankedCandidates.first?.candidate)
+        #expect(candidate.executionPrecision.computation == [.float32, .float64])
+    }
+
+    @Test
+    func hardPrecisionRequirementOverridesIncompatibleSoftPreference() async throws {
+        let now = Date(timeIntervalSince1970: 52_700)
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.require(.precision(.computation, .float32))
+            $0.prefer(.precision(.computation, .float64), priority: 10)
+        }.qualificationPolicy
+        let resolution = try await makePrecisionResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.precision.precedence",
+                    delay: ExecutionObservation<UInt64>(unknownReason: "not reported"),
+                    capturedAt: now
+                )
+            ],
+            implementations: [
+                QualificationImplementation(
+                    identifier: "qualification.precision.multi",
+                    precision: .init(computation: [.float16, .float32, .float64])
+                ),
+                QualificationImplementation(
+                    identifier: "qualification.precision.fp32",
+                    precision: .init(computation: [.float32])
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(resolution.rankedCandidates.allSatisfy {
+            $0.candidate.executionPrecision.computation == [.float32]
+                && $0.preferenceContributions.isEmpty
+        })
     }
 }

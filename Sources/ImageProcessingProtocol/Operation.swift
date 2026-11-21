@@ -133,6 +133,11 @@ public enum OperationOutputValidationError: Error, Equatable, Sendable {
     case implementationPixelRepresentationUnsupported(LayerReference)
     case operationOutputStoragePrecisionUnsupported(LayerReference, PixelComponentType)
     case implementationOutputStoragePrecisionUnsupported(LayerReference, PixelComponentType)
+    case outputStoragePrecisionOutsideExecutionConstraint(
+        LayerReference,
+        actual: PixelComponentType,
+        allowed: Set<PixelComponentType>
+    )
     case outputChannelValueRangeMissing(LayerReference, ChannelIdentifier)
     case outputChannelValueRangeOutsideContract(LayerReference, ChannelIdentifier)
     case operationPostconditionFailed(String)
@@ -513,7 +518,8 @@ public struct AnyImageOperationStep: Sendable {
     public func validateOutput(
         _ output: any OperationValue,
         for input: any OperationValue,
-        implementation: ImplementationSpecification
+        implementation: ImplementationSpecification,
+        executionPrecision: OperationExecutionPrecision = .unconstrained
     ) throws {
         guard input.valueTypeIdentifier == specification.inputType else {
             throw OperationOutputValidationError.inputConcreteTypeMismatch
@@ -527,14 +533,16 @@ public struct AnyImageOperationStep: Sendable {
 
         try validateImageOutputDescriptor(
             output,
-            implementation: implementation
+            implementation: implementation,
+            executionPrecision: executionPrecision
         )
         try outputPostconditionValidator(input, output)
     }
 
     private func validateImageOutputDescriptor(
         _ output: any OperationValue,
-        implementation: ImplementationSpecification
+        implementation: ImplementationSpecification,
+        executionPrecision: OperationExecutionPrecision
     ) throws {
         let expectsImageOutput = !specification.layerContract.producedOutputKinds.isEmpty
             || specification.pixelDataContract.output != nil
@@ -624,6 +632,14 @@ public struct AnyImageOperationStep: Sendable {
                 throw OperationOutputValidationError.implementationOutputStoragePrecisionUnsupported(
                     reference,
                     pixels.componentType
+                )
+            }
+            if let allowed = executionPrecision.outputStorage,
+               !allowed.contains(pixels.componentType) {
+                throw OperationOutputValidationError.outputStoragePrecisionOutsideExecutionConstraint(
+                    reference,
+                    actual: pixels.componentType,
+                    allowed: allowed
                 )
             }
 

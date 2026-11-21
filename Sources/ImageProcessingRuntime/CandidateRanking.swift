@@ -233,17 +233,31 @@ enum OperationImplementationCandidateRanker {
     static func rank(
         _ candidates: [QualifiedOperationImplementation],
         stepIdentifier: OperationStepIdentifier,
+        requirements: [QualificationRequirementDeclaration],
         preferences: [OptimizationPreferenceDeclaration]
     ) -> [RankedOperationImplementationCandidate] {
         guard !candidates.isEmpty else { return [] }
 
-        let applicablePreferences = preferences.filter { declaration in
+        let applicableRequirements = requirements.filter { declaration in
             switch declaration.origin.scope {
             case .pipeline:
                 true
             case let .step(identifier):
                 identifier == stepIdentifier
             }
+        }
+        let hardPrecisionValues = Self.hardPrecisionValues(from: applicableRequirements)
+        let applicablePreferences = preferences.filter { declaration in
+            let scopeApplies: Bool
+            switch declaration.origin.scope {
+            case .pipeline: scopeApplies = true
+            case let .step(identifier): scopeApplies = identifier == stepIdentifier
+            }
+            guard scopeApplies else { return false }
+            guard case let .precision(dimension, value) = declaration.objective else { return true }
+            // Input-storage precision is existing data; soft routing cannot imply conversion.
+            guard dimension != .inputStorage else { return false }
+            return hardPrecisionValues[dimension].map { $0.contains(value) } ?? true
         }
 
         let inputResidencies = candidates.map { candidate in
@@ -335,9 +349,14 @@ enum OperationImplementationCandidateRanker {
                     weightedScore: scores[index][$0] ?? 0
                 )
             }
+            let precisionBoundCandidate = Self.bindPreferredPrecision(
+                to: candidates[index],
+                preferences: applicablePreferences,
+                hardPrecisionValues: hardPrecisionValues
+            )
             return RankedOperationImplementationCandidate(
                 rank: offset + 1,
-                candidate: candidates[index],
+                candidate: precisionBoundCandidate,
                 costEstimate: estimates[index],
                 inputResidency: inputResidencies[index],
                 resourceMemoryDomainOptions: domainOptions[index],
@@ -345,6 +364,85 @@ enum OperationImplementationCandidateRanker {
                 priorityScores: priorityScores
             )
         }
+    }
+
+    private static func hardPrecisionValues(
+        from requirements: [QualificationRequirementDeclaration]
+    ) -> [PrecisionDimension: Set<PrecisionValue>] {
+        var result: [PrecisionDimension: Set<PrecisionValue>] = [:]
+        for declaration in requirements {
+            let dimension: PrecisionDimension
+            let values: Set<PrecisionValue>
+            switch declaration.requirement {
+            case let .precision(requiredDimension, value):
+                dimension = requiredDimension
+                values = [value]
+            case let .allowedPrecisions(requiredDimension, allowed):
+                dimension = requiredDimension
+                values = allowed
+            default:
+                continue
+            }
+            if let current = result[dimension] { result[dimension] = current.intersection(values) }
+            else { result[dimension] = values }
+        }
+        return result
+    }
+
+    private static func bindPreferredPrecision(
+        to candidate: QualifiedOperationImplementation,
+        preferences: [OptimizationPreferenceDeclaration],
+        hardPrecisionValues: [PrecisionDimension: Set<PrecisionValue>]
+    ) -> QualifiedOperationImplementation {
+        func preferredValue(for dimension: PrecisionDimension) -> PrecisionValue? {
+            preferences
+                .filter { declaration in
+                    guard case let .precision(preferredDimension, value) = declaration.objective,
+                          preferredDimension == dimension,
+                          candidate.implementation.specification.precisionSupport.values(for: dimension).contains(value)
+                    else { return false }
+                    return hardPrecisionValues[dimension].map { $0.contains(value) } ?? true
+                }
+                .sorted { lhs, rhs in
+                    if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
+                    let lhsStep: Bool
+                    let rhsStep: Bool
+                    if case .step = lhs.origin.scope { lhsStep = true } else { lhsStep = false }
+                    if case .step = rhs.origin.scope { rhsStep = true } else { rhsStep = false }
+                    return lhsStep && !rhsStep
+                }
+                .first
+                .flatMap { declaration in
+                    guard case let .precision(_, value) = declaration.objective else { return nil }
+                    return value
+                }
+        }
+
+        let support = candidate.implementation.specification.precisionSupport
+        let current = candidate.executionPrecision
+        var computation = current.computation
+        var accumulation = current.accumulation
+        var outputStorage = current.outputStorage
+
+        if let preferred = preferredValue(for: .computation), case let .arithmetic(value) = preferred {
+            let permitted = computation ?? support.computation
+            if support.computation.count > 1 && permitted.contains(value) { computation = [value] }
+        }
+        if let preferred = preferredValue(for: .accumulation), case let .arithmetic(value) = preferred {
+            let permitted = accumulation ?? support.accumulation
+            if support.accumulation.count > 1 && permitted.contains(value) { accumulation = [value] }
+        }
+        if let preferred = preferredValue(for: .output), case let .storage(value) = preferred {
+            let permitted = outputStorage ?? support.outputStorage
+            if support.outputStorage.count > 1 && permitted.contains(value) { outputStorage = [value] }
+        }
+        return candidate.replacingExecutionPrecision(
+            with: OperationExecutionPrecision(
+                computation: computation,
+                accumulation: accumulation,
+                outputStorage: outputStorage
+            )
+        )
     }
 
     private static func compare(

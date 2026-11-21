@@ -54,6 +54,32 @@ public enum OperationExecutionResourcesError: Error, Equatable, Sendable {
     case duplicateResource(ExecutionResourceReference)
 }
 
+/// Precision constraints selected by qualification and resolution for one invocation.
+/// A nil dimension leaves the implementation's declared mode choice unconstrained.
+/// A singleton set is an exact mode; a larger set is a hard allowed subset.
+/// Input-storage precision describes existing data and is checked against selected image layers.
+public struct OperationExecutionPrecision: Hashable, Sendable {
+    public let computation: Set<ArithmeticPrecision>?
+    public let accumulation: Set<ArithmeticPrecision>?
+    public let outputStorage: Set<PixelComponentType>?
+
+    public init(
+        computation: Set<ArithmeticPrecision>? = nil,
+        accumulation: Set<ArithmeticPrecision>? = nil,
+        outputStorage: Set<PixelComponentType>? = nil
+    ) {
+        self.computation = computation?.isEmpty == true ? nil : computation
+        self.accumulation = accumulation?.isEmpty == true ? nil : accumulation
+        self.outputStorage = outputStorage?.isEmpty == true ? nil : outputStorage
+    }
+
+    public static let unconstrained = Self()
+
+    public var isUnconstrained: Bool {
+        computation == nil && accumulation == nil && outputStorage == nil
+    }
+}
+
 /// Immutable role-indexed resources allocated for one operation invocation.
 /// Output resources may be attached to exact image planes by the implementation;
 /// temporary resources remain invocation-scoped and are released after completion.
@@ -564,10 +590,21 @@ public protocol ImageOperationImplementation: Sendable {
         context: any ExecutionContext,
         resources: OperationExecutionResources
     ) async throws -> Operation.Output
+
+    /// Executes with the effective precision constraints selected for this invocation.
+    /// Implementations with multiple supported modes must honor these constraints.
+    func execute(
+        operation: Operation,
+        input: Operation.Input,
+        context: any ExecutionContext,
+        precision: OperationExecutionPrecision,
+        resources: OperationExecutionResources
+    ) async throws -> Operation.Output
 }
 
 public enum ImageOperationExecutionError: Error, Equatable, Sendable {
     case implementationDoesNotConsumeAllocatedResources
+    case implementationDoesNotHonorExecutionPrecision
 }
 
 public extension ImageOperationImplementation {
@@ -581,6 +618,26 @@ public extension ImageOperationImplementation {
             throw ImageOperationExecutionError.implementationDoesNotConsumeAllocatedResources
         }
         return try await execute(operation: operation, input: input, context: context)
+    }
+}
+
+public extension ImageOperationImplementation {
+    func execute(
+        operation: Operation,
+        input: Operation.Input,
+        context: any ExecutionContext,
+        precision: OperationExecutionPrecision,
+        resources: OperationExecutionResources
+    ) async throws -> Operation.Output {
+        guard precision.isUnconstrained else {
+            throw ImageOperationExecutionError.implementationDoesNotHonorExecutionPrecision
+        }
+        return try await execute(
+            operation: operation,
+            input: input,
+            context: context,
+            resources: resources
+        )
     }
 }
 

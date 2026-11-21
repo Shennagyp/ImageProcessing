@@ -90,6 +90,13 @@ public enum CandidateQualificationRejection: Hashable, Sendable {
     case implementationInputPixelRepresentationUnsupported(Int, LayerReference)
     case operationInputStoragePrecisionUnsupported(Int, LayerReference, PixelComponentType)
     case implementationInputStoragePrecisionUnsupported(Int, LayerReference, PixelComponentType)
+    case inputStoragePrecisionRequirementUnsupported(
+        Int,
+        LayerReference,
+        actual: PixelComponentType,
+        allowed: Set<PrecisionValue>
+    )
+    case inputStoragePrecisionNotObservable
     case inputBindingMissing(Int)
     case inputResourceBindingMissing(Int, LayerReference)
     case inputResourceContextMissing(Int)
@@ -155,22 +162,59 @@ public struct QualifiedResourceAllocation: Hashable, Sendable {
 
 public struct QualifiedOperationImplementation: Sendable {
     public let implementation: RegisteredOperationImplementation
-    /// Exact provider package registration used to create the execution context.
     public let providerRegistrationIdentifier: UUID
-    /// Exact operation occurrence qualified by the resolver.
     public let operationStep: AnyImageOperationStep
-    /// Exact typed value whose descriptors and resources were qualified.
     public let input: any OperationValue
     public let target: ExecutionTargetReference
     public let context: any ExecutionContext
-    /// Exact immutable image revisions and targets used during qualification.
     public let imageInputContext: ImageOperationInputContext?
-    /// Provider/device telemetry from the same environment snapshot as qualification.
     public let environmentObservations: CandidateEnvironmentObservations
-    /// Candidate-bound output and temporary allocation requirements; these are not reservations.
     public let resourceAllocations: [QualifiedResourceAllocation]
-    /// Source-resource accesses implied by the implementation's input roles.
     public let inputResourceAccesses: [ExecutionResourceAccess]
+    /// Hard precision restrictions established during qualification and optionally refined during ranking.
+    public let executionPrecision: OperationExecutionPrecision
+
+    init(
+        implementation: RegisteredOperationImplementation,
+        providerRegistrationIdentifier: UUID,
+        operationStep: AnyImageOperationStep,
+        input: any OperationValue,
+        target: ExecutionTargetReference,
+        context: any ExecutionContext,
+        imageInputContext: ImageOperationInputContext?,
+        environmentObservations: CandidateEnvironmentObservations,
+        resourceAllocations: [QualifiedResourceAllocation],
+        inputResourceAccesses: [ExecutionResourceAccess],
+        executionPrecision: OperationExecutionPrecision = .unconstrained
+    ) {
+        self.implementation = implementation
+        self.providerRegistrationIdentifier = providerRegistrationIdentifier
+        self.operationStep = operationStep
+        self.input = input
+        self.target = target
+        self.context = context
+        self.imageInputContext = imageInputContext
+        self.environmentObservations = environmentObservations
+        self.resourceAllocations = resourceAllocations
+        self.inputResourceAccesses = inputResourceAccesses
+        self.executionPrecision = executionPrecision
+    }
+
+    func replacingExecutionPrecision(with precision: OperationExecutionPrecision) -> Self {
+        Self(
+            implementation: implementation,
+            providerRegistrationIdentifier: providerRegistrationIdentifier,
+            operationStep: operationStep,
+            input: input,
+            target: target,
+            context: context,
+            imageInputContext: imageInputContext,
+            environmentObservations: environmentObservations,
+            resourceAllocations: resourceAllocations,
+            inputResourceAccesses: inputResourceAccesses,
+            executionPrecision: precision
+        )
+    }
 }
 
 public struct OperationImplementationCandidateEvaluation: Sendable {
@@ -221,4 +265,5 @@ public enum OperationImplementationQualificationError: Error, Equatable, Sendabl
     case invalidOperationParameters(OperationParameterValidationError)
     case inputValueTypeMismatch(expected: OperationValueIdentifier, actual: OperationValueIdentifier)
     case imageInputContextRequired
+    case inputStoragePrecisionRequiresImageInputContext
 }

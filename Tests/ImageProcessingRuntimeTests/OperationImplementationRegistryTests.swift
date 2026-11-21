@@ -26,7 +26,8 @@ private struct RegistryOperation: ImageOperation {
 
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "registry.multiply")!,
-        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        precisionContract: OperationPrecisionContract(computation: [.float32, .float64])
     )
 }
 
@@ -40,6 +41,41 @@ private struct AlternativeRegistryOperation: ImageOperation {
 
 private struct RegistryContext: ExecutionContext {
     let target: ExecutionTargetReference
+}
+
+private struct PrecisionObservingMultiplyImplementation: ImageOperationImplementation {
+    typealias Operation = RegistryOperation
+
+    let specification = ImplementationSpecification(
+        identifier: OperationImplementationIdentifier(rawValue: "registry.multiply.precision-aware")!,
+        version: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+        operationIdentifier: RegistryOperation.specification.identifier,
+        supportedOperationVersions: SemanticVersionRange(
+            lowerBound: SemanticVersion(major: 1, minor: 0, patch: 0)!,
+            upperBound: SemanticVersion(major: 2, minor: 0, patch: 0)!
+        )!,
+        inputType: RegistryInput.typeIdentifier,
+        outputType: RegistryOutput.typeIdentifier,
+        precisionSupport: OperationPrecisionContract(computation: [.float32, .float64])
+    )
+
+    func execute(
+        operation: RegistryOperation,
+        input: RegistryInput,
+        context: any ExecutionContext
+    ) async throws -> RegistryOutput {
+        RegistryOutput(value: -1)
+    }
+
+    func execute(
+        operation: RegistryOperation,
+        input: RegistryInput,
+        context: any ExecutionContext,
+        precision: OperationExecutionPrecision,
+        resources: OperationExecutionResources
+    ) async throws -> RegistryOutput {
+        RegistryOutput(value: precision.computation == [.float32] ? input.value * 6 : -2)
+    }
 }
 
 private struct MultiplyImplementation: ImageOperationImplementation {
@@ -60,7 +96,8 @@ private struct MultiplyImplementation: ImageOperationImplementation {
                 upperBound: upper
             )!,
             inputType: RegistryInput.typeIdentifier,
-            outputType: RegistryOutput.typeIdentifier
+            outputType: RegistryOutput.typeIdentifier,
+            precisionSupport: OperationPrecisionContract(computation: [.float32, .float64])
         )
         self.factor = factor
     }
@@ -98,7 +135,8 @@ struct OperationImplementationRegistryTests {
         _ implementation: RegisteredOperationImplementation,
         operationStep: AnyImageOperationStep? = nil,
         input: any OperationValue,
-        context: RegistryContext? = nil
+        context: RegistryContext? = nil,
+        executionPrecision: OperationExecutionPrecision = .unconstrained
     ) -> QualifiedOperationImplementation {
         let selectedContext = context ?? self.context()
         return QualifiedOperationImplementation(
@@ -109,8 +147,25 @@ struct OperationImplementationRegistryTests {
             target: selectedContext.target,
             context: selectedContext,
             imageInputContext: nil,
-            inputResourceAccesses: []
+            inputResourceAccesses: [],
+            executionPrecision: executionPrecision
         )
+    }
+
+    @Test
+    func qualifiedPrecisionIsPassedToTheImplementationExecutionContract() async throws {
+        let registry = OperationImplementationRegistry()
+        try await registry.register(PrecisionObservingMultiplyImplementation())
+        let registered = try #require(await registry.registeredImplementations().first)
+        let candidate = qualifiedCandidate(
+            registered,
+            input: RegistryInput(value: 7),
+            executionPrecision: OperationExecutionPrecision(computation: [.float32])
+        )
+        let output = try #require(
+            await registry.execute(using: candidate) as? RegistryOutput
+        )
+        #expect(output.value == 42)
     }
 
     @Test
