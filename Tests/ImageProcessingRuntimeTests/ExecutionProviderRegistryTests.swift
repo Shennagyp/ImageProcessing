@@ -354,7 +354,8 @@ struct ExecutionProviderRegistryTests {
             contextRegistrationIdentifierOverride: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
         )
         try await registry.register(provider)
-        let registered = try #require(await registry.registeredProviders().first)
+        let registrations = await registry.registeredProviders()
+        let registered = try #require(registrations.first)
 
         await #expect(throws: ExecutionProviderRegistryError.contextRegistrationMismatch(identifier)) {
             try await registry.makeContext(
