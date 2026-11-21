@@ -80,19 +80,26 @@ public struct OperationExecutionPrecision: Hashable, Sendable {
     }
 }
 
-/// Immutable role-indexed resources allocated for one operation invocation.
-/// Output resources may be attached to exact image planes by the implementation;
-/// temporary resources remain invocation-scoped and are released after completion.
+/// Immutable invocation resources. Output and temporary resources are allocated
+/// by the coordinator. Imported input bindings are execution-time remappings;
+/// the typed input and its original image snapshots remain unchanged.
 public struct OperationExecutionResources: Sendable {
     private let resourcesByRole: [ImplementationResourceRole: any ExecutionResource]
     public let bindings: [OperationExecutionResourceBinding]
+    /// Only inputs that the runtime imported/remapped for this execution.
+    /// Inputs without an entry continue to use the handles in the typed input.
+    public let importedInputBindings: [OperationInputResourceBinding]
 
     public init() {
         resourcesByRole = [:]
         bindings = []
+        importedInputBindings = []
     }
 
-    public init(bindings: [OperationExecutionResourceBinding]) throws {
+    public init(
+        bindings: [OperationExecutionResourceBinding],
+        importedInputBindings: [OperationInputResourceBinding] = []
+    ) throws {
         var byRole: [ImplementationResourceRole: any ExecutionResource] = [:]
         var seenResources = Set<ExecutionResourceReference>()
 
@@ -112,14 +119,25 @@ public struct OperationExecutionResources: Sendable {
 
         self.resourcesByRole = byRole
         self.bindings = bindings
+        self.importedInputBindings = importedInputBindings
     }
 
-    public var isEmpty: Bool { bindings.isEmpty }
+    public var isEmpty: Bool {
+        bindings.isEmpty && importedInputBindings.isEmpty
+    }
 
     public func resource(
         for role: ImplementationResourceRole
     ) -> (any ExecutionResource)? {
         resourcesByRole[role]
+    }
+
+    /// Returns destination-context handles imported for one logical input.
+    /// An empty result means the input continues to use its original bindings.
+    public func importedInputResources(
+        for inputIndex: Int
+    ) -> [OperationInputResourceBinding] {
+        importedInputBindings.filter { $0.inputIndex == inputIndex }
     }
 }
 
@@ -242,6 +260,7 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case pixelRepresentationMismatch(inputOutput: String)
     case invalidResourceRequirement(ImplementationResourceRole)
     case resourceAccessContractMismatch(ImplementationResourceRole)
+    case resourceImportRequiresInputRole(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
     case invalidNumericalSupport
     case missingNumericalSupport
@@ -430,6 +449,13 @@ public struct ImplementationSpecification: Hashable, Sendable {
             guard requirement.isValid else {
                 throw ImplementationSpecificationValidationError.invalidResourceRequirement(requirement.role)
             }
+            if requirement.requiresImport {
+                guard case .input(_) = requirement.role else {
+                    throw ImplementationSpecificationValidationError.resourceImportRequiresInputRole(
+                        requirement.role
+                    )
+                }
+            }
             guard resourceRoles.insert(requirement.role).inserted else {
                 throw ImplementationSpecificationValidationError.duplicateResourceRequirement(requirement.role)
             }
@@ -582,7 +608,11 @@ public protocol ImageOperationImplementation: Sendable {
 
     /// Resource-aware execution. Existing implementations remain compatible
     /// when the invocation has no runtime-allocated resources. An implementation
-    /// with a non-empty plan must explicitly consume this role-indexed set.
+    /// with a non-empty plan must explicitly consume this invocation resource set.
+    /// Imported handles are exposed by input index through
+    /// OperationExecutionResources.importedInputResources(for:); when present,
+    /// they replace the corresponding original input handles for this invocation.
+    /// The typed input and its immutable image snapshots are never rewritten.
     /// Output resources for image results must be attached to produced layer
     /// planes; temporary resources must not be retained in the returned image.
     func execute(
