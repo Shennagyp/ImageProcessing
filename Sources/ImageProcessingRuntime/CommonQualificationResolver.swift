@@ -682,19 +682,22 @@ public actor CommonQualificationResolver {
                         )
                     )
                 }
-                if !Self.bindingAccess(binding.access, satisfies: requirement.access) {
+                let requiredSourceAccess: ExecutionResourceAccessMode =
+                    requirement.requiresImport ? .read : requirement.access
+                if !Self.bindingAccess(binding.access, satisfies: requiredSourceAccess) {
                     rejections.append(
                         .inputResourceAccessInsufficient(
                             inputIndex,
                             reference,
                             actual: binding.access,
-                            required: requirement.access
+                            required: requiredSourceAccess
                         )
                     )
                 }
                 if descriptor.target == target,
                    descriptor.memoryDomain == .deviceLocal,
-                   descriptor.providerRegistrationIdentifier != providerRegistrationIdentifier {
+                   descriptor.providerRegistrationIdentifier != providerRegistrationIdentifier,
+                   !requirement.requiresImport {
                     rejections.append(
                         .inputResourceProviderRegistrationMismatch(
                             inputIndex,
