@@ -199,6 +199,7 @@ public struct CPUReferenceNegateFloat32Implementation: ImageOperationImplementat
             )!,
             inputType: ReferenceNegateFloat32Input.typeIdentifier,
             outputType: ReferenceNegateFloat32Output.typeIdentifier,
+            requiredProviderID: CPUExecutionProvider.identifier,
             layerSupport: ImplementationLayerSupport(
                 inputKinds: [.raster],
                 outputKinds: [.raster]
