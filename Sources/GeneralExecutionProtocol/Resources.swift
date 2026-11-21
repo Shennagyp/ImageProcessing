@@ -202,7 +202,8 @@ public protocol ExecutionWorkSubmittingContext: ExecutionContext {
     ) async throws -> any ExecutionSubmission<Work.Output>
 }
 
-/// Resource identity is scoped by its owning provider/execution target.
+/// Resource identity is scoped by its stable provider/execution target and, when
+/// known, the provider registration generation that created the allocation.
 public struct ExecutionResourceReference: Hashable, Sendable {
     public let target: ExecutionTargetReference
     public let identifier: ExecutionResourceIdentifier
