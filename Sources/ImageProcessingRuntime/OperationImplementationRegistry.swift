@@ -48,7 +48,8 @@ private struct AnyRegisteredOperationImplementation: Sendable {
     typealias Execute = @Sendable (
         any ImageOperation,
         any OperationValue,
-        any ExecutionContext
+        any ExecutionContext,
+        OperationExecutionResources
     ) async throws -> any OperationValue
 
     let descriptor: RegisteredOperationImplementation
@@ -109,7 +110,7 @@ public actor OperationImplementationRegistry {
             input in input is Implementation.Operation.Input
         }
         let execute: AnyRegisteredOperationImplementation.Execute = {
-            operation, input, context in
+            operation, input, context, resources in
             guard let typedOperation = operation as? Implementation.Operation,
                   let typedInput = input as? Implementation.Operation.Input else {
                 throw OperationImplementationRegistryError.typedDispatchMismatch(key)
@@ -117,7 +118,8 @@ public actor OperationImplementationRegistry {
             return try await implementation.execute(
                 operation: typedOperation,
                 input: typedInput,
-                context: context
+                context: context,
+                resources: resources
             )
         }
 
@@ -208,6 +210,13 @@ public actor OperationImplementationRegistry {
     func execute(
         using candidate: QualifiedOperationImplementation
     ) async throws -> any OperationValue {
+        try await execute(using: candidate, resources: OperationExecutionResources())
+    }
+
+    func execute(
+        using candidate: QualifiedOperationImplementation,
+        resources: OperationExecutionResources
+    ) async throws -> any OperationValue {
         let registered = candidate.implementation
         let step = candidate.operationStep
         let input = candidate.input
@@ -260,7 +269,7 @@ public actor OperationImplementationRegistry {
             throw OperationImplementationRegistryError.typedDispatchMismatch(registered.key)
         }
 
-        let output = try await entry.execute(step.operation, input, context)
+        let output = try await entry.execute(step.operation, input, context, resources)
         guard output.valueTypeIdentifier == specification.outputType else {
             throw OperationImplementationRegistryError.outputTypeMismatch(
                 expected: specification.outputType,

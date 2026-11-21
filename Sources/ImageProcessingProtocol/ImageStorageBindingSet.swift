@@ -93,6 +93,19 @@ public struct ImageStorageBindingSet: Sendable {
         }
     }
 
+    /// All layer/storage pairs retained by this revision, in stable layer-ID order.
+    /// Exposing the immutable pairs lets the runtime validate which allocated
+    /// invocation resources were attached to produced layers versus preserved layers.
+    public var layerBindings: [LayerPixelStorageBinding] {
+        bindings.keys.sorted { $0.rawValue < $1.rawValue }.compactMap { identifier in
+            guard let storage = bindings[identifier] else { return nil }
+            return LayerPixelStorageBinding(
+                reference: LayerReference(imageID: imageID, layerID: identifier),
+                storage: storage
+            )
+        }
+    }
+
     public var boundLayerCount: Int { bindings.count }
 
     private static func pixelDescriptor(

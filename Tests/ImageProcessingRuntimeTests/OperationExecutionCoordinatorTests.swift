@@ -38,14 +38,42 @@ private struct CoordinatedImageOperation: ImageOperation {
     typealias Input = CoordinatedImageInput
     typealias Output = CoordinatedImageOutput
 
+    static let outputPixelDomain = PixelRepresentationDomain(
+        layouts: [.interleaved],
+        interpretations: [.scientific]
+    )
+
     static let specification = OperationSpecification<Input, Output>(
         identifier: OperationIdentifier(rawValue: "execution-coordinator.image-update")!,
         semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!,
         layerContract: OperationLayerContract(
             acceptedInputKinds: [.annotation],
-            producedOutputKinds: [.annotation]
+            producedOutputKinds: [.raster]
+        ),
+        pixelDataContract: OperationPixelDataContract(
+            output: outputPixelDomain
         )
     )
+
+    func resourcePlan(for input: CoordinatedImageInput) throws -> OperationResourcePlan {
+        guard let source = input.imageOperationInputContext.inputs.first else {
+            throw OperationResourcePlanError.inputValueTypeMismatch
+        }
+        let pixels = try CoordinatedImageImplementation.outputPixels(
+            extent: source.imageState.document.canvas.extent
+        )
+        return try OperationResourcePlan(resources: [
+            OperationResourcePlanRequirement(
+                role: .output(0),
+                minimumCapacityBytes: pixels.minimumRequiredStorageBytes
+            ),
+            OperationResourcePlanRequirement(
+                role: .temporary("scratch"),
+                minimumCapacityBytes: 64,
+                minimumAlignmentBytes: 16
+            )
+        ])
+    }
 
     func validateOutput(
         _ output: CoordinatedImageOutput,
@@ -152,8 +180,51 @@ private struct CoordinatedImageImplementation: ImageOperationImplementation {
             outputType: CoordinatedImageOutput.typeIdentifier,
             layerSupport: ImplementationLayerSupport(
                 inputKinds: [.annotation],
-                outputKinds: [.annotation]
-            )
+                outputKinds: [.raster]
+            ),
+            pixelDataSupport: OperationPixelDataContract(
+                output: CoordinatedImageOperation.outputPixelDomain
+            ),
+            resourceRequirements: [
+                ImplementationResourceRequirement(
+                    role: .output(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host, .shared],
+                    minimumCapacityBytes: 1,
+                    access: .write
+                ),
+                ImplementationResourceRequirement(
+                    role: .temporary("scratch"),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host, .shared],
+                    minimumCapacityBytes: 1,
+                    minimumAlignmentBytes: 16,
+                    access: .readWrite
+                )
+            ]
+        )
+    }
+
+    static func outputPixels(extent: ImageExtent) throws -> PixelDataDescriptor {
+        let channel = PixelChannelDescriptor(
+            identifier: ChannelIdentifier(rawValue: "intensity")!,
+            role: .intensity
+        )
+        let bytesPerComponent = PixelComponentType.float32.bytesPerComponent
+        let plane = PixelPlaneLayout(
+            byteOffset: 0,
+            rowStrideBytes: extent.width * bytesPerComponent,
+            sliceStrideBytes: extent.width * extent.height * bytesPerComponent,
+            pixelStrideBytes: bytesPerComponent,
+            subsampling: try #require(PixelSubsampling()),
+            channelIndices: [0]
+        )
+        return try PixelDataDescriptor(
+            extent: extent,
+            componentType: .float32,
+            channels: [channel],
+            interpretation: .scientific(ScientificDataInterpretation()),
+            layout: .interleaved(plane)
         )
     }
 
@@ -162,21 +233,48 @@ private struct CoordinatedImageImplementation: ImageOperationImplementation {
         input: CoordinatedImageInput,
         context: any ExecutionContext
     ) async throws -> CoordinatedImageOutput {
+        try await execute(
+            operation: operation,
+            input: input,
+            context: context,
+            resources: OperationExecutionResources()
+        )
+    }
+
+    func execute(
+        operation: CoordinatedImageOperation,
+        input: CoordinatedImageInput,
+        context: any ExecutionContext,
+        resources: OperationExecutionResources
+    ) async throws -> CoordinatedImageOutput {
         guard let source = input.imageOperationInputContext.inputs.first else {
             throw OperationOutputValidationError.operationPostconditionFailed("missing source image")
+        }
+        guard let resource = resources.resource(for: .output(0)),
+              resources.resource(for: .temporary("scratch")) != nil else {
+            throw OperationOutputValidationError.operationPostconditionFailed(
+                "missing output or temporary allocation slot"
+            )
         }
 
         let sourceDocument = source.imageState.document
         let imageID = source.imageState.identifier
         let nextRevision = try source.imageState.revision.next()
-        let outputLayer = LayerDescriptor(
-            identifier: LayerIdentifier(rawValue: "layer.generated.annotation")!,
-            content: .annotation(
-                AnnotationDataDescriptor(
-                    schema: AnnotationSchemaIdentifier(rawValue: "annotation.generated.v1")!,
-                    coordinateSpace: .pixel
+        let pixels = try Self.outputPixels(extent: sourceDocument.canvas.extent)
+        let planeIndices = Array(pixels.layout.planes.indices)
+        let storage = try PixelStorageBinding(
+            descriptor: pixels,
+            planeBindings: [
+                PixelPlaneResourceBinding(
+                    resource: resource,
+                    planeIndices: planeIndices,
+                    access: .read
                 )
-            )
+            ]
+        )
+        let outputLayer = LayerDescriptor(
+            identifier: LayerIdentifier(rawValue: "layer.generated.raster")!,
+            content: .raster(pixels)
         )
         let document = try ImageDocumentSnapshot(
             identifier: imageID,
@@ -184,7 +282,15 @@ private struct CoordinatedImageImplementation: ImageOperationImplementation {
             canvas: sourceDocument.canvas,
             layers: [outputLayer]
         )
-        let bindings = try ImageStorageBindingSet(snapshot: document, bindings: [])
+        let bindings = try ImageStorageBindingSet(
+            snapshot: document,
+            bindings: [
+                LayerPixelStorageBinding(
+                    reference: outputLayer.reference(in: imageID),
+                    storage: storage
+                )
+            ]
+        )
         let imageState = try ImageStateSnapshot(
             document: document,
             storageBindings: bindings
@@ -197,9 +303,49 @@ private struct CoordinatedImageImplementation: ImageOperationImplementation {
     }
 }
 
-private struct CoordinatedContext: ExecutionProviderRegistrationBoundContext {
+private final class CoordinatedResource: ExecutionResource, @unchecked Sendable {
+    let descriptor: ExecutionResourceDescriptor
+
+    init(_ descriptor: ExecutionResourceDescriptor) {
+        self.descriptor = descriptor
+    }
+}
+
+private enum CoordinatedContextError: Error {
+    case importUnsupported
+}
+
+private struct CoordinatedContext: ExecutionResourceAllocatingContext, ExecutionProviderRegistrationBoundContext {
     let target: ExecutionTargetReference
     let providerRegistrationIdentifier: UUID
+
+    var capabilities: ExecutionCapabilities {
+        (try? ExecutionCapabilities([
+            ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
+            ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(identifier: .resourceMemoryDomains, value: .stringSet(["host", "shared"]))
+        ])) ?? .init()
+    }
+
+    func allocateResource(_ request: ExecutionResourceRequest) async throws -> any ExecutionResource {
+        let descriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.allocated.\(UUID().uuidString)")!,
+            target: target,
+            kind: request.kind,
+            capacityBytes: request.minimumCapacityBytes,
+            alignmentBytes: request.minimumAlignmentBytes,
+            memoryDomain: request.memoryDomain,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
+        )
+        return CoordinatedResource(descriptor)
+    }
+
+    func importResource(
+        _ resource: any ExecutionResource,
+        access: ExecutionResourceAccessMode
+    ) async throws -> any ExecutionResource {
+        throw CoordinatedContextError.importUnsupported
+    }
 }
 
 private final class CoordinatedProvider: ExecutionProvider, @unchecked Sendable {
@@ -367,6 +513,9 @@ struct OperationExecutionCoordinatorTests {
             ]
         )
         let input = CoordinatedImageInput(imageOperationInputContext: imageInputContext)
+        let pixels = try CoordinatedImageImplementation.outputPixels(
+            extent: source.document.canvas.extent
+        )
 
         let implementations = OperationImplementationRegistry()
         try await implementations.register(CoordinatedImageImplementation())
@@ -388,7 +537,26 @@ struct OperationExecutionCoordinatorTests {
                 deviceState: nil,
                 assessedAt: Date()
             ),
-            resourceAllocations: [],
+            resourceAllocations: [
+                QualifiedResourceAllocation(
+                    role: .output(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host, .shared],
+                    minimumCapacityBytes: pixels.minimumRequiredStorageBytes,
+                    minimumAlignmentBytes: 1,
+                    access: .write,
+                    allocatableMemoryDomains: [.host, .shared]
+                ),
+                QualifiedResourceAllocation(
+                    role: .temporary("scratch"),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.host, .shared],
+                    minimumCapacityBytes: 64,
+                    minimumAlignmentBytes: 16,
+                    access: .readWrite,
+                    allocatableMemoryDomains: [.host, .shared]
+                )
+            ],
             inputResourceAccesses: []
         )
         let ledger = RuntimeWorkLedger()
@@ -398,15 +566,30 @@ struct OperationExecutionCoordinatorTests {
             workLedger: ledger
         )
 
-        let output = try await coordinator.execute(candidate, updating: image) as? CoordinatedImageOutput
+        await #expect(throws: OperationExecutionCoordinatorError.memoryDomainSelectionRequired(.output(0))) {
+            try await coordinator.execute(candidate, updating: image)
+        }
+        #expect(image.snapshot().revision == source.revision)
+        #expect(await ledger.activeLeaseCount == 0)
+
+        let output = try await coordinator.execute(
+            candidate,
+            updating: image,
+            memoryDomains: [
+                .output(0): .host,
+                .temporary("scratch"): .host
+            ]
+        ) as? CoordinatedImageOutput
         let committed = image.snapshot()
 
         #expect(output != nil)
         #expect(committed.identifier == source.identifier)
         #expect(committed.revision == (try source.revision.next()))
         #expect(committed.document.layers.map(\.identifier) == [
-            LayerIdentifier(rawValue: "layer.generated.annotation")!
+            LayerIdentifier(rawValue: "layer.generated.raster")!
         ])
+        #expect(committed.storageBindings.boundLayerCount == 1)
+        #expect(try committed.storageBindings.unboundPixelLayers(in: committed.document).isEmpty)
         #expect(await ledger.activeLeaseCount == 0)
     }
 

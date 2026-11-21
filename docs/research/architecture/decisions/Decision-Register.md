@@ -856,7 +856,7 @@ RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery re
 - Runtime accounting integration with actual submission/completion and cancellation paths.
 ## ADR-029 — Operation input context binds typed inputs to explicit image revisions and generic resources
 
-**Status:** Input binding/qualification (including complete pixel-backed composite plane coverage and provider-registration checks for device-local resources), operation-derived output/temporary planning, context resource feasibility, output descriptor validation, initial candidate ranking, and registration-aware descriptor-based residency classification implemented; provider-backed allocation, physical capacity reservation, residency transitions, cross-registration import/remapping, and output binding pending
+**Status:** Input binding/qualification (including complete pixel-backed composite plane coverage and provider-registration checks for device-local resources), operation-derived output/temporary planning, context resource feasibility, output descriptor validation, initial candidate ranking, registration-aware residency classification, single-operation output/temporary allocation and plane binding implemented; physical capacity reservation, residency transitions, and cross-registration import/remapping remain pending
 
 ### Decision
 
@@ -885,7 +885,7 @@ Input resource access declarations must also agree with operation semantics: wri
 
 - Provider-backed physical memory reservation, residency and full interop feasibility, including imported resource remapping for a resource from another provider registration.
 - Quality-aware weighting and refresh policy for telemetry; the initial ranker consumes only fresh comparable queue-delay values while preserving source, quality, and validity metadata, and does not use stale/unknown values to rank.
-- Provider-backed allocation, returned-resource descriptor/residency validation, plan-role mapping to output planes, and atomic Image publication; ADR-033 now requires produced pixel layers to carry revision-matched storage bindings in the returned image snapshot.
+- Provider-verified residency/synchronization and physical capacity reservation; the single-operation coordinator now allocates qualified output/temporary roles, validates returned request descriptors and registration provenance, maps output roles to produced plane bindings through the implementation, and publishes through Image compare-and-swap.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
 - Complete end-to-end cost estimates, precision-preference ranking, whole-pipeline planning, and execution coordination; the initial scoped objective ranker is implemented.
 
@@ -927,7 +927,7 @@ Qualification preserves reliable evidence for later ranking without coupling sem
 
 ## ADR-031 — Invocation resource plans combine operation data with implementation support
 
-**Status:** Operation-derived output/temporary resource planning and candidate matching implemented; provider allocation and output validation pending
+**Status:** Operation-derived output/temporary resource planning and candidate matching, single-operation provider allocation, role/access handoff, and output-plane binding validation implemented; physical capacity reservation, verified residency, and import/remapping pending
 
 ### Decision
 
@@ -949,7 +949,7 @@ This is an operation-semantic planning seam, not a custom implementation qualifi
 
 ### Consequence
 
-The resolver can produce candidate-bound, data-derived output and temporary allocation requirements without embedding provider or algorithm-specific branches. A later coordinator can translate this into provider allocation requests, validate returned generic resource descriptors, and retain handles through submission/completion.
+The resolver produces candidate-bound, data-derived output and temporary allocation requirements without embedding provider or algorithm-specific branches. The single-operation coordinator translates those requirements into provider allocation requests, validates returned generic resource descriptors and provider-registration provenance, passes the role/access-indexed handles to the selected implementation, and retains them through the implementation completion boundary. It does not reserve physical capacity or guarantee future residency.
 
 ### Deferred
 
@@ -1000,7 +1000,7 @@ Qualification no longer labels an output/temporary resource path eligible merely
 
 ## ADR-033 — Returned image values retain produced storage and enforce typed postconditions
 
-**Status:** Revision-bound output storage retention, produced-pixel binding validation, descriptor validation, typed operation postconditions, and single-operation execution-to-Image compare-and-swap publication implemented; provider allocation, plan-role mapping, and complete resource lifecycle pending
+**Status:** Revision-bound output storage retention, produced-pixel binding validation, descriptor validation, typed operation postconditions, single-operation output/temporary allocation, output plane-binding validation, and execution-to-Image compare-and-swap publication implemented; input imports, provider-verified residency, physical capacity policy, and complete recovery remain pending
 
 ### Decision
 
@@ -1027,9 +1027,9 @@ Output contracts are no longer only static declarations. The runtime checks the 
 
 ### Deferred
 
-- Mapping allocated resource-plan roles to concrete layer storage bindings in the returned value.
-- Verifying actual storage bindings, capacity, alignment, residency, import, and synchronization against the descriptor and execution context.
-- Provider allocation and mapping from qualified output/temporary plan roles to concrete produced pixel planes; the current coordinator publishes an output snapshot that already contains validated bindings.
+- Provider-verified residency, visibility, and synchronization of allocated output resources; returned request descriptors, target, registration provenance, pixel-plane capacity, and alignment are checked, but the provider may still evict or invalidate native storage.
+- Input import/remapping and source-resource retention through transfer completion.
+- Physical memory-capacity reservation/reuse, memory-pressure and eviction policy, and allocation-failure re-resolution.
 - Device-loss/cancellation recovery and provider/native releaser retention for persistent output resources after the single-operation provider-use lease ends.
 - Numerical pixel-content conformance beyond descriptor metadata, covered by implementation/reference algorithm conformance tests.
 
@@ -1144,7 +1144,7 @@ A long-lived GPU allocation can be reused by operations qualified against the sa
 
 ## ADR-036 — Single-operation execution uses a revalidated resource lease and atomic image publication
 
-**Status:** Initial single-operation dispatch, completion-boundary accounting, provider-instance pinning, and optional in-place Image publication implemented; allocation, import/remapping, pipeline planning, and complete recovery remain pending
+**Status:** Single-operation dispatch, qualified output/temporary allocation, role/access handoff, output plane-binding validation, completion-boundary accounting, provider-instance pinning, and in-place Image compare-and-swap publication implemented; input import/remapping, physical residency/capacity policy, pipeline planning, and complete recovery remain pending
 
 ### Decision
 
@@ -1152,13 +1152,16 @@ The runtime exposes an `OperationExecutionCoordinator` for one `QualifiedOperati
 
 Before dispatch, the coordinator:
 
-1. Reserves the target and the candidate's complete declared input-resource access set in `RuntimeWorkLedger`.
-2. Revalidates that the current resource handles and descriptors still match the reservation.
-3. Acquires a provider-use lease for the exact target and provider-registration UUID. The lease strongly retains the exact provider instance through this operation. If the registration has already been removed or replaced, dispatch is rejected and the pre-submit reservation is cancelled.
-4. Marks the runtime invocation as dispatched and invokes the exact implementation registration captured by the candidate.
-5. Releases the work/resource lease only after the implementation's `execute` call returns or throws. `ImageOperationImplementation.execute` is therefore the completion boundary for declared input accesses: an implementation that submits asynchronous provider work must await every use that could still access those inputs before returning.
+1. Acquires a provider-use lease for the exact target and provider-registration UUID. The lease strongly retains the exact provider instance through this operation. If the registration has already been removed or replaced, dispatch is rejected before allocation.
+2. For each qualified output/temporary role, chooses the only feasible memory domain when the feasible set has one member. If several domains are feasible, the caller must provide an explicit per-role selection; the coordinator does not rank or guess between domains.
+3. Calls the original context's `ExecutionResourceAllocatingContext.allocateResource` for each role and validates the returned handle against the requested kind, minimum capacity, alignment, selected domain, target, and exact provider-registration UUID. The role, handle, and declared access mode are passed to the typed implementation in an immutable `OperationExecutionResources` value. Existing implementations remain source-compatible for empty resource sets; an implementation receiving a non-empty set must explicitly implement the resource-aware execution overload.
+4. Atomically reserves the candidate's complete declared input-resource access set plus all allocated output/temporary resource accesses in `RuntimeWorkLedger`, then revalidates the same handles and descriptors before dispatch.
+5. Marks runtime dispatch and invokes the exact implementation registration captured by the candidate.
+6. Releases the work/resource lease only after the implementation's `execute` call returns or throws. `ImageOperationImplementation.execute` is the completion boundary for all declared accesses: an implementation that submits asynchronous provider work must await every use that could still access its input, output, or temporary resources before returning.
 
-The ledger's submitted state means runtime dispatch has begun; it is not a claim that hardware accepted work or a substitute for provider telemetry. The implementation must not return a valid output while work that can still mutate or read its declared input resources remains outstanding.
+The ledger's submitted state means runtime dispatch has begun; it is not a claim that hardware accepted work or a substitute for provider telemetry. The implementation must not return a valid output while work that can still access its declared resources remains outstanding.
+
+For an image output, the implementation maps each `output(index)` resource explicitly to one or more pixel planes through `PixelPlaneResourceBinding.planeIndices`. Each allocated output handle must occur in exactly one produced layer's plane-binding group and must not be attached to a preserved layer. A `temporary(name)` resource must not appear in the returned image storage bindings. Writable output allocations cannot alias input resources because older immutable image revisions may still retain those inputs; the initial coordinator permits aliasing only for an explicitly allowed read-only output when the operation contract also forbids input mutation.
 
 For in-place image updates, the coordinator derives one unambiguous source revision from the candidate's exact qualified `ImageOperationInputContext`. It checks that the current `Image` is still at that revision before dispatch. After the implementation returns and typed output validation succeeds, it publishes the output's exact `ImageStateSnapshot` through `Image.replace(expectedRevision:with:)`. That method verifies image identity, exact next revision, and the compare-and-swap condition under the image's short lock. A concurrent edit during execution therefore rejects publication without overwriting the newer image state.
 
@@ -1167,8 +1170,11 @@ The caller may instead request the validated output value without mutating an ex
 ### Invariants
 
 - Execution accepts only an already-qualified candidate and never re-runs ranking or substitutes a registration.
-- The input-resource access reservation is acquired atomically and revalidated before dispatch.
-- A provider registration removed before provider-use acquisition cannot be used by a stale candidate.
+- The exact provider instance is retained before output/temporary allocation; a provider registration removed before provider-use acquisition cannot be used by a stale candidate.
+- Every qualified output/temporary role is allocated once, checked against its selected feasible memory domain and exact provider-registration identity, and passed to the implementation with its role and access mode.
+- A memory domain is inferred only when exactly one feasible domain exists; a choice among multiple feasible domains is explicit.
+- Input, output, and temporary resource accesses are reserved atomically and revalidated before dispatch.
+- Each output allocation is attached exactly once to a produced layer's explicit pixel-plane binding; temporary allocations do not appear in returned image storage bindings.
 - Once provider-use acquisition succeeds, the exact provider instance remains strongly retained until that operation completes, even if the registry entry is removed in the meantime.
 - The runtime work lease remains active until the implementation completion boundary, including when execution throws.
 - Implementations that submit asynchronous provider work must await all work that can still access declared inputs before returning or throwing.
@@ -1179,7 +1185,7 @@ The caller may instead request the validated output value without mutating an ex
 
 ### Deferred
 
-- Provider-backed output/temporary allocation, physical capacity reservation, and mapping output plan roles to concrete layer/plane bindings.
-- Input imports/remapping and verified output residency/synchronization routes.
-- Full cancellation, timeout, device-loss, allocation-recovery, and whole-pipeline planning.
+- Input imports/remapping and source-resource retention through transfer completion; verified imported/output residency and synchronization routes.
+- Separate physical capacity reservation/reuse, memory-pressure/eviction policy, allocation-failure re-resolution, and retry policy.
+- Full cancellation, timeout, device-loss cleanup, and whole-pipeline planning.
 - Native provider releaser/package retention for image resources beyond the operation's provider-use lease and across plugin unload.

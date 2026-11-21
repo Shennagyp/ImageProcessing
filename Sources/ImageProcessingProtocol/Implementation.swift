@@ -31,6 +31,72 @@ public enum ImplementationResourceRole: Hashable, Sendable {
     }
 }
 
+/// One generic provider resource allocated for an invocation-specific role.
+public struct OperationExecutionResourceBinding: Sendable {
+    public let role: ImplementationResourceRole
+    public let resource: any ExecutionResource
+    public let access: ExecutionResourceAccessMode
+
+    public init(
+        role: ImplementationResourceRole,
+        resource: any ExecutionResource,
+        access: ExecutionResourceAccessMode
+    ) {
+        self.role = role
+        self.resource = resource
+        self.access = access
+    }
+}
+
+public enum OperationExecutionResourcesError: Error, Equatable, Sendable {
+    case invalidRole(ImplementationResourceRole)
+    case duplicateRole(ImplementationResourceRole)
+    case duplicateResource(ExecutionResourceReference)
+}
+
+/// Immutable role-indexed resources allocated for one operation invocation.
+/// Output resources may be attached to exact image planes by the implementation;
+/// temporary resources remain invocation-scoped and are released after completion.
+public struct OperationExecutionResources: Sendable {
+    private let resourcesByRole: [ImplementationResourceRole: any ExecutionResource]
+    public let bindings: [OperationExecutionResourceBinding]
+
+    public init() {
+        resourcesByRole = [:]
+        bindings = []
+    }
+
+    public init(bindings: [OperationExecutionResourceBinding]) throws {
+        var byRole: [ImplementationResourceRole: any ExecutionResource] = [:]
+        var seenResources = Set<ExecutionResourceReference>()
+
+        for binding in bindings {
+            guard binding.role.isValid else {
+                throw OperationExecutionResourcesError.invalidRole(binding.role)
+            }
+            guard byRole[binding.role] == nil else {
+                throw OperationExecutionResourcesError.duplicateRole(binding.role)
+            }
+            let reference = binding.resource.descriptor.reference
+            guard seenResources.insert(reference).inserted else {
+                throw OperationExecutionResourcesError.duplicateResource(reference)
+            }
+            byRole[binding.role] = binding.resource
+        }
+
+        self.resourcesByRole = byRole
+        self.bindings = bindings
+    }
+
+    public var isEmpty: Bool { bindings.isEmpty }
+
+    public func resource(
+        for role: ImplementationResourceRole
+    ) -> (any ExecutionResource)? {
+        resourcesByRole[role]
+    }
+}
+
 /// A static resource constraint for one input, output, or temporary allocation.
 /// It contains no live availability or capacity observation.
 public struct ImplementationResourceRequirement: Hashable, Sendable {
@@ -486,6 +552,36 @@ public protocol ImageOperationImplementation: Sendable {
         input: Operation.Input,
         context: any ExecutionContext
     ) async throws -> Operation.Output
+
+    /// Resource-aware execution. Existing implementations remain compatible
+    /// when the invocation has no runtime-allocated resources. An implementation
+    /// with a non-empty plan must explicitly consume this role-indexed set.
+    /// Output resources for image results must be attached to produced layer
+    /// planes; temporary resources must not be retained in the returned image.
+    func execute(
+        operation: Operation,
+        input: Operation.Input,
+        context: any ExecutionContext,
+        resources: OperationExecutionResources
+    ) async throws -> Operation.Output
+}
+
+public enum ImageOperationExecutionError: Error, Equatable, Sendable {
+    case implementationDoesNotConsumeAllocatedResources
+}
+
+public extension ImageOperationImplementation {
+    func execute(
+        operation: Operation,
+        input: Operation.Input,
+        context: any ExecutionContext,
+        resources: OperationExecutionResources
+    ) async throws -> Operation.Output {
+        guard resources.isEmpty else {
+            throw ImageOperationExecutionError.implementationDoesNotConsumeAllocatedResources
+        }
+        return try await execute(operation: operation, input: input, context: context)
+    }
 }
 
 public extension ImageOperationImplementation {
