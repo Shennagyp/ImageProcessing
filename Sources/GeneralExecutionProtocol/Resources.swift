@@ -142,8 +142,16 @@ public struct ExecutionResourceAccess: Sendable {
 public protocol ExecutionResourceAllocatingContext: ExecutionContext {
     func allocateResource(_ request: ExecutionResourceRequest) async throws -> any ExecutionResource
 
-    /// Imports a resource into this context. The imported handle must retain the
-    /// source allocation for as long as the imported handle or submitted work uses it.
+    /// Imports a resource into this context. The asynchronous return is the
+    /// import-completion boundary: the returned handle must be immediately usable
+    /// on this context's exact target, and any provider-internal transfer/barrier
+    /// work required before the declared access must already be complete.
+    ///
+    /// The returned descriptor must identify this context's target and the exact
+    /// provider registration that created the destination handle. The imported
+    /// handle must retain the source allocation for as long as the imported handle
+    /// or dependent submitted work can still access it. The provider is responsible
+    /// for any source-side synchronization required to perform the import.
     func importResource(
         _ resource: any ExecutionResource,
         access: ExecutionResourceAccessMode
