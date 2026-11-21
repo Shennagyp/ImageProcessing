@@ -69,6 +69,37 @@ struct CPUExecutionProviderTests {
     }
 
     @Test
+    func rejectsWritableCPUResourceImports() async throws {
+        let provider = CPUExecutionProvider()
+        let registry = ExecutionProviderRegistry()
+        try await registry.register(provider)
+        let registration = try #require(await registry.registeredProviders().first)
+        let context = try await registry.makeContext(
+            for: CPUExecutionProvider.target,
+            expecting: registration.descriptor,
+            registrationIdentifier: registration.registrationIdentifier
+        )
+        let allocator = try #require(context as? any ExecutionResourceAllocatingContext)
+        let request = try #require(ExecutionResourceRequest(
+            kind: .buffer,
+            minimumCapacityBytes: 4,
+            memoryDomain: .host
+        ))
+        let source = try await allocator.allocateResource(request)
+        let expected = try ExecutionProviderFailure(
+            providerID: CPUExecutionProvider.identifier,
+            target: CPUExecutionProvider.target,
+            kind: .resourceImportFailed,
+            recovery: .permanent,
+            message: "The CPU provider supports read-only imports in the MVP."
+        )
+
+        await #expect(throws: expected) {
+            _ = try await allocator.importResource(source, access: .write)
+        }
+    }
+
+    @Test
     func rejectsOutOfBoundsBufferAccess() async throws {
         let provider = CPUExecutionProvider()
         let registry = ExecutionProviderRegistry()
