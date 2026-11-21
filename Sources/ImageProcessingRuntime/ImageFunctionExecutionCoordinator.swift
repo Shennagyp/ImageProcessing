@@ -43,6 +43,25 @@ public struct ImageFunctionStepExecutionSummary: Sendable {
     }
 }
 
+/// A step failed after zero or more earlier steps completed. The underlying
+/// error is preserved so callers can still inspect provider-specific failure
+/// categories. Completed summaries contain no intermediate values or resources.
+public struct ImageFunctionStepExecutionFailure: Error, Sendable {
+    public let failedStepIdentifier: OperationStepIdentifier
+    public let completedSteps: [ImageFunctionStepExecutionSummary]
+    public let underlying: any Error
+
+    fileprivate init(
+        failedStepIdentifier: OperationStepIdentifier,
+        completedSteps: [ImageFunctionStepExecutionSummary],
+        underlying: any Error
+    ) {
+        self.failedStepIdentifier = failedStepIdentifier
+        self.completedSteps = completedSteps
+        self.underlying = underlying
+    }
+}
+
 /// Final typed output plus compact per-step execution diagnostics.
 /// No intermediate OperationValue or qualified candidate is retained.
 public struct ImageFunctionExecutionResult<Output: OperationValue>: Sendable {
@@ -127,47 +146,57 @@ public actor ImageFunctionExecutionCoordinator {
         summaries.reserveCapacity(function.steps.count)
 
         for step in function.steps {
-            try Task.checkCancellation()
-            let evaluationDate = now ?? Date()
-            let environment = try await environments.capture(
-                platform: platform,
-                capturedAt: evaluationDate
-            )
-            let resolution = try await resolver.resolve(
-                step: step,
-                input: currentValue,
-                policy: function.qualificationPolicy,
-                environment: environment,
-                freshness: freshness,
-                now: evaluationDate
-            )
+            do {
+                try Task.checkCancellation()
+                let evaluationDate = now ?? Date()
+                let environment = try await environments.capture(
+                    platform: platform,
+                    capturedAt: evaluationDate
+                )
+                let resolution = try await resolver.resolve(
+                    step: step,
+                    input: currentValue,
+                    policy: function.qualificationPolicy,
+                    environment: environment,
+                    freshness: freshness,
+                    now: evaluationDate
+                )
 
-            guard let selected = resolution.rankedCandidates.first else {
-                throw ImageFunctionExecutionCoordinatorError.noQualifiedCandidate(
+                guard let selected = resolution.rankedCandidates.first else {
+                    throw ImageFunctionExecutionCoordinatorError.noQualifiedCandidate(
+                        stepIdentifier: step.identifier,
+                        qualification: resolution.qualification
+                    )
+                }
+
+                let candidate = selected.candidate
+                let summary = ImageFunctionStepExecutionSummary(
                     stepIdentifier: step.identifier,
-                    qualification: resolution.qualification
+                    implementation: candidate.implementation.key,
+                    target: candidate.target,
+                    environmentSnapshotIdentifier: environment.identifier,
+                    rank: selected.rank
+                )
+
+                let output = try await operations.execute(
+                    candidate,
+                    memoryDomains: memoryDomainSelections[step.identifier] ?? [:]
+                )
+                currentValue = output
+                summaries.append(summary)
+                try Task.checkCancellation()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw ImageFunctionStepExecutionFailure(
+                    failedStepIdentifier: step.identifier,
+                    completedSteps: summaries,
+                    underlying: error
                 )
             }
-
-            let candidate = selected.candidate
-            let summary = ImageFunctionStepExecutionSummary(
-                stepIdentifier: step.identifier,
-                implementation: candidate.implementation.key,
-                target: candidate.target,
-                environmentSnapshotIdentifier: environment.identifier,
-                rank: selected.rank
-            )
-
-            let output = try await operations.execute(
-                candidate,
-                memoryDomains: memoryDomainSelections[step.identifier] ?? [:]
-            )
-            try Task.checkCancellation()
-
-            summaries.append(summary)
-            currentValue = output
         }
 
+        try Task.checkCancellation()
         guard let typedOutput = currentValue as? Output,
               typedOutput.valueTypeIdentifier == Output.typeIdentifier else {
             throw ImageFunctionExecutionCoordinatorError.outputConcreteTypeMismatch(
