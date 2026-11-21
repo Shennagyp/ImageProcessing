@@ -1190,3 +1190,45 @@ The caller may instead request the validated output value without mutating an ex
 - Separate physical capacity reservation/reuse, memory-pressure/eviction policy, allocation-failure re-resolution, and retry policy.
 - Full cancellation, timeout, device-loss cleanup, and whole-pipeline planning.
 - Native provider releaser/package retention for image resources beyond the operation's provider-use lease and across plugin unload.
+
+
+---
+
+## ADR-037 — Complete the cost-model contract before adding detailed estimators
+
+**Status:** Accepted for the library MVP
+
+### Context
+
+A fully calibrated end-to-end cost model would require provider- and route-specific transfer/import measurements, conversion measurements, allocation/context latency, target compute throughput, synchronization behavior, output materialization, source-quality calibration, and benchmark-backed whole-pipeline history. Requiring all of these before the library can be considered complete would couple the core library release to platform-specific benchmarking and production provider instrumentation.
+
+The architecture already defines cost components and units, evidence provenance/freshness, and estimated/stale/unknown states. The ranker has usable evidence for queue delay/fixed overhead, determinism, precision preferences, resource lower bounds, descriptor-proven input residency, and operation-defined workload size. The remaining estimates can be added without changing the semantic shape of the model.
+
+### Decision
+
+For the core library MVP, complete the generic cost-model contract, not every numerical estimator.
+
+The MVP cost-model contract MUST provide:
+- Stable component identities and units for queue delay, transfer/import, conversion, allocation, compute, synchronization, output materialization, memory, energy, and throughput.
+- Explicit evidence provenance and freshness, with estimated, stale, and unknown states.
+- A strict rule that missing evidence remains unknown; only a proven zero-cost or no-transition fact may be represented as zero.
+- Comparisons only between candidates with comparable evidence and compatible units. The ranker MUST NOT invent a scalar total by summing incomparable or unknown components.
+- An eligibility boundary: cost preferences cannot revive rejected candidates or weaken hard requirements.
+- Extensible estimator boundaries so provider-specific and measured estimators can populate existing components later without changing operation semantics or the public cost vocabulary.
+
+The MVP may rank using the evidence currently available. It does not require detailed numerical estimators for every route, backend, or operation. Basic sequential execution of a composed function remains a Phase 6 library capability; exhaustive implementation-sequence search and benchmark-backed transition optimization do not.
+
+Detailed host/device and device/device route models, conversion and allocation calibration, target-specific compute throughput, synchronization/output-materialization measurements, source-quality calibration, energy models, and measured whole-pipeline optimization are deferred to Phase 8.
+
+### Invariants
+
+- Cost-model completeness means complete categories, units, evidence states, and extension points; it does not mean every component has a measured value.
+- Unknown is not zero and must not be converted to a fabricated estimate.
+- No backend-specific measurement is required during candidate qualification or ranking.
+- No resource is allocated merely to probe a candidate's estimated cost.
+- Hard eligibility and provider/resource safety remain independent of cost preferences.
+- A simple ordered pipeline executor does not depend on a global optimizer or fully calibrated route-cost models.
+
+### Consequence
+
+The library can complete its core semantic, qualification, resource-lifecycle, and sequential-execution contracts without waiting for every provider/backend cost model. Phase 8 can populate the established cost contract incrementally using real observations and benchmarks, while existing implementations remain usable and missing cost terms remain explicit.
