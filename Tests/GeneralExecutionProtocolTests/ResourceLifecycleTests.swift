@@ -2,9 +2,18 @@ import Foundation
 import Testing
 @testable import GeneralExecutionProtocol
 
+private final class TestOwnerLifetime: ExecutionResourceOwnerLifetime {}
+
 private final class TestResource: ExecutionResource, @unchecked Sendable {
     let descriptor: ExecutionResourceDescriptor
-    init(_ descriptor: ExecutionResourceDescriptor) { self.descriptor = descriptor }
+    let ownerLifetime: (any ExecutionResourceOwnerLifetime)?
+    init(
+        _ descriptor: ExecutionResourceDescriptor,
+        ownerLifetime: (any ExecutionResourceOwnerLifetime)? = nil
+    ) {
+        self.descriptor = descriptor
+        self.ownerLifetime = ownerLifetime
+    }
 }
 
 private final class ImportedTestResource: ExecutionResource, @unchecked Sendable {
@@ -236,16 +245,27 @@ struct ResourceLifecycleTests {
     }
 
     @Test
-    func resourceAccessRetainsHandleThroughReferenceLifetime() throws {
-        var resource: TestResource? = TestResource(try resourceDescriptor())
+    func resourceRetentionAlsoRetainsItsNativeOwnerLifetime() throws {
+        var ownerLifetime: TestOwnerLifetime? = TestOwnerLifetime()
+        let weakOwnerLifetime = WeakBox(try #require(ownerLifetime))
+        var resource: TestResource? = TestResource(
+            try resourceDescriptor(),
+            ownerLifetime: ownerLifetime
+        )
         let weakResource = WeakBox(try #require(resource))
-        let access = ExecutionResourceAccess(resource: try #require(resource), mode: .readWrite)
-        resource = nil
+        var access: ExecutionResourceAccess? = ExecutionResourceAccess(
+            resource: try #require(resource),
+            mode: .readWrite
+        )
 
+        resource = nil
+        ownerLifetime = nil
         #expect(weakResource.value != nil)
-        withExtendedLifetime(access) {
-            #expect(weakResource.value != nil)
-        }
+        #expect(weakOwnerLifetime.value != nil)
+
+        access = nil
+        #expect(weakResource.value == nil)
+        #expect(weakOwnerLifetime.value == nil)
     }
 
     @Test
