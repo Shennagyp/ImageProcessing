@@ -1286,3 +1286,40 @@ Writable/read-write input imports remain rejected. Supporting them later require
 ### Consequence
 
 The core runtime can support safe read-only cross-target/cross-registration input consumption without inventing mutation propagation semantics. Write-through imports, copy-back, and persistent cross-provider aliasing remain separate future design decisions.
+
+
+---
+
+## ADR-039 — Persistent resource release follows resource-handle lifetime
+
+**Status:** General protocol contract and image-storage retention implemented; production provider/package unload integration remains a provider-conformance responsibility
+
+### Context
+
+`ExecutionProviderUseLease` protects a provider instance while a runtime-coordinated invocation is active. It is intentionally released when that invocation completes. Image-owned output resources can outlive the invocation because `ImageStateSnapshot` and `PixelStorageBinding` retain their concrete resource handles for the entire image-revision lifetime. Extending an invocation lease indefinitely would conflate active execution with persistent storage ownership, while wrapping a native resource in a runtime decorator could hide the concrete provider resource type from implementation code.
+
+### Decision
+
+Native resource destruction follows the concrete `ExecutionResource` handle lifetime. The resource handle must be independently releasable after provider unregister, or it must strongly retain an `ExecutionResourceOwnerLifetime` token for as long as its native release path depends on provider/package code.
+
+`ExecutionResource.ownerLifetime` is an optional strong owner token:
+- A non-nil token identifies provider/package lifetime required to execute native destruction safely. The concrete resource implementation must retain it strongly; the resource handle itself remains the concrete provider type.
+- A nil token asserts that the resource's release path is self-contained and remains valid independently of the provider registration/package lifetime.
+- The runtime must not wrap or replace the concrete resource object merely to retain owner lifetime.
+
+`PixelStorageBinding` retains every concrete resource handle. `ImageStorageBindingSet` and `ImageStateSnapshot` retain those storage bindings, so the resource's owner token is transitively retained for the lifetime of each image revision. Older snapshots retain older resources even after an `Image` publishes a newer revision. No runtime-wide resource cache is introduced.
+
+Provider-use leases remain invocation-scoped. They protect provider methods and import/execution work while the coordinator is active; they are not the owner of persistent image allocations. A provider unregister prevents new discovery/context creation but must not invalidate existing resource handles or bypass their resource-owned release lifetime.
+
+### Invariants
+
+- An image snapshot retains its exact concrete resource objects; the runtime does not proxy or wrap native handles.
+- A resource that requires external provider/package code for deallocation strongly retains an owner-lifetime token until the resource handle is released.
+- A nil owner token is an affirmative self-contained-release contract, not permission to depend on an unretained provider singleton.
+- The resource handle and its owner token are released when the last image snapshot/storage binding and all in-flight uses release them.
+- Provider-use leases for active invocations do not replace persistent resource-owner lifetime.
+- The runtime introduces no global GPU/resource cache.
+
+### Consequence
+
+The generic library can preserve native release behavior across provider unregister and image-revision lifetime without hiding provider-specific resource types. Each production provider package must implement and validate its own owner token when dynamic package unloading or external releaser code requires it; that platform-specific unload integration is not claimed by the generic protocol test.
