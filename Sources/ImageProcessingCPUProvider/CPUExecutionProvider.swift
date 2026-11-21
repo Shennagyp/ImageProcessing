@@ -152,7 +152,7 @@ public struct CPUExecutionProvider: ExecutionProvider, Sendable {
     public func makeContext(
         for target: ExecutionTargetReference
     ) async throws -> any ExecutionContext {
-        try makeContext(
+        try await makeContext(
             for: target,
             registrationIdentifier: UUID()
         )
