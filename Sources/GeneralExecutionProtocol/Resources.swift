@@ -1,3 +1,5 @@
+import Foundation
+
 public struct ExecutionResourceIdentifier: RawRepresentable, Hashable, Sendable, CustomStringConvertible {
     public let rawValue: String
 
