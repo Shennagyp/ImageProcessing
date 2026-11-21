@@ -102,6 +102,7 @@ public actor CommonQualificationResolver {
             for: step.specification
         )
 
+        let operationWorkload = step.workload(for: input)
         var evaluations: [OperationImplementationCandidateEvaluation] = []
         var didResolveResourcePlan = false
         var sharedResourcePlan: OperationResourcePlan?
@@ -421,6 +422,7 @@ public actor CommonQualificationResolver {
                             ),
                             resourceAllocations: feasibleResourceAllocations,
                             inputResourceAccesses: inputResourceAccesses,
+                            workload: operationWorkload,
                             executionPrecision: Self.executionPrecision(
                                 implementation: implementation.specification,
                                 requirements: applicableRequirements

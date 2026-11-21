@@ -9,6 +9,8 @@ public enum CandidateCostEstimateUnit: String, Hashable, Sendable {
     case fraction
     case bytesPerElement
     case operationsPerElement
+    case workItems
+    case operations
     case joules
     case operationsPerSecond
 }
@@ -24,6 +26,7 @@ public enum CandidateCostEstimateEvidenceKind: String, Hashable, Sendable {
     case implementationHint
     case resourceRequirement
     case resourceBinding
+    case operationContract
 }
 
 public struct CandidateCostEstimateEvidence: Hashable, Sendable {
@@ -71,6 +74,8 @@ public enum CandidateCostComponent: String, Hashable, Sendable, CaseIterable {
     case boundInputTransferTime
     case implementationFixedOverhead
     case operationsPerElement
+    case operationWorkItemCount
+    case estimatedOperationCount
     case temporaryBytesPerElement
     case minimumPlannedOutputCapacityBytes
     case minimumPlannedTemporaryCapacityBytes
@@ -101,6 +106,10 @@ public enum CandidateCostComponent: String, Hashable, Sendable, CaseIterable {
             .fraction
         case .operationsPerElement:
             .operationsPerElement
+        case .operationWorkItemCount:
+            .workItems
+        case .estimatedOperationCount:
+            .operations
         case .temporaryBytesPerElement:
             .bytesPerElement
         case .energy:
@@ -896,9 +905,17 @@ enum CandidateCostEstimator {
                 component: .operationsPerElement,
                 state: hintEstimate(
                     hint?.operationsPerElement,
-                    name: "operations per processed element",
+                    name: "operations per operation-defined work item",
                     source: hintSource
                 )
+            ),
+            .init(
+                component: .operationWorkItemCount,
+                state: operationWorkloadEstimate(candidate)
+            ),
+            .init(
+                component: .estimatedOperationCount,
+                state: estimatedOperationCount(candidate)
             ),
             .init(
                 component: .temporaryBytesPerElement,
@@ -1006,6 +1023,59 @@ enum CandidateCostEstimator {
         })
 
         return CandidateCostEstimate(components: components)
+    }
+
+    private static func operationWorkloadEstimate(
+        _ candidate: QualifiedOperationImplementation
+    ) -> CandidateCostEstimateState {
+        guard let workload = candidate.workload else {
+            return .unknown(reason: "The operation does not expose an invocation-specific work-item count.")
+        }
+        return .estimated(
+            value: .integer(workload.workItemCount),
+            evidence: [
+                CandidateCostEstimateEvidence(
+                    kind: .operationContract,
+                    source: candidate.operationStep.specification.identifier.rawValue,
+                    detail: "Exact operation-defined work-item count for this invocation. Per-element implementation hints use this operation-defined unit."
+                )
+            ]
+        )
+    }
+
+    private static func estimatedOperationCount(
+        _ candidate: QualifiedOperationImplementation
+    ) -> CandidateCostEstimateState {
+        guard let workload = candidate.workload else {
+            return .unknown(reason: "The operation does not expose an invocation-specific work-item count.")
+        }
+        guard let operationsPerElement = candidate.implementation.specification.performanceHints?.operationsPerElement else {
+            return .unknown(reason: "The implementation does not declare operations per operation-defined work item.")
+        }
+        // CandidateCostEstimateValue stores decimal estimates as Double. Do not
+        // silently lose integer work-count precision beyond Double's exact range.
+        guard workload.workItemCount <= 9_007_199_254_740_992 else {
+            return .unknown(reason: "The work-item count exceeds the exact integer range used by the current estimate representation.")
+        }
+        let operationCount = Double(workload.workItemCount) * operationsPerElement
+        guard operationCount.isFinite else {
+            return .unknown(reason: "Multiplying work-item count by operations-per-element overflowed the estimate representation.")
+        }
+        return .estimated(
+            value: .decimal(operationCount),
+            evidence: [
+                CandidateCostEstimateEvidence(
+                    kind: .operationContract,
+                    source: candidate.operationStep.specification.identifier.rawValue,
+                    detail: "Invocation-specific operation-defined work-item count: \(workload.workItemCount)."
+                ),
+                CandidateCostEstimateEvidence(
+                    kind: .implementationHint,
+                    source: candidate.implementation.specification.identifier.rawValue,
+                    detail: "Declared operations per operation-defined work item: \(operationsPerElement). This estimates operation count, not elapsed time."
+                )
+            ]
+        )
     }
 
     private static func observationEstimate<Value: Sendable>(

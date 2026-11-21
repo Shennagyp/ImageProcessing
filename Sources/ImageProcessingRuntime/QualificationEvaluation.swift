@@ -171,6 +171,8 @@ public struct QualifiedOperationImplementation: Sendable {
     public let environmentObservations: CandidateEnvironmentObservations
     public let resourceAllocations: [QualifiedResourceAllocation]
     public let inputResourceAccesses: [ExecutionResourceAccess]
+    /// Operation-owned work size, shared by every implementation candidate.
+    public let workload: OperationWorkload?
     /// Hard precision restrictions established during qualification and optionally refined during ranking.
     public let executionPrecision: OperationExecutionPrecision
 
@@ -185,6 +187,7 @@ public struct QualifiedOperationImplementation: Sendable {
         environmentObservations: CandidateEnvironmentObservations,
         resourceAllocations: [QualifiedResourceAllocation],
         inputResourceAccesses: [ExecutionResourceAccess],
+        workload: OperationWorkload? = nil,
         executionPrecision: OperationExecutionPrecision = .unconstrained
     ) {
         self.implementation = implementation
@@ -197,6 +200,7 @@ public struct QualifiedOperationImplementation: Sendable {
         self.environmentObservations = environmentObservations
         self.resourceAllocations = resourceAllocations
         self.inputResourceAccesses = inputResourceAccesses
+        self.workload = workload
         self.executionPrecision = executionPrecision
     }
 
@@ -212,6 +216,7 @@ public struct QualifiedOperationImplementation: Sendable {
             environmentObservations: environmentObservations,
             resourceAllocations: resourceAllocations,
             inputResourceAccesses: inputResourceAccesses,
+            workload: workload,
             executionPrecision: precision
         )
     }

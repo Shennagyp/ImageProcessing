@@ -48,6 +48,18 @@ public enum OperationResourcePlanError: Error, Equatable, Sendable {
     case duplicateRole(OperationResourcePlanRole)
 }
 
+/// Operation-defined amount of primary work for one invocation.
+/// The operation defines what one work item means (for example, a pixel,
+/// voxel, feature, or annotation). Implementation performance hints expressed
+/// per element are interpreted relative to this operation-defined unit.
+public struct OperationWorkload: Hashable, Sendable {
+    public let workItemCount: UInt64
+
+    public init(workItemCount: UInt64) {
+        self.workItemCount = workItemCount
+    }
+}
+
 /// Data-derived storage size/alignment for one output or temporary resource
 /// slot required by this exact operation invocation.
 public struct OperationResourcePlanRequirement: Hashable, Sendable {
@@ -433,6 +445,7 @@ public struct AnyImageOperationStep: Sendable {
     public let specification: AnyOperationSpecification
     public let parameterValues: [OperationParameterValueRecord]
     private let resourcePlanner: @Sendable (any OperationValue) throws -> OperationResourcePlan
+    private let workloadEstimator: @Sendable (any OperationValue) -> OperationWorkload?
     private let outputPostconditionValidator: @Sendable (
         any OperationValue,
         any OperationValue
@@ -452,6 +465,10 @@ public struct AnyImageOperationStep: Sendable {
                 throw OperationResourcePlanError.inputValueTypeMismatch
             }
             return try operation.resourcePlan(for: typedInput)
+        }
+        self.workloadEstimator = { inputValue in
+            guard let typedInput = inputValue as? Operation.Input else { return nil }
+            return operation.workload(for: typedInput)
         }
         self.outputPostconditionValidator = { inputValue, outputValue in
             guard let typedInput = inputValue as? Operation.Input else {
@@ -480,6 +497,7 @@ public struct AnyImageOperationStep: Sendable {
             specification: specification,
             parameterValues: parameterValues,
             resourcePlanner: resourcePlanner,
+            workloadEstimator: workloadEstimator,
             outputPostconditionValidator: outputPostconditionValidator
         )
     }
@@ -491,6 +509,7 @@ public struct AnyImageOperationStep: Sendable {
         specification: AnyOperationSpecification,
         parameterValues: [OperationParameterValueRecord],
         resourcePlanner: @escaping @Sendable (any OperationValue) throws -> OperationResourcePlan,
+        workloadEstimator: @escaping @Sendable (any OperationValue) -> OperationWorkload?,
         outputPostconditionValidator: @escaping @Sendable (
             any OperationValue,
             any OperationValue
@@ -502,6 +521,7 @@ public struct AnyImageOperationStep: Sendable {
         self.specification = specification
         self.parameterValues = parameterValues
         self.resourcePlanner = resourcePlanner
+        self.workloadEstimator = workloadEstimator
         self.outputPostconditionValidator = outputPostconditionValidator
     }
 
@@ -511,6 +531,12 @@ public struct AnyImageOperationStep: Sendable {
         for input: any OperationValue
     ) throws -> OperationResourcePlan {
         try resourcePlanner(input)
+    }
+
+    /// Returns the operation-owned workload measure for this exact typed input.
+    /// nil means the operation does not expose a defensible work-item count.
+    public func workload(for input: any OperationValue) -> OperationWorkload? {
+        workloadEstimator(input)
     }
 
     /// Validates a concrete returned value against the operation and selected
@@ -694,6 +720,10 @@ public protocol ImageOperation: Sendable {
     /// Describes output and temporary resource sizes for this exact operation/input pair.
     func resourcePlan(for input: Input) throws -> OperationResourcePlan
 
+    /// Optional operation-defined primary work-item count for this invocation.
+    /// This is the reference unit for implementation per-element performance hints.
+    func workload(for input: Input) -> OperationWorkload?
+
     /// Operation-owned, typed postcondition for the actual returned value.
     /// The runtime invokes this after generic output descriptor checks.
     func validateOutput(_ output: Output, for input: Input) throws
@@ -706,6 +736,8 @@ public extension ImageOperation {
     func resourcePlan(for input: Input) throws -> OperationResourcePlan {
         .empty
     }
+
+    func workload(for input: Input) -> OperationWorkload? { nil }
 
     func validateOutput(_ output: Output, for input: Input) throws {}
 }

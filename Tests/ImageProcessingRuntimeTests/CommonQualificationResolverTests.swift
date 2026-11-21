@@ -27,6 +27,10 @@ private struct QualificationOperation: ImageOperation {
             overflow: .saturate
         )
     )
+
+    func workload(for input: QualificationInput) -> OperationWorkload? {
+        OperationWorkload(workItemCount: 64)
+    }
 }
 
 private struct QualificationImplementation: ImageOperationImplementation {
@@ -1368,5 +1372,60 @@ struct CommonQualificationResolverTests {
             $0.candidate.executionPrecision.computation == [.float32]
                 && $0.preferenceContributions.isEmpty
         })
+    }
+
+    @Test
+    func operationWorkloadCombinesWithImplementationHintWithoutInventingElapsedTime() async throws {
+        let now = Date(timeIntervalSince1970: 52_800)
+        let resolution = try await makePrecisionResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.workload",
+                    delay: ExecutionObservation<UInt64>(unknownReason: "not reported"),
+                    capturedAt: now
+                )
+            ],
+            implementations: [
+                QualificationImplementation(
+                    identifier: "qualification.workload.reference",
+                    performanceHints: .init(operationsPerElement: 2.5)
+                )
+            ],
+            policy: .unrestricted,
+            now: now
+        )
+        let candidate = try #require(resolution.rankedCandidates.first?.candidate)
+        let workItems = try #require(candidate.workload)
+        #expect(workItems.workItemCount == 64)
+
+        let workloadEstimate = try #require(
+            resolution.rankedCandidates.first?.costEstimate.estimate(for: .operationWorkItemCount)
+        )
+        #expect({
+            guard case let .estimated(value: .integer(count), evidence) = workloadEstimate.state else {
+                return false
+            }
+            return count == 64 && evidence.first?.kind == .operationContract
+        }())
+
+        let operationCountEstimate = try #require(
+            resolution.rankedCandidates.first?.costEstimate.estimate(for: .estimatedOperationCount)
+        )
+        #expect({
+            guard case let .estimated(value: .decimal(count), evidence) = operationCountEstimate.state else {
+                return false
+            }
+            return count == 160
+                && evidence.contains { $0.kind == .operationContract }
+                && evidence.contains { $0.kind == .implementationHint }
+        }())
+
+        let computeTime = try #require(
+            resolution.rankedCandidates.first?.costEstimate.estimate(for: .computeTime)
+        )
+        #expect({
+            guard case .unknown = computeTime.state else { return false }
+            return true
+        }())
     }
 }

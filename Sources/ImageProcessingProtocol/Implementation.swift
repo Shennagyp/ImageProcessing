@@ -206,9 +206,10 @@ public struct ImplementationNumericalSupport: Hashable, Sendable {
 public struct ImplementationPerformanceHints: Hashable, Sendable {
     /// Approximate fixed submission/setup overhead, in nanoseconds.
     public let fixedOverheadNanoseconds: Double?
-    /// Approximate arithmetic work per processed element, in operations/element.
+    /// Approximate arithmetic work per operation-defined work item, in operations/item.
+    /// The work-item unit is supplied by ImageOperation.workload(for:).
     public let operationsPerElement: Double?
-    /// Approximate temporary memory per processed element, in bytes/element.
+    /// Approximate temporary memory per operation-defined work item, in bytes/item.
     public let temporaryBytesPerElement: Double?
 
     public init(
