@@ -22,6 +22,12 @@ public struct OperationInputResourceBinding: Sendable {
 
 /// Optional resource description for non-image OperationValue types. The
 /// resource index corresponds to ImplementationResourceRole.input(index).
+///
+/// The binding list is part of the input value's invocation contract: it must
+/// remain stable for the lifetime of that value and must not change between
+/// qualification and execution. The runtime rechecks the exact resource objects
+/// and descriptors before dispatch; implementations must use the imported
+/// execution-resource mapping when one is supplied for an input index.
 public protocol OperationResourceInputValue: OperationValue {
     var operationInputResourceBindings: [OperationInputResourceBinding] { get }
 }
