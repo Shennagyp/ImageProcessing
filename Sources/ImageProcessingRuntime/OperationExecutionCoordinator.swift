@@ -68,9 +68,11 @@ private struct SourceLeaseReleaseReport: Sendable {
 /// Executes one already-qualified operation occurrence.
 ///
 /// Qualification and ranking remain separate. The coordinator does not choose
-/// a candidate or memory domain. It reserves the candidate's declared input
-/// accesses plus its allocated output/temporary resources, revalidates those
-/// exact handles, pins the provider instance, and invokes the exact implementation.
+/// a candidate or memory domain. It verifies the exact qualified input bindings,
+/// imports only input roles that explicitly declare read-only import, retains
+/// source-target read leases through completion, and reserves/revalidates the
+/// destination-context input and allocated output/temporary resources before
+/// invoking the exact implementation.
 public actor OperationExecutionCoordinator {
     private let implementations: OperationImplementationRegistry
     private let providers: ExecutionProviderRegistry
