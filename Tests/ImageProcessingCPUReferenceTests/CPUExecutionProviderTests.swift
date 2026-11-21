@@ -1,5 +1,6 @@
 import GeneralExecutionProtocol
 import ImageProcessingCPUProvider
+import ImageProcessingRuntime
 import Testing
 
 struct CPUExecutionProviderTests {
