@@ -194,7 +194,8 @@ private final class InputQualificationResource: ExecutionResource, Sendable {
         capacityBytes: UInt64,
         memoryDomain: ExecutionMemoryDomain = .host,
         kind: ExecutionResourceKind = .buffer,
-        alignmentBytes: UInt64 = 16
+        alignmentBytes: UInt64 = 16,
+        providerRegistrationIdentifier: UUID? = nil
     ) throws {
         descriptor = try ExecutionResourceDescriptor(
             identifier: ExecutionResourceIdentifier(rawValue: identifier)!,
@@ -202,7 +203,8 @@ private final class InputQualificationResource: ExecutionResource, Sendable {
             kind: kind,
             capacityBytes: capacityBytes,
             alignmentBytes: alignmentBytes,
-            memoryDomain: memoryDomain
+            memoryDomain: memoryDomain,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
         )
     }
 }
@@ -319,7 +321,8 @@ struct OperationInputQualificationTests {
         bindResource: Bool = true,
         resourceCapacity: UInt64? = nil,
         resourceKind: ExecutionResourceKind = .buffer,
-        resourceMemoryDomain: ExecutionMemoryDomain = .host
+        resourceMemoryDomain: ExecutionMemoryDomain = .host,
+        resourceProviderRegistrationIdentifier: UUID? = nil
     ) throws -> ImageInputFixture {
         let descriptor = try pixelDescriptor(
             componentType: componentType,
@@ -338,7 +341,8 @@ struct OperationInputQualificationTests {
                 identifier: "pixels.\(imageID.rawValue)",
                 capacityBytes: resourceCapacity ?? descriptor.minimumRequiredStorageBytesByPlane[0],
                 memoryDomain: resourceMemoryDomain,
-                kind: resourceKind
+                kind: resourceKind,
+                providerRegistrationIdentifier: resourceProviderRegistrationIdentifier
             )
             resource = actualResource
             let storage = try PixelStorageBinding(
@@ -486,6 +490,32 @@ struct OperationInputQualificationTests {
                 actual: 64
             )
         ))
+    }
+
+    @Test
+    func deviceLocalInputFromAnotherProviderRegistrationIsRejected() async throws {
+        let previousRegistration = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let inputFixture = try imageInput(
+            resourceMemoryDomain: .deviceLocal,
+            resourceProviderRegistrationIdentifier: previousRegistration
+        )
+        let report = try await makeReport(
+            input: RasterQualificationInput(imageOperationInputContext: inputFixture.context)
+        )
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].rejections.contains {
+            if case .inputResourceProviderRegistrationMismatch(
+                0,
+                inputFixture.reference,
+                memoryDomain: .deviceLocal,
+                expected: _,
+                actual: previousRegistration
+            ) = $0 {
+                return true
+            }
+            return false
+        })
     }
 
     @Test
