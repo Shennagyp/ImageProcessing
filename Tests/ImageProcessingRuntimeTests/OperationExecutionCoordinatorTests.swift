@@ -583,7 +583,19 @@ struct OperationExecutionCoordinatorTests {
         let sourceTarget = ExecutionTargetReference(
             providerID: ExecutionProviderID(rawValue: "provider.execution-coordinator.import-source")!
         )
-        let sourceRegistration = UUID()
+        let weakSourceProvider = WeakCoordinatedProviderBox(
+            CoordinatedProvider(identifier: sourceTarget.providerID)
+        )
+        try await providers.register(weakSourceProvider.value!)
+        let providers = ExecutionProviderRegistry()
+        try await providers.register(CoordinatedProvider(identifier: destinationProviderID))
+        let registrations = await providers.registeredProviders()
+        let sourceRegistration = try #require(
+            registrations.first { $0.descriptor.identifier == sourceTarget.providerID }
+        )
+        let destinationRegistration = try #require(
+            registrations.first { $0.descriptor.identifier == destinationProviderID }
+        )
         let sourceDescriptor = try ExecutionResourceDescriptor(
             identifier: ExecutionResourceIdentifier(rawValue: "coordinator.source.buffer")!,
             target: sourceTarget,
@@ -591,18 +603,15 @@ struct OperationExecutionCoordinatorTests {
             capacityBytes: 256,
             alignmentBytes: 64,
             memoryDomain: .deviceLocal,
-            providerRegistrationIdentifier: sourceRegistration
+            providerRegistrationIdentifier: sourceRegistration.registrationIdentifier
         )
         let source = CoordinatedResource(sourceDescriptor)
         let input = CoordinatedResourceInput(value: 19, resource: source)
 
-        let providers = ExecutionProviderRegistry()
-        try await providers.register(CoordinatedProvider(identifier: destinationProviderID))
-        let registeredProvider = try #require(await providers.registeredProviders().first)
         let context = try await providers.makeContext(
             for: destinationTarget,
-            expecting: registeredProvider.descriptor,
-            registrationIdentifier: registeredProvider.registrationIdentifier
+            expecting: destinationRegistration.descriptor,
+            registrationIdentifier: destinationRegistration.registrationIdentifier
         )
 
         let gate = CoordinatorExecutionGate()
@@ -644,6 +653,8 @@ struct OperationExecutionCoordinatorTests {
 
         #expect(await ledger.activeLeaseCount == 2)
         #expect(source.descriptor.reference.target == sourceTarget)
+        #expect(await providers.unregister(sourceTarget.providerID))
+        #expect(weakSourceProvider.value != nil)
         await #expect(throws: RuntimeWorkLedgerError.resourceAccessConflict(
             resource: source.descriptor.reference,
             requested: .write,
@@ -661,6 +672,7 @@ struct OperationExecutionCoordinatorTests {
         #expect(output?.value == 19)
         #expect(source.descriptor.reference.target == sourceTarget)
         #expect(await ledger.activeLeaseCount == 0)
+        #expect(weakSourceProvider.value == nil)
     }
 
     @Test
