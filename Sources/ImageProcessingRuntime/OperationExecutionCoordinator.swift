@@ -183,6 +183,10 @@ public actor OperationExecutionCoordinator {
             // Only handles that are accessible on this exact target enter the
             // destination lease. Foreign source handles remain under their own
             // source-target read leases while an imported handle can depend on them.
+            let executionResources = try OperationExecutionResources(
+                bindings: allocated.resources.bindings,
+                importedInputBindings: preparedInputs.importedBindings
+            )
             let completeAccessSet = preparedInputs.accesses + allocated.accesses
             let lease = try await workLedger.reserveWork(
                 on: candidate.target,
@@ -207,10 +211,6 @@ public actor OperationExecutionCoordinator {
                 throw primaryError
             }
 
-            let executionResources = try OperationExecutionResources(
-                bindings: allocated.resources.bindings,
-                importedInputBindings: preparedInputs.importedBindings
-            )
             let executionResult: Result<any OperationValue, Error>
             do {
                 let output = try await implementations.execute(
@@ -351,12 +351,15 @@ public actor OperationExecutionCoordinator {
 
                 let registrationMismatch = descriptor.memoryDomain == .deviceLocal
                     && descriptor.providerRegistrationIdentifier != candidate.providerRegistrationIdentifier
+                if (descriptor.target != candidate.target || registrationMismatch),
+                   !entry.requirement.requiresImport {
+                    throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+                }
                 let mustImport = entry.requirement.requiresImport
-                    || descriptor.target != candidate.target
-                    || registrationMismatch
 
                 if mustImport {
-                    guard candidate.context is any ExecutionResourceAllocatingContext else {
+                    guard candidate.context is any ExecutionResourceAllocatingContext,
+                          case .boolean(true)? = candidate.context.capabilities[.resourceImport] else {
                         throw OperationExecutionCoordinatorError.inputResourceImportContextUnavailable(
                             entry.index
                         )
