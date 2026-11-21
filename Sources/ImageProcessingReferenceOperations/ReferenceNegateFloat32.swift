@@ -360,15 +360,18 @@ public struct CPUReferenceNegateFloat32Implementation: ImageOperationImplementat
                         throw ReferenceNegateFloat32Error.pixelOffsetOverflow
                     }
 
-                    let bits = UInt32(bytes[byteIndex])
-                        | (UInt32(bytes[byteIndex + 1]) << 8)
-                        | (UInt32(bytes[byteIndex + 2]) << 16)
-                        | (UInt32(bytes[byteIndex + 3]) << 24)
-                    let negatedBits = (-Float(bitPattern: bits)).bitPattern
-                    bytes[byteIndex] = UInt8(truncatingIfNeeded: negatedBits)
-                    bytes[byteIndex + 1] = UInt8(truncatingIfNeeded: negatedBits >> 8)
-                    bytes[byteIndex + 2] = UInt8(truncatingIfNeeded: negatedBits >> 16)
-                    bytes[byteIndex + 3] = UInt8(truncatingIfNeeded: negatedBits >> 24)
+                    var bits: UInt32 = 0
+                    withUnsafeMutableBytes(of: &bits) { destination in
+                        for byte in 0..<4 {
+                            destination[byte] = bytes[byteIndex + byte]
+                        }
+                    }
+                    var negatedBits = (-Float(bitPattern: bits)).bitPattern
+                    withUnsafeBytes(of: &negatedBits) { source in
+                        for byte in 0..<4 {
+                            bytes[byteIndex + byte] = source[byte]
+                        }
+                    }
                 }
             }
         }
