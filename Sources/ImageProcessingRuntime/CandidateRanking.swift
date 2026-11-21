@@ -158,7 +158,8 @@ public struct CandidateResourceMemoryDomainOptions: Hashable, Sendable {
 }
 
 public enum CandidateInputResourceResidencyDisposition: String, Hashable, Sendable {
-    /// Device-local and owned by the exact execution target being considered.
+    /// Device-local with a descriptor target equal to the candidate target. This is
+    /// not a provider-registration or native-interoperability guarantee.
     case deviceLocalOnTarget
     /// Owned by the candidate target, but not in device-local memory.
     case nonDeviceLocalOnTarget
@@ -602,7 +603,7 @@ enum CandidateInputResidencyEstimator {
         let capacityEvidence = CandidateCostEstimateEvidence(
             kind: .resourceBinding,
             source: source,
-            detail: "Capacity of distinct declared input resource bindings. This is already allocated storage, not an incremental allocation request."
+            detail: "Capacity of distinct declared input resource bindings whose descriptors match this target. This is already allocated storage, not an incremental allocation request or a provider-instance validity guarantee."
         )
 
         let deviceLocalCapacity: CandidateCostEstimateState
@@ -642,7 +643,7 @@ enum CandidateInputResidencyEstimator {
                     CandidateCostEstimateEvidence(
                         kind: .resourceBinding,
                         source: source,
-                        detail: "Every distinct declared input resource handle is device-local on the exact candidate target. No staging or import is required for these handles; this excludes unrepresented inputs, synchronization, and total execution latency."
+                        detail: "Every distinct declared input resource handle reports deviceLocal memory and a descriptor target equal to the candidate target. This descriptor-level fact excludes unrepresented inputs and does not validate provider-instance interoperability, device-loss validity, external eviction, synchronization, or total execution latency."
                     )
                 ]
             )
