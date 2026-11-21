@@ -50,7 +50,10 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
     let specification: ImplementationSpecification
     let gate: CoordinatorExecutionGate?
 
-    init(gate: CoordinatorExecutionGate? = nil) {
+    init(
+        gate: CoordinatorExecutionGate? = nil,
+        inputAccess: ExecutionResourceAccessMode = .read
+    ) {
         self.gate = gate
         let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
         let upper = SemanticVersion(major: 2, minor: 0, patch: 0)!
@@ -71,7 +74,7 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
                     allowedMemoryDomains: [.deviceLocal, .shared],
                     minimumCapacityBytes: 128,
                     minimumAlignmentBytes: 64,
-                    access: .read,
+                    access: inputAccess,
                     requiresImport: true
                 )
             ]
@@ -559,6 +562,16 @@ struct OperationExecutionCoordinatorTests {
             candidate: candidate,
             weakProvider: weakProvider
         )
+    }
+
+    @Test
+    func importedInputsRejectWritableAccessUntilWriteBackSemanticsExist() throws {
+        let implementation = CoordinatedImportImplementation(inputAccess: .readWrite)
+        #expect(throws: ImplementationSpecificationValidationError.resourceImportRequiresReadOnlyInput(.input(0))) {
+            try implementation.specification.validate(
+                implements: CoordinatedImportOperation.specification.erased
+            )
+        }
     }
 
     @Test
