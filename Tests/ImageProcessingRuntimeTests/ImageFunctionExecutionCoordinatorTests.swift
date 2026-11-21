@@ -205,6 +205,66 @@ struct ImageFunctionExecutionCoordinatorTests {
     }
 
     @Test
+    func laterStepFailureReportsEarlierCompletedStepsAndDoesNotFallback() async throws {
+        let providerID = ExecutionProviderID(rawValue: "provider.function-execution.partial")!
+        let providers = ExecutionProviderRegistry()
+        try await providers.register(SequenceProvider(identifier: providerID))
+
+        let implementations = OperationImplementationRegistry()
+        try await implementations.register(SequenceAddImplementation())
+
+        let workLedger = RuntimeWorkLedger()
+        let environments = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providers,
+            workLedger: workLedger
+        )
+        let resolver = CommonQualificationResolver(
+            implementations: implementations,
+            providers: providers
+        )
+        let operationCoordinator = OperationExecutionCoordinator(
+            implementations: implementations,
+            providers: providers,
+            workLedger: workLedger
+        )
+        let functionCoordinator = ImageFunctionExecutionCoordinator(
+            resolver: resolver,
+            environments: environments,
+            operations: operationCoordinator
+        )
+        let function = try ImageFunction(operation: SequenceAddOperation())
+            .followed(by: SequenceMultiplyOperation())
+        let freshness = try #require(QualificationFreshnessPolicy(
+            maximumSnapshotAge: 60,
+            maximumProviderStateAge: 60,
+            maximumDeviceStateAge: 60
+        ))
+
+        do {
+            _ = try await functionCoordinator.executeWithReport(
+                function,
+                input: SequenceInput(value: 2),
+                platform: ExecutionPlatformDescriptor(
+                    operatingSystem: "testOS",
+                    architecture: "testArchitecture"
+                ),
+                freshness: freshness
+            )
+            Issue.record("Expected the second step to fail qualification.")
+        } catch let failure as ImageFunctionStepExecutionFailure {
+            #expect(failure.failedStepIdentifier == function.stepIdentifiers[1])
+            #expect(failure.completedSteps.map(\\.stepIdentifier) == [function.stepIdentifiers[0]])
+            if let underlying = failure.underlying as? ImageFunctionExecutionCoordinatorError,
+               case let .noQualifiedCandidate(stepIdentifier, _) = underlying {
+                #expect(stepIdentifier == function.stepIdentifiers[1])
+            } else {
+                Issue.record("Expected a no-qualified-candidate failure for the second step.")
+            }
+        }
+        #expect(await workLedger.activeLeaseCount == 0)
+    }
+
+    @Test
     func identityFunctionReturnsItsInputWithoutResolvingOrExecutingSteps() async throws {
         let providers = ExecutionProviderRegistry()
         let implementations = OperationImplementationRegistry()
