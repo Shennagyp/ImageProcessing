@@ -70,6 +70,10 @@ public protocol ExecutionProvider: Sendable {
     func observeState() async throws -> ExecutionProviderStateSnapshot
     func discoverDevices() async throws -> [any ExecutionDevice]
     func makeContext(for target: ExecutionTargetReference) async throws -> any ExecutionContext
+    func makeContext(
+        for target: ExecutionTargetReference,
+        registrationIdentifier: UUID
+    ) async throws -> any ExecutionContext
 }
 
 public extension ExecutionProvider {
