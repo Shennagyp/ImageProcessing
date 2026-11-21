@@ -99,7 +99,7 @@ This file records actual repository state. The architecture and implementation p
 
 ### Tests
 
-The suite contains 273 test declarations across 22 Swift test files, plus the shared provider-conformance harness. Coordinator coverage includes successful exact-candidate dispatch, provider-instance retention through an in-flight call, rejection of stale provider registration, explicit memory-domain selection when alternatives exist, output and temporary allocation roles, output-resource binding to a produced raster plane, lease cleanup, and atomic image publication. Existing qualification, residency, provider-registration, and snapshot-retention coverage remains.
+The suite contains 273 test declarations across 22 Swift test files, plus the shared provider-conformance harness. Coordinator coverage includes successful exact-candidate dispatch, provider-instance retention through an in-flight call, rejection of stale provider registration, explicit memory-domain selection when alternatives exist, output and temporary allocation roles, output-resource binding to a produced raster plane, lease cleanup, and atomic image publication. Qualification coverage also includes precision-preference policy validation and ranking without reducing the qualified-candidate set. Existing residency, provider-registration, and snapshot-retention coverage remains.
 
 Historical verification: an earlier descriptor milestone passed Swift 6.2.1 build and test on Linux x86_64; earlier CI milestones also passed on Ubuntu and macOS. These results do not validate the current branch.
 
