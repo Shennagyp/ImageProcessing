@@ -1099,8 +1099,7 @@ The runtime can now express a first explainable preference order without couplin
 
 - Quality-aware telemetry weighting and stale-observation refresh before coordinator reservation.
 - Complete input/output residency routes, cross-target import/remapping and transfer/conversion costs, allocation/context latency, compute and synchronization costs, output materialization, energy, and throughput models. The current target-local residency classification is descriptor-based and does not model provider-registration replacement, stale native handles, provider eviction, external pressure, migration, or output placement.
-- Precision-preference objectives over otherwise eligible storage/computation alternatives.
-- Explicit precision-mode binding for an implementation that declares multiple supported values; current precision preferences rank candidates by declared support only.
+- Explicit precision-mode binding for an implementation that declares multiple supported values. Current precision preferences rank candidates by declared support only; hard precision declarations likewise verify support but do not yet bind the active mode inside a multi-mode implementation.
 - Candidate selection with an explicit memory-domain choice, resource acquisition/reservation, execution planning, and full lifecycle diagnostics.
 - Calibration against measured per-operation/per-input-size/per-device execution history and end-to-end benchmarks.
 
