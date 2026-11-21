@@ -8,6 +8,36 @@ private enum ProviderRegistryFixtureError: Error {
     case discovery
 }
 
+private actor ProviderContextGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isSuspended = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            isSuspended = true
+            for waiter in startWaiters {
+                waiter.resume()
+            }
+            startWaiters.removeAll()
+        }
+    }
+
+    func waitUntilSuspended() async {
+        guard !isSuspended else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+
 private struct RegistryTestDevice: ExecutionDevice {
     let descriptor: ExecutionDeviceDescriptor
     let failsStateObservation: Bool
@@ -39,13 +69,15 @@ private struct RegistryTestProvider: ExecutionProvider {
     let failsStateObservation: Bool
     let failsDiscovery: Bool
     let contextRegistrationIdentifierOverride: UUID?
+    let contextGate: ProviderContextGate?
 
     init(
         identifier: String,
         devices: [RegistryTestDevice] = [],
         failsStateObservation: Bool = false,
         failsDiscovery: Bool = false,
-        contextRegistrationIdentifierOverride: UUID? = nil
+        contextRegistrationIdentifierOverride: UUID? = nil,
+        contextGate: ProviderContextGate? = nil
     ) {
         let providerID = ExecutionProviderID(rawValue: identifier)!
         self.descriptor = ExecutionProviderDescriptor(
@@ -57,6 +89,7 @@ private struct RegistryTestProvider: ExecutionProvider {
         self.failsStateObservation = failsStateObservation
         self.failsDiscovery = failsDiscovery
         self.contextRegistrationIdentifierOverride = contextRegistrationIdentifierOverride
+        self.contextGate = contextGate
     }
 
     func observeState() async throws -> ExecutionProviderStateSnapshot {
@@ -92,6 +125,9 @@ private struct RegistryTestProvider: ExecutionProvider {
                   $0.descriptor.identifier == target.deviceID
               }) else {
             throw ProviderRegistryFixtureError.discovery
+        }
+        if let contextGate {
+            await contextGate.suspend()
         }
         return RegistryBoundTestContext(
             target: target,
@@ -363,6 +399,38 @@ struct ExecutionProviderRegistryTests {
                 expecting: provider.descriptor,
                 registrationIdentifier: registered.registrationIdentifier
             )
+        }
+    }
+
+    @Test
+    func contextCreatedByProviderRemovedDuringFactoryAwaitIsRejected() async throws {
+        let registry = ExecutionProviderRegistry()
+        let identifier = providerID("provider.context-factory-race")
+        let gate = ProviderContextGate()
+        let firstProvider = RegistryTestProvider(
+            identifier: identifier.rawValue,
+            contextGate: gate
+        )
+        try await registry.register(firstProvider)
+        let registrations = await registry.registeredProviders()
+        let firstRegistration = try #require(registrations.first)
+        let target = ExecutionTargetReference(providerID: identifier)
+
+        let contextTask = Task {
+            try await registry.makeContext(
+                for: target,
+                expecting: firstProvider.descriptor,
+                registrationIdentifier: firstRegistration.registrationIdentifier
+            )
+        }
+
+        await gate.waitUntilSuspended()
+        #expect(await registry.unregister(identifier))
+        try await registry.register(RegistryTestProvider(identifier: identifier.rawValue))
+        await gate.resume()
+
+        await #expect(throws: ExecutionProviderRegistryError.providerRegistrationChanged(identifier)) {
+            _ = try await contextTask.value
         }
     }
 
