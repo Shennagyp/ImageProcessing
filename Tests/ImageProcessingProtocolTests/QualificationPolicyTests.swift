@@ -479,3 +479,73 @@ extension QualificationPolicyTests {
         #expect(computationRequirement.qualificationPolicy.requirements.count == 1)
     }
 }
+
+
+extension QualificationPolicyTests {
+    @Test
+    func precisionPreferenceMustUseTheValueKindForItsDimension() throws {
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try numericFunction().qualifying {
+                $0.prefer(.precision(.computation, .uint8))
+            }
+        }
+
+        let qualified = try numericFunction().qualifying {
+            $0.prefer(.precision(.computation, .float32), priority: 4)
+        }
+        #expect(qualified.qualificationPolicy.preferences.count == 1)
+    }
+
+    @Test
+    func precisionPreferenceMustApplyToTheExactOperationDimension() throws {
+        let stepID = try step("step.computation-preference-only")
+        let function = ImageFunction(
+            operation: ComputationOnlyOperation(),
+            stepIdentifier: stepID
+        )
+
+        #expect(throws: QualificationPolicyValidationError.self) {
+            try function.qualifying {
+                $0.forStep(stepID) {
+                    $0.prefer(.precision(.inputStorage, .uint8))
+                }
+            }
+        }
+
+        let valid = try function.qualifying {
+            $0.forStep(stepID) {
+                $0.prefer(.precision(.computation, .float32))
+            }
+        }
+        #expect(valid.qualificationPolicy.preferences.count == 1)
+    }
+
+    @Test
+    func precisionPreferencesForOneDimensionCannotConflictAtTheSameScope() throws {
+        #expect(throws: QualificationPolicyConflict.self) {
+            try numericFunction().qualifying {
+                $0.prefer(.precision(.computation, .float32), priority: 3)
+                $0.prefer(.precision(.computation, .float64), priority: 3)
+            }
+        }
+    }
+
+    @Test
+    func pipelineAndStepPrecisionPreferencesRemainScoped() throws {
+        let stepID = try step("step.precision-preference")
+        let function = ImageFunction(
+            operation: PrecisionAwareOperation(),
+            stepIdentifier: stepID
+        )
+        let qualified = try function.qualifying {
+            $0.prefer(.precision(.computation, .float32), priority: 1)
+            $0.forStep(stepID) {
+                $0.prefer(.precision(.computation, .float64), priority: 5)
+            }
+        }
+
+        #expect(qualified.qualificationPolicy.preferences.count == 2)
+        #expect(qualified.qualificationPolicy.preferences[0].origin.scope == .pipeline)
+        #expect(qualified.qualificationPolicy.preferences[1].origin.scope == .step(stepID))
+    }
+}
