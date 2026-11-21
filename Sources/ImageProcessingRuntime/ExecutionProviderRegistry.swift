@@ -13,6 +13,7 @@ public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
     case targetProviderMismatch(expected: ExecutionProviderID, actual: ExecutionProviderID)
     case providerDescriptorChanged(ExecutionProviderID)
     case providerRegistrationChanged(ExecutionProviderID)
+    case contextRegistrationMismatch(ExecutionProviderID)
 }
 
 /// One discovery attempt can succeed partially. Provider/device failures are
@@ -101,7 +102,30 @@ public actor ExecutionProviderRegistry {
               entry.provider.descriptor == expectedProvider else {
             throw ExecutionProviderRegistryError.providerDescriptorChanged(target.providerID)
         }
-        return try await entry.provider.makeContext(for: target)
+
+        // Provider context creation is asynchronous and this actor is reentrant.
+        // Revalidate the registration after the await so a context created by a
+        // provider that was concurrently unregistered/replaced cannot escape.
+        let context = try await entry.provider.makeContext(
+            for: target,
+            registrationIdentifier: registrationIdentifier
+        )
+
+        guard let currentEntry = entries[target.providerID] else {
+            throw ExecutionProviderRegistryError.providerNotRegistered(target.providerID)
+        }
+        guard currentEntry.registrationIdentifier == registrationIdentifier else {
+            throw ExecutionProviderRegistryError.providerRegistrationChanged(target.providerID)
+        }
+        guard currentEntry.descriptor == expectedProvider,
+              currentEntry.provider.descriptor == expectedProvider else {
+            throw ExecutionProviderRegistryError.providerDescriptorChanged(target.providerID)
+        }
+        if let boundContext = context as? any ExecutionProviderRegistrationBoundContext,
+           boundContext.providerRegistrationIdentifier != registrationIdentifier {
+            throw ExecutionProviderRegistryError.contextRegistrationMismatch(target.providerID)
+        }
+        return context
     }
 
     /// Discovers all registered providers in deterministic provider order.
