@@ -40,6 +40,10 @@ public struct ExecutionResourceDescriptor: Hashable, Sendable {
     public let capacityBytes: UInt64
     public let alignmentBytes: UInt64
     public let memoryDomain: ExecutionMemoryDomain
+    /// Runtime registration that created this handle. Nil is permitted for
+    /// externally owned or legacy resources, but cannot prove same-registration
+    /// device-local residency.
+    public let providerRegistrationIdentifier: UUID?
 
     public init(
         identifier: ExecutionResourceIdentifier,
@@ -47,7 +51,8 @@ public struct ExecutionResourceDescriptor: Hashable, Sendable {
         kind: ExecutionResourceKind,
         capacityBytes: UInt64,
         alignmentBytes: UInt64,
-        memoryDomain: ExecutionMemoryDomain
+        memoryDomain: ExecutionMemoryDomain,
+        providerRegistrationIdentifier: UUID? = nil
     ) throws {
         guard capacityBytes > 0 else {
             throw ExecutionResourceDescriptorError.zeroCapacity
@@ -64,6 +69,7 @@ public struct ExecutionResourceDescriptor: Hashable, Sendable {
         self.capacityBytes = capacityBytes
         self.alignmentBytes = alignmentBytes
         self.memoryDomain = memoryDomain
+        self.providerRegistrationIdentifier = providerRegistrationIdentifier
     }
 }
 
