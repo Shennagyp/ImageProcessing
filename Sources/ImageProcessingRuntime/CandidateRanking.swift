@@ -921,7 +921,7 @@ enum CandidateCostEstimator {
                 component: .temporaryBytesPerElement,
                 state: hintEstimate(
                     hint?.temporaryBytesPerElement,
-                    name: "temporary bytes per processed element",
+                    name: "temporary bytes per operation-defined work item",
                     source: hintSource
                 )
             ),
