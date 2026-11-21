@@ -110,7 +110,12 @@ public struct RuntimeWorkLoadSnapshot: Hashable, Sendable {
             let leftDevice = lhs.resource.target.deviceID?.rawValue ?? ""
             let rightDevice = rhs.resource.target.deviceID?.rawValue ?? ""
             if leftDevice != rightDevice { return leftDevice < rightDevice }
-            return lhs.resource.identifier.rawValue < rhs.resource.identifier.rawValue
+            if lhs.resource.identifier.rawValue != rhs.resource.identifier.rawValue {
+                return lhs.resource.identifier.rawValue < rhs.resource.identifier.rawValue
+            }
+            let leftRegistration = lhs.resource.providerRegistrationIdentifier?.uuidString ?? ""
+            let rightRegistration = rhs.resource.providerRegistrationIdentifier?.uuidString ?? ""
+            return leftRegistration < rightRegistration
         }
     }
 
@@ -411,7 +416,12 @@ public actor RuntimeWorkLedger {
             let leftDevice = lhs.reference.target.deviceID?.rawValue ?? ""
             let rightDevice = rhs.reference.target.deviceID?.rawValue ?? ""
             if leftDevice != rightDevice { return leftDevice < rightDevice }
+            if lhs.reference.identifier.rawValue != rhs.reference.identifier.rawValue {
             return lhs.reference.identifier.rawValue < rhs.reference.identifier.rawValue
+        }
+        let leftRegistration = lhs.reference.providerRegistrationIdentifier?.uuidString ?? ""
+        let rightRegistration = rhs.reference.providerRegistrationIdentifier?.uuidString ?? ""
+        return leftRegistration < rightRegistration
         }
     }
 
@@ -455,7 +465,12 @@ public actor RuntimeWorkLedger {
         let leftDevice = lhs.target.deviceID?.rawValue ?? ""
         let rightDevice = rhs.target.deviceID?.rawValue ?? ""
         if leftDevice != rightDevice { return leftDevice < rightDevice }
-        return lhs.identifier.rawValue < rhs.identifier.rawValue
+        if lhs.identifier.rawValue != rhs.identifier.rawValue {
+            return lhs.identifier.rawValue < rhs.identifier.rawValue
+        }
+        let leftRegistration = lhs.providerRegistrationIdentifier?.uuidString ?? ""
+        let rightRegistration = rhs.providerRegistrationIdentifier?.uuidString ?? ""
+        return leftRegistration < rightRegistration
     }
 
     private static func merged(
