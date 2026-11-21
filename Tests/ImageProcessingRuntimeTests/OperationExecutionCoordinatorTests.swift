@@ -402,10 +402,6 @@ private final class CoordinatedResource: ExecutionResource, @unchecked Sendable 
     }
 }
 
-private enum CoordinatedContextError: Error {
-    case importUnsupported
-}
-
 private struct CoordinatedContext: ExecutionResourceAllocatingContext, ExecutionProviderRegistrationBoundContext {
     let target: ExecutionTargetReference
     let providerRegistrationIdentifier: UUID
@@ -635,6 +631,16 @@ struct OperationExecutionCoordinatorTests {
 
         #expect(await ledger.activeLeaseCount == 2)
         #expect(source.descriptor.reference.target == sourceTarget)
+        await #expect(throws: RuntimeWorkLedgerError.resourceAccessConflict(
+            resource: source.descriptor.reference,
+            requested: .write,
+            active: .read
+        )) {
+            _ = try await ledger.reserveWork(
+                on: sourceTarget,
+                accessing: [ExecutionResourceAccess(resource: source, mode: .write)]
+            )
+        }
 
         await gate.resume()
         let output = try await execution.value
