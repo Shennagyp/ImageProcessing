@@ -1199,3 +1199,46 @@ struct CommonQualificationResolverTests {
     }
 
 }
+
+
+    @Test
+    func precisionPreferenceRanksImplementationsThatSupportThePreferredMode() async throws {
+        let now = Date(timeIntervalSince1970: 52_400)
+        let unknownDelay = ExecutionObservation<UInt64>(
+            unknownReason: "queue delay is not reported"
+        )
+        let policy = try ImageFunction(operation: QualificationOperation()).qualifying {
+            $0.prefer(.precision(.computation, .float64), priority: 5)
+        }.qualificationPolicy
+
+        let resolution = try await makePrecisionResolution(
+            providers: [
+                makeQueueProvider(
+                    identifier: "provider.precision",
+                    delay: unknownDelay,
+                    capturedAt: now
+                )
+            ],
+            implementations: [
+                QualificationImplementation(
+                    identifier: "qualification.precision.float32",
+                    precision: .init(computation: [.float32])
+                ),
+                QualificationImplementation(
+                    identifier: "qualification.precision.float64",
+                    precision: .init(computation: [.float64])
+                )
+            ],
+            policy: policy,
+            now: now
+        )
+
+        #expect(resolution.qualification.qualifiedCandidates.count == 2)
+        #expect(resolution.rankedCandidates.count == 2)
+        #expect(
+            resolution.rankedCandidates[0].candidate.implementation.specification.identifier.rawValue
+                == "qualification.precision.float64"
+        )
+        #expect(resolution.rankedCandidates[0].preferenceContributions.first?.weightedWinRate == 1)
+        #expect(resolution.rankedCandidates[1].preferenceContributions.first?.weightedWinRate == 0)
+    }
