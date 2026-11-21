@@ -165,6 +165,10 @@ public enum CandidateInputResourceResidencyDisposition: String, Hashable, Sendab
     case nonDeviceLocalOnTarget
     /// Owned by another provider or execution target.
     case foreignTarget
+    /// The target matches, but the creating provider registration is unknown.
+    case providerRegistrationUnknown
+    /// The target matches, but another provider registration created the handle.
+    case providerRegistrationMismatch
     /// Multiple handles reported different descriptors for one resource identity.
     case inconsistentDescriptor
 }
@@ -246,6 +250,7 @@ enum OperationImplementationCandidateRanker {
             CandidateInputResidencyEstimator.estimate(
                 resourceAccesses: candidate.inputResourceAccesses,
                 on: candidate.target,
+                providerRegistrationIdentifier: candidate.providerRegistrationIdentifier,
                 source: candidate.implementation.specification.identifier.rawValue
             )
         }
@@ -563,6 +568,7 @@ enum CandidateInputResidencyEstimator {
     static func estimate(
         resourceAccesses: [ExecutionResourceAccess],
         on candidateTarget: ExecutionTargetReference,
+        providerRegistrationIdentifier: UUID,
         source: String
     ) -> CandidateInputResidencyEstimate {
         var descriptors: [ExecutionResourceReference: ExecutionResourceDescriptor] = [:]
@@ -588,7 +594,18 @@ enum CandidateInputResidencyEstimator {
             } else if descriptor.target != candidateTarget {
                 disposition = .foreignTarget
             } else if descriptor.memoryDomain == .deviceLocal {
-                disposition = .deviceLocalOnTarget
+                guard let resourceRegistration = descriptor.providerRegistrationIdentifier else {
+                    disposition = .providerRegistrationUnknown
+                    return CandidateInputResourceResidency(
+                        resource: reference,
+                        memoryDomain: descriptor.memoryDomain,
+                        capacityBytes: descriptor.capacityBytes,
+                        disposition: disposition
+                    )
+                }
+                disposition = resourceRegistration == providerRegistrationIdentifier
+                    ? .deviceLocalOnTarget
+                    : .providerRegistrationMismatch
             } else {
                 disposition = .nonDeviceLocalOnTarget
             }
@@ -603,7 +620,7 @@ enum CandidateInputResidencyEstimator {
         let capacityEvidence = CandidateCostEstimateEvidence(
             kind: .resourceBinding,
             source: source,
-            detail: "Capacity of distinct declared input resource bindings whose descriptors match this target. This is already allocated storage, not an incremental allocation request or a provider-instance validity guarantee."
+            detail: "Capacity of distinct declared input resource bindings attributed to this provider registration. This is already allocated storage, not an incremental allocation request or a physical-capacity reservation."
         )
 
         let deviceLocalCapacity: CandidateCostEstimateState
@@ -643,7 +660,7 @@ enum CandidateInputResidencyEstimator {
                     CandidateCostEstimateEvidence(
                         kind: .resourceBinding,
                         source: source,
-                        detail: "Every distinct declared input resource handle reports deviceLocal memory and a descriptor target equal to the candidate target. This descriptor-level fact excludes unrepresented inputs and does not validate provider-instance interoperability, device-loss validity, external eviction, synchronization, or total execution latency."
+                        detail: "Every distinct declared input resource handle reports deviceLocal memory, the exact candidate target, and the same provider registration identifier as the candidate. This provenance fact excludes unrepresented inputs and does not validate device-loss validity, external eviction, synchronization, or total execution latency."
                     )
                 ]
             )
@@ -654,6 +671,14 @@ enum CandidateInputResidencyEstimator {
         } else if resources.contains(where: { $0.disposition == .foreignTarget }) {
             boundInputTransferTime = .unknown(
                 reason: "At least one input resource belongs to another execution target; import, remapping, and transfer cost are not modeled."
+            )
+        } else if resources.contains(where: { $0.disposition == .providerRegistrationMismatch }) {
+            boundInputTransferTime = .unknown(
+                reason: "At least one device-local input resource was created by another provider registration that reused the same target identity; import/remapping is not modeled."
+            )
+        } else if resources.contains(where: { $0.disposition == .providerRegistrationUnknown }) {
+            boundInputTransferTime = .unknown(
+                reason: "At least one device-local input resource has no provider registration provenance; target equality alone cannot establish residency in this provider instance."
             )
         } else {
             boundInputTransferTime = .unknown(
