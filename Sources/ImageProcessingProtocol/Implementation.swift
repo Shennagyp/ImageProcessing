@@ -470,6 +470,12 @@ public struct ImplementationSpecification: Hashable, Sendable {
 /// One implementation class realizes exactly one strongly typed operation.
 /// Qualification is performed by the common runtime resolver from the published
 /// specification and the execution-environment snapshot, not by this protocol.
+///
+/// The execute call is the operation's completion boundary: it must return
+/// only when its output is valid, and must not return or throw while provider
+/// work can still access its declared input resources. Implementations that
+/// submit asynchronous provider work must await its completion before returning.
+/// The runtime releases input-access leases only after this boundary.
 public protocol ImageOperationImplementation: Sendable {
     associatedtype Operation: ImageOperation
 

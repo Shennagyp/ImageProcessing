@@ -256,6 +256,9 @@ public actor RuntimeWorkLedger {
         )
     }
 
+    /// Marks the reserved invocation as dispatched to its qualified implementation.
+    /// This is runtime workload accounting, not a claim that a provider-reported
+    /// hardware queue accepted the work.
     public func markSubmitted(_ lease: ExecutionWorkLease) throws {
         let record = try record(for: lease)
         guard record.state == .reserved else {
@@ -276,8 +279,8 @@ public actor RuntimeWorkLedger {
         )
     }
 
-    /// Releases work and its reserved resource accesses only when provider
-    /// submission has not occurred.
+    /// Releases work and its reserved resource accesses only before the
+    /// runtime has crossed the implementation-dispatch boundary.
     public func cancelReservation(_ lease: ExecutionWorkLease) throws {
         let record = try record(for: lease)
         guard record.state == .reserved else {
@@ -290,9 +293,10 @@ public actor RuntimeWorkLedger {
         release(lease.identifier, record: record)
     }
 
-    /// Releases submitted work and retained resource handles only after the
-    /// provider completion boundary has been observed. A cancellation request
-    /// alone does not release either reservation.
+    /// Releases dispatched work and retained resource handles only after the
+    /// implementation's execute call (or a provider submission observed by its
+    /// implementation) reaches completion. A cancellation request alone does
+    /// not release either reservation.
     public func completeSubmission(_ lease: ExecutionWorkLease) throws {
         let record = try record(for: lease)
         guard record.state == .submitted else {

@@ -251,6 +251,18 @@ struct ImageStateTests {
             document: document,
             storageBindings: bindingSet
         )
+        let adoptedImage = Image(snapshot: candidate)
+        let adoptedSnapshot = adoptedImage.snapshot()
+
+        #expect(adoptedSnapshot.identifier == candidate.identifier)
+        #expect(adoptedSnapshot.revision == candidate.revision)
+        #expect(adoptedSnapshot.storageBindings.boundLayerCount == 1)
+        #expect(
+            try adoptedSnapshot.storageBindings
+                .binding(for: reference)?
+                .planeBindings.first?.resource.descriptor.identifier
+                == storage.planeBindings.first?.resource.descriptor.identifier
+        )
 
         let committed = try image.replace(expectedRevision: .initial, with: candidate)
         let committedResource = try #require(

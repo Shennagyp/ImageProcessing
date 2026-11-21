@@ -14,6 +14,16 @@ public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
     case providerDescriptorChanged(ExecutionProviderID)
     case providerRegistrationChanged(ExecutionProviderID)
     case contextRegistrationMismatch(ExecutionProviderID)
+    case contextTargetMismatch(expected: ExecutionTargetReference, actual: ExecutionTargetReference)
+}
+
+/// Retains the exact provider instance used by a qualified context while one
+/// operation is executing. An unregister removes future discoverability but
+/// cannot destroy this provider instance before the in-flight use finishes.
+struct ExecutionProviderUseLease: Sendable {
+    let descriptor: ExecutionProviderDescriptor
+    let registrationIdentifier: UUID
+    let provider: any ExecutionProvider
 }
 
 /// One discovery attempt can succeed partially. Provider/device failures are
@@ -126,6 +136,41 @@ public actor ExecutionProviderRegistry {
             throw ExecutionProviderRegistryError.contextRegistrationMismatch(target.providerID)
         }
         return context
+    }
+
+    /// Retains the exact provider instance associated with a qualified context.
+    /// The returned value keeps the provider package/instance alive through the
+    /// operation even if the registration is removed after this method returns.
+    func retainUse(
+        for target: ExecutionTargetReference,
+        registrationIdentifier: UUID,
+        context: any ExecutionContext
+    ) throws -> ExecutionProviderUseLease {
+        guard context.target == target else {
+            throw ExecutionProviderRegistryError.contextTargetMismatch(
+                expected: target,
+                actual: context.target
+            )
+        }
+        guard let entry = entries[target.providerID] else {
+            throw ExecutionProviderRegistryError.providerNotRegistered(target.providerID)
+        }
+        guard entry.registrationIdentifier == registrationIdentifier else {
+            throw ExecutionProviderRegistryError.providerRegistrationChanged(target.providerID)
+        }
+        guard entry.provider.descriptor == entry.descriptor else {
+            throw ExecutionProviderRegistryError.providerDescriptorChanged(target.providerID)
+        }
+        if let boundContext = context as? any ExecutionProviderRegistrationBoundContext,
+           boundContext.providerRegistrationIdentifier != registrationIdentifier {
+            throw ExecutionProviderRegistryError.contextRegistrationMismatch(target.providerID)
+        }
+
+        return ExecutionProviderUseLease(
+            descriptor: entry.descriptor,
+            registrationIdentifier: entry.registrationIdentifier,
+            provider: entry.provider
+        )
     }
 
     /// Discovers all registered providers in deterministic provider order.

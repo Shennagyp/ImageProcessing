@@ -88,6 +88,14 @@ public final class Image: @unchecked Sendable {
         self.currentState = state
     }
 
+    /// Adopts an already-validated image state without rebuilding or detaching
+    /// its revision-matched storage bindings. This is the ownership path for
+    /// operation results that create a new logical Image.
+    public init(snapshot: ImageStateSnapshot) {
+        self.identifier = snapshot.identifier
+        self.currentState = snapshot
+    }
+
     /// Captures a consistent immutable document/resource snapshot.
     /// The lock is held only while copying value/reference ownership.
     public func snapshot() -> ImageStateSnapshot {

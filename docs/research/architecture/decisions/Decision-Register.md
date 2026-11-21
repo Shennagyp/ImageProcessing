@@ -226,7 +226,7 @@ Image.snapshot() captures one immutable ImageStateSnapshot containing both the d
 
 Image.replace(expectedRevision:canvas:layers:storageBindings:) constructs and validates the candidate document and its matching resource-binding set outside the lock. It then locks, verifies the current revision still equals expectedRevision, and publishes the complete candidate state in one assignment. The prepared-snapshot overload accepts an already-validated ImageStateSnapshot without unpacking or rebuilding its storage bindings; it requires the same ImageIdentifier and exactly expectedRevision.next(), then performs the same compare-and-swap publication. If another replacement committed first, it throws a revisionConflict. No automatic replay or silent overwrite occurs.
 
-The initial Image initializer may generate an identity or accept an explicit ImageIdentifier. Explicit identity is required when callers construct initial LayerReference-based resource bindings before Image creation.
+The initial Image initializer may generate an identity or accept an explicit ImageIdentifier. Explicit identity is required when callers construct initial LayerReference-based resource bindings before Image creation. An overload accepts an already-validated ImageStateSnapshot and adopts its exact document and storage binding set without unpacking or rebuilding the resource handles.
 
 ### Replacement semantics
 
@@ -1000,7 +1000,7 @@ Qualification no longer labels an output/temporary resource path eligible merely
 
 ## ADR-033 — Returned image values retain produced storage and enforce typed postconditions
 
-**Status:** Revision-bound output storage retention, produced-pixel binding validation, descriptor validation, typed operation postconditions, and the prepared-snapshot Image compare-and-swap primitive implemented; provider allocation, plan-role mapping, and execution-to-publication orchestration pending
+**Status:** Revision-bound output storage retention, produced-pixel binding validation, descriptor validation, typed operation postconditions, and single-operation execution-to-Image compare-and-swap publication implemented; provider allocation, plan-role mapping, and complete resource lifecycle pending
 
 ### Decision
 
@@ -1029,7 +1029,8 @@ Output contracts are no longer only static declarations. The runtime checks the 
 
 - Mapping allocated resource-plan roles to concrete layer storage bindings in the returned value.
 - Verifying actual storage bindings, capacity, alignment, residency, import, and synchronization against the descriptor and execution context.
-- Coordinator-owned transactional Image publication and old-resource release.
+- Provider allocation and mapping from qualified output/temporary plan roles to concrete produced pixel planes; the current coordinator publishes an output snapshot that already contains validated bindings.
+- Device-loss/cancellation recovery and provider/native releaser retention for persistent output resources after the single-operation provider-use lease ends.
 - Numerical pixel-content conformance beyond descriptor metadata, covered by implementation/reference algorithm conformance tests.
 
 ---
@@ -1133,7 +1134,52 @@ A long-lived GPU allocation can be reused by operations qualified against the sa
 
 ### Deferred
 
-- Provider resource-handle retention of the provider package/native releaser through image lifetime and asynchronous submissions.
+- Provider package/native releaser retention for image-owned resources after an operation's provider-use lease has ended. The lease retains the exact provider instance only for the duration of an already-started operation.
 - Cross-registration and cross-target import/remapping, including typed input rebinding and source-resource retention through transfer completion.
 - Provider eviction, memory-pressure observation, device-loss invalidation, and physical allocation reservation.
-- A full coordinator-owned policy for unregistering providers while candidates, contexts, image resources, or submitted work still reference them.
+- A complete provider-retirement policy for contexts, candidates not yet dispatched, persistent image resources, and work outside the single-operation coordinator. A candidate whose registration is removed before the provider-use lease is acquired fails closed; an operation that already acquired the lease can finish against the retained provider instance.
+
+
+---
+
+## ADR-036 — Single-operation execution uses a revalidated resource lease and atomic image publication
+
+**Status:** Initial single-operation dispatch, completion-boundary accounting, provider-instance pinning, and optional in-place Image publication implemented; allocation, import/remapping, pipeline planning, and complete recovery remain pending
+
+### Decision
+
+The runtime exposes an `OperationExecutionCoordinator` for one `QualifiedOperationImplementation`. The coordinator does not rank or select candidates. It accepts the exact operation occurrence, input value, implementation registration, provider registration, target, context, and resource accesses already captured by qualification.
+
+Before dispatch, the coordinator:
+
+1. Reserves the target and the candidate's complete declared input-resource access set in `RuntimeWorkLedger`.
+2. Revalidates that the current resource handles and descriptors still match the reservation.
+3. Acquires a provider-use lease for the exact target and provider-registration UUID. The lease strongly retains the exact provider instance through this operation. If the registration has already been removed or replaced, dispatch is rejected and the pre-submit reservation is cancelled.
+4. Marks the runtime invocation as dispatched and invokes the exact implementation registration captured by the candidate.
+5. Releases the work/resource lease only after the implementation's `execute` call returns or throws. `ImageOperationImplementation.execute` is therefore the completion boundary for declared input accesses: an implementation that submits asynchronous provider work must await every use that could still access those inputs before returning.
+
+The ledger's submitted state means runtime dispatch has begun; it is not a claim that hardware accepted work or a substitute for provider telemetry. The implementation must not return a valid output while work that can still mutate or read its declared input resources remains outstanding.
+
+For in-place image updates, the coordinator derives one unambiguous source revision from the candidate's exact qualified `ImageOperationInputContext`. It checks that the current `Image` is still at that revision before dispatch. After the implementation returns and typed output validation succeeds, it publishes the output's exact `ImageStateSnapshot` through `Image.replace(expectedRevision:with:)`. That method verifies image identity, exact next revision, and the compare-and-swap condition under the image's short lock. A concurrent edit during execution therefore rejects publication without overwriting the newer image state.
+
+The caller may instead request the validated output value without mutating an existing `Image`. The returned image output descriptor retains its exact `ImageStateSnapshot`, so its storage resources remain owned by the output value until the caller retains or releases it. To establish a new mutable image owner, the caller can pass that snapshot to the `Image(snapshot: ImageStateSnapshot)` initializer; the storage bindings are adopted unchanged.
+
+### Invariants
+
+- Execution accepts only an already-qualified candidate and never re-runs ranking or substitutes a registration.
+- The input-resource access reservation is acquired atomically and revalidated before dispatch.
+- A provider registration removed before provider-use acquisition cannot be used by a stale candidate.
+- Once provider-use acquisition succeeds, the exact provider instance remains strongly retained until that operation completes, even if the registry entry is removed in the meantime.
+- The runtime work lease remains active until the implementation completion boundary, including when execution throws.
+- Implementations that submit asynchronous provider work must await all work that can still access declared inputs before returning or throwing.
+- Image publication occurs only after output descriptor and typed operation postcondition validation.
+- In-place publication uses the exact qualified source revision and cannot overwrite a newer concurrent revision.
+- Failed execution, output validation, or revision comparison leaves the target Image state unchanged.
+- Produced pixel storage remains retained by the returned output snapshot and, after publication, by the Image revision.
+
+### Deferred
+
+- Provider-backed output/temporary allocation, physical capacity reservation, and mapping output plan roles to concrete layer/plane bindings.
+- Input imports/remapping and verified output residency/synchronization routes.
+- Full cancellation, timeout, device-loss, allocation-recovery, and whole-pipeline planning.
+- Native provider releaser/package retention for image resources beyond the operation's provider-use lease and across plugin unload.
