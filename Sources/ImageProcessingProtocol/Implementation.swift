@@ -87,6 +87,8 @@ public struct OperationExecutionResources: Sendable {
     private let resourcesByRole: [ImplementationResourceRole: any ExecutionResource]
     public let bindings: [OperationExecutionResourceBinding]
     /// Only inputs that the runtime imported/remapped for this execution.
+    /// These handles are invocation-scoped: implementations must not retain
+    /// them or publish them into persistent output storage.
     /// Inputs without an entry continue to use the handles in the typed input.
     public let importedInputBindings: [OperationInputResourceBinding]
 
@@ -141,7 +143,9 @@ public struct OperationExecutionResources: Sendable {
         }
     }
 
-    /// Returns destination-context handles imported for one logical input.
+    /// Returns invocation-scoped destination-context handles imported for one
+    /// logical input. Implementations must not retain these handles beyond
+    /// execution completion or attach them to persistent output storage.
     /// An empty result means the input continues to use its original bindings.
     public func importedInputResources(
         for inputIndex: Int
@@ -628,8 +632,10 @@ public protocol ImageOperationImplementation: Sendable {
     /// OperationExecutionResources.importedInputResources(for:); when present,
     /// they replace the corresponding original input handles for this invocation.
     /// The typed input and its immutable image snapshots are never rewritten.
-    /// Output resources for image results must be attached to produced layer
-    /// planes; temporary resources must not be retained in the returned image.
+    /// Imported handles are invocation-scoped and must not be retained or
+    /// attached to persistent output storage. Output resources for image results
+    /// must be attached to produced layer planes; temporary resources must not be
+    /// retained in the returned image.
     func execute(
         operation: Operation,
         input: Operation.Input,
