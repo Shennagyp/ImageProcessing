@@ -1,5 +1,5 @@
 import GeneralExecutionProtocol
-import ImageProcessingRuntime
+@testable import ImageProcessingRuntime
 import Testing
 
 private final class CandidateResidencyTestResource: ExecutionResource, @unchecked Sendable {
