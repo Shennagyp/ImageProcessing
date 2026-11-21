@@ -391,9 +391,14 @@ private struct CoordinatedImageImplementation: ImageOperationImplementation {
 
 private final class CoordinatedResource: ExecutionResource, @unchecked Sendable {
     let descriptor: ExecutionResourceDescriptor
+    private let retainedSource: (any ExecutionResource)?
 
-    init(_ descriptor: ExecutionResourceDescriptor) {
+    init(
+        _ descriptor: ExecutionResourceDescriptor,
+        retaining source: (any ExecutionResource)? = nil
+    ) {
         self.descriptor = descriptor
+        self.retainedSource = source
     }
 }
 
@@ -441,7 +446,7 @@ private struct CoordinatedContext: ExecutionResourceAllocatingContext, Execution
             memoryDomain: .shared,
             providerRegistrationIdentifier: providerRegistrationIdentifier
         )
-        return CoordinatedResource(descriptor)
+        return CoordinatedResource(descriptor, retaining: resource)
     }
 }
 
