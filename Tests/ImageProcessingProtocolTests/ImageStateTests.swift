@@ -237,7 +237,11 @@ struct ImageStateTests {
             canvas: canvas(),
             layers: [raster]
         )
-        var resource: ImageStateTestResource? = try makeResource(pixels: pixels)
+        let providerRegistrationIdentifier = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        var resource: ImageStateTestResource? = try makeResource(
+            pixels: pixels,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
+        )
         weak var weakResource = resource
         var storage: PixelStorageBinding? = try PixelStorageBinding(
             descriptor: pixels,
@@ -264,12 +268,26 @@ struct ImageStateTests {
         )
         #expect(weakResource != nil)
         #expect(captured?.storageBindings.boundLayerCount == 1)
+        #expect(
+            try captured?.storageBindings
+                .binding(for: raster.reference(in: document.identifier))?
+                .planeBindings.first?.resource.descriptor.memoryDomain == .deviceLocal
+        )
+        #expect(
+            try captured?.storageBindings
+                .binding(for: raster.reference(in: document.identifier))?
+                .planeBindings.first?.resource.descriptor.providerRegistrationIdentifier
+                == providerRegistrationIdentifier
+        )
 
         captured = nil
         #expect(weakResource.map { _ in true } == nil)
     }
 
-    private func makeResource(pixels: PixelDataDescriptor) throws -> ImageStateTestResource {
+    private func makeResource(
+        pixels: PixelDataDescriptor,
+        providerRegistrationIdentifier: UUID
+    ) throws -> ImageStateTestResource {
         let provider = try #require(ExecutionProviderID(rawValue: "provider.image-retain"))
         let device = try #require(ExecutionDeviceID(rawValue: "device.image-retain"))
         let descriptor = try ExecutionResourceDescriptor(
@@ -278,7 +296,8 @@ struct ImageStateTests {
             kind: .buffer,
             capacityBytes: pixels.minimumRequiredStorageBytes,
             alignmentBytes: 4,
-            memoryDomain: .host
+            memoryDomain: .deviceLocal,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
         )
         return ImageStateTestResource(descriptor)
     }
