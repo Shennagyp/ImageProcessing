@@ -583,11 +583,11 @@ struct OperationExecutionCoordinatorTests {
         let sourceTarget = ExecutionTargetReference(
             providerID: ExecutionProviderID(rawValue: "provider.execution-coordinator.import-source")!
         )
+        let providers = ExecutionProviderRegistry()
         let weakSourceProvider = WeakCoordinatedProviderBox(
             CoordinatedProvider(identifier: sourceTarget.providerID)
         )
         try await providers.register(weakSourceProvider.value!)
-        let providers = ExecutionProviderRegistry()
         try await providers.register(CoordinatedProvider(identifier: destinationProviderID))
         let registrations = await providers.registeredProviders()
         let sourceRegistration = try #require(
@@ -622,7 +622,7 @@ struct OperationExecutionCoordinatorTests {
         )
         let candidate = QualifiedOperationImplementation(
             implementation: registeredImplementation,
-            providerRegistrationIdentifier: registeredProvider.registrationIdentifier,
+            providerRegistrationIdentifier: destinationRegistration.registrationIdentifier,
             operationStep: AnyImageOperationStep(operation: CoordinatedImportOperation()),
             input: input,
             target: destinationTarget,
