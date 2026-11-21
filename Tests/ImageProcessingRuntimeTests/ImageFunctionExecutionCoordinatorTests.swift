@@ -44,7 +44,7 @@ private struct SequenceAddImplementation: ImageOperationImplementation {
     let specification: ImplementationSpecification
 
     init() {
-        specification = Self.makeSpecification(
+        specification = makeSequenceImplementationSpecification(
             identifier: "function-execution.add.cpu",
             operation: SequenceAddOperation.specification.erased
         )
@@ -65,7 +65,7 @@ private struct SequenceMultiplyImplementation: ImageOperationImplementation {
     let specification: ImplementationSpecification
 
     init() {
-        specification = Self.makeSpecification(
+        specification = makeSequenceImplementationSpecification(
             identifier: "function-execution.multiply.cpu",
             operation: SequenceMultiplyOperation.specification.erased
         )
@@ -80,25 +80,23 @@ private struct SequenceMultiplyImplementation: ImageOperationImplementation {
     }
 }
 
-private extension SequenceAddImplementation {
-    static func makeSpecification(
-        identifier: String,
-        operation: AnyOperationSpecification
-    ) -> ImplementationSpecification {
-        let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
-        let upper = SemanticVersion(major: 2, minor: 0, patch: 0)!
-        return ImplementationSpecification(
-            identifier: OperationImplementationIdentifier(rawValue: identifier)!,
-            version: lower,
-            operationIdentifier: operation.identifier,
-            supportedOperationVersions: SemanticVersionRange(
-                lowerBound: lower,
-                upperBound: upper
-            )!,
-            inputType: operation.inputType,
-            outputType: operation.outputType
-        )
-    }
+private func makeSequenceImplementationSpecification(
+    identifier: String,
+    operation: AnyOperationSpecification
+) -> ImplementationSpecification {
+    let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
+    let upper = SemanticVersion(major: 2, minor: 0, patch: 0)!
+    return ImplementationSpecification(
+        identifier: OperationImplementationIdentifier(rawValue: identifier)!,
+        version: lower,
+        operationIdentifier: operation.identifier,
+        supportedOperationVersions: SemanticVersionRange(
+            lowerBound: lower,
+            upperBound: upper
+        )!,
+        inputType: operation.inputType,
+        outputType: operation.outputType
+    )
 }
 
 private struct SequenceProviderContext: ExecutionProviderRegistrationBoundContext {
