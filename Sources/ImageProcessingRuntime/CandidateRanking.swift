@@ -366,10 +366,43 @@ enum OperationImplementationCandidateRanker {
                 right.implementation.specification.determinism == .deterministic
             guard leftIsDeterministic != rightIsDeterministic else { return .tie }
             return leftIsDeterministic ? .left : .right
+        case let .precision(dimension, value):
+            return comparePrecisionSupport(
+                left,
+                right,
+                dimension: dimension,
+                preferredValue: value
+            )
         case .lowEnergy, .highThroughput:
             // No calibrated energy or throughput model exists yet.
             return nil
         }
+    }
+
+    /// A precision preference rewards candidates whose declared support includes
+    /// the preferred value. It does not remove other otherwise-eligible candidates.
+    private static func comparePrecisionSupport(
+        _ left: QualifiedOperationImplementation,
+        _ right: QualifiedOperationImplementation,
+        dimension: PrecisionDimension,
+        preferredValue: PrecisionValue
+    ) -> PairOutcome? {
+        let operationValues = left.operationStep.specification.precisionContract.values(for: dimension)
+        guard operationValues.contains(preferredValue) else { return nil }
+
+        let leftSupports = left.implementation.specification.precisionSupport
+            .values(for: dimension)
+            .contains(preferredValue)
+        let rightSupports = right.implementation.specification.precisionSupport
+            .values(for: dimension)
+            .contains(preferredValue)
+
+        guard leftSupports != rightSupports else {
+            // If neither candidate supports the preferred value, there is no
+            // evidence that can order them for this soft objective.
+            return leftSupports ? .tie : nil
+        }
+        return leftSupports ? .left : .right
     }
 
     /// Latency is a multi-component comparison. A candidate wins only when it
