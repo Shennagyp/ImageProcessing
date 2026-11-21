@@ -678,6 +678,27 @@ struct OperationExecutionCoordinatorTests {
     }
 
     @Test
+    func cancellationAfterSubmissionRetainsTheLeaseUntilImplementationCompletion() async throws {
+        let gate = CoordinatorExecutionGate()
+        let setup = try await setup(gate: gate)
+        let execution = Task {
+            try await setup.coordinator.execute(setup.candidate) as? CoordinatedOutput
+        }
+
+        await gate.waitUntilSuspended()
+        #expect(await setup.ledger.activeLeaseCount == 1)
+
+        execution.cancel()
+        #expect(await setup.ledger.activeLeaseCount == 1)
+
+        await gate.resume()
+        await #expect(throws: CancellationError.self) {
+            _ = try await execution.value
+        }
+        #expect(await setup.ledger.activeLeaseCount == 0)
+    }
+
+    @Test
     func executesTheQualifiedImplementationAndReleasesItsWorkLease() async throws {
         let setup = try await setup()
 
