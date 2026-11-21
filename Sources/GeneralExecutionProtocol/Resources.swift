@@ -115,9 +115,10 @@ public struct ExecutionResourceRequest: Hashable, Sendable {
     }
 }
 
-/// A resource is a reference-counted opaque provider allocation. Implementations
-/// release native storage when the resource handle and all submission-retained
-/// references are released.
+/// A resource is a reference-counted opaque provider allocation. Its descriptor
+/// is immutable for the lifetime of the handle and identifies that exact allocation.
+/// Implementations release native storage when the resource handle and all
+/// submission-retained references are released.
 public protocol ExecutionResource: AnyObject, Sendable {
     var descriptor: ExecutionResourceDescriptor { get }
 }
