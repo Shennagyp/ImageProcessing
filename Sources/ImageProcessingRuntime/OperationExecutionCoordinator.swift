@@ -13,6 +13,7 @@ public enum OperationExecutionCoordinatorError: Error, Equatable, Sendable {
     case memoryDomainNotAllocatable(ImplementationResourceRole, ExecutionMemoryDomain)
     case resourceAllocationContextUnavailable(ImplementationResourceRole)
     case resourceAllocationFailed(ImplementationResourceRole, reason: String)
+    case providerResourceAllocationFailed(ImplementationResourceRole, ExecutionProviderFailure)
     case invalidResourceRequest(ImplementationResourceRole)
     case allocatedResourceDoesNotSatisfyRequest(ImplementationResourceRole, ExecutionResourceDescriptor)
     case allocatedResourceRegistrationMismatch(ImplementationResourceRole, expected: UUID, actual: UUID?)
@@ -664,6 +665,14 @@ public actor OperationExecutionCoordinator {
                 resource = try await allocator.allocateResource(request)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let failure as ExecutionProviderFailure {
+                if failure.kind == .resourceAllocationFailed {
+                    throw OperationExecutionCoordinatorError.providerResourceAllocationFailed(
+                        allocation.role,
+                        failure
+                    )
+                }
+                throw failure
             } catch {
                 throw OperationExecutionCoordinatorError.resourceAllocationFailed(
                     allocation.role,
