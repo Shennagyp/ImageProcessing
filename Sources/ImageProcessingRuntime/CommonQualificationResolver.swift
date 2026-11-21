@@ -588,7 +588,14 @@ public actor CommonQualificationResolver {
                 rejections.append(.inputResourceContextMissing(inputIndex))
             }
 
-            guard !bindings.isEmpty else { continue }
+            guard !bindings.isEmpty else {
+                if let imageInput,
+                   let firstReference = imageInput.target.layerReferences.first,
+                   !rejections.contains(.inputResourceBindingMissing(inputIndex, firstReference)) {
+                    rejections.append(.inputResourceBindingMissing(inputIndex, firstReference))
+                }
+                continue
+            }
 
             for binding in bindings {
                 let descriptor = binding.resource.descriptor
