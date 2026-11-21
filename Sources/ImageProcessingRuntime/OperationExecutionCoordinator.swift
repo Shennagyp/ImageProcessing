@@ -52,15 +52,16 @@ private struct InputResourceImportRequest: Sendable {
 
 private struct RetainedSourceResourceLease: Sendable {
     let workLease: ExecutionWorkLease
-    /// Keeps the package that owns a registered source allocation available
-    /// until the imported resource no longer depends on that source.
-    let providerUse: ExecutionProviderUseLease?
 }
 
 private struct PreparedOperationInputResources: Sendable {
     let accesses: [ExecutionResourceAccess]
     let importedBindings: [OperationInputResourceBinding]
     let sourceLeases: [RetainedSourceResourceLease]
+    /// Pins registered owners for every declared input handle whose provider
+    /// registration differs from the destination candidate, including direct
+    /// same-target handles that do not require import.
+    let sourceProviderUses: [ExecutionProviderUseLease]
 }
 
 private struct InputResourceAccessSignature: Hashable {
@@ -327,7 +328,8 @@ public actor OperationExecutionCoordinator {
             return PreparedOperationInputResources(
                 accesses: [],
                 importedBindings: [],
-                sourceLeases: []
+                sourceLeases: [],
+                sourceProviderUses: []
             )
         }
 
@@ -341,6 +343,7 @@ public actor OperationExecutionCoordinator {
         var qualifiedAccesses: [ExecutionResourceAccess] = []
         var directAccesses: [ExecutionResourceAccess] = []
         var importRequests: [InputResourceImportRequest] = []
+        var sourceProviderUses: [ExecutionProviderUseLease] = []
 
         for entry in inputRequirements {
             let bindings = currentBindings.filter { $0.inputIndex == entry.index }
@@ -350,6 +353,13 @@ public actor OperationExecutionCoordinator {
 
             for binding in bindings {
                 let descriptor = binding.resource.descriptor
+                if let sourceRegistration = descriptor.providerRegistrationIdentifier,
+                   !(descriptor.target == candidate.target
+                     && sourceRegistration == candidate.providerRegistrationIdentifier) {
+                    let ownerUse = try await providers.retainResourceOwner(for: binding.resource)
+                    sourceProviderUses.append(ownerUse)
+                    try Task.checkCancellation()
+                }
                 guard descriptor.kind == entry.requirement.kind,
                       descriptor.capacityBytes >= entry.requirement.minimumCapacityBytes,
                       descriptor.alignmentBytes >= entry.requirement.minimumAlignmentBytes,
@@ -421,7 +431,8 @@ public actor OperationExecutionCoordinator {
             return PreparedOperationInputResources(
                 accesses: directAccesses,
                 importedBindings: [],
-                sourceLeases: []
+                sourceLeases: [],
+                sourceProviderUses: sourceProviderUses
             )
         }
 
@@ -450,14 +461,6 @@ public actor OperationExecutionCoordinator {
                 try Task.checkCancellation()
                 let sourceDescriptor = request.source.descriptor
                 let sourceReference = sourceDescriptor.reference
-                let sourceProviderUse: ExecutionProviderUseLease?
-                if sourceDescriptor.providerRegistrationIdentifier != nil {
-                    sourceProviderUse = try await providers.retainResourceOwner(
-                        for: request.source
-                    )
-                } else {
-                    sourceProviderUse = nil
-                }
                 let sourceAccess = ExecutionResourceAccess(resource: request.source, mode: .read)
                 let sourceLease = try await workLedger.reserveWork(
                     on: sourceDescriptor.target,
@@ -480,10 +483,7 @@ public actor OperationExecutionCoordinator {
                     throw primaryError
                 }
                 sourceLeases.append(
-                    RetainedSourceResourceLease(
-                        workLease: sourceLease,
-                        providerUse: sourceProviderUse
-                    )
+                    RetainedSourceResourceLease(workLease: sourceLease)
                 )
                 try Task.checkCancellation()
 
@@ -573,7 +573,8 @@ public actor OperationExecutionCoordinator {
             return PreparedOperationInputResources(
                 accesses: directAccesses + importedAccesses,
                 importedBindings: importedBindings,
-                sourceLeases: sourceLeases
+                sourceLeases: sourceLeases,
+                sourceProviderUses: sourceProviderUses
             )
         } catch {
             let cleanup = await releaseSubmittedSourceLeases(sourceLeases)
