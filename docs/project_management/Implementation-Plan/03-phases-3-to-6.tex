@@ -58,7 +58,7 @@
   \item Operation implementation registry that records operation identity/version, implementation identity/version, and declarative implementation specification. **Implemented:** an actor-backed registry validates registration, stores implementation versions independently, and enumerates candidates by operation or concrete step without ranking them.
   \item Internal type-erased registry entries that recover the concrete associated operation/input types before dispatch. **Implemented:** erased execution is module-internal and requires an explicit implementation key; public callers cannot bypass resolver qualification.
   \item Environment snapshot assembly from discovered provider/device descriptors, provider observations, and runtime-owned outstanding-work accounting. \textbf{Implemented:} partial provider/device results and failures are preserved; runtime-owned workload counts are kept separate from provider telemetry; each snapshot has a unique identity, coordinator generation, and capture time. Provider-backed physical allocation/residency observations remain future work.
-  \item Snapshot identity, observation time, freshness, and source-quality metadata.
+  \item Snapshot identity, observation time, freshness, and source-quality metadata. **Implemented:** each provider registration has an identity captured by the snapshot; context creation receives that identity and the registry rechecks it after the asynchronous factory returns. Registration-bound contexts can report and validate their identity.
   \item Runtime-owned outstanding-work ledger keyed by execution target. It distinguishes work reserved by the runtime from work accepted by a provider and releases submitted work only after completion is observed. **Implemented.**
   \item Identity-bearing runtime environment snapshots with a monotonic per-coordinator generation, captured time, provider discovery result, partial failures, and runtime-owned work-load snapshot. **Implemented.**
   \item Runtime workload counts remain separate from provider queue depth/utilization observations; missing provider telemetry remains unknown. **Implemented.**
@@ -77,6 +77,7 @@
   \item Runtime-owned reserved/submitted work counts remain separate from provider-reported queue depth and utilization.
   \item Each runtime snapshot has a unique identity and a monotonically increasing coordinator generation; the provider discovery and work-load snapshots expose their capture times.
   \item A submitted work lease remains counted until completion; cancellation requests do not release it prematurely.
+  \item Resource descriptors may record the provider registration UUID that created them, and resource references include that UUID so re-registered providers cannot alias prior resources by reusing stable target/resource identifiers.
   \item Heterogeneous registry dispatch is type-safe at the operation boundary and tested for mismatched operation/implementation pairs.
   \item Provider/implementation version incompatibilities produce explicit diagnostics.
   \item A provider whose state observation or device discovery fails does not erase other successful providers from the same environment snapshot; failures remain separately inspectable.
@@ -112,8 +113,9 @@
   \item With FP32 computation required, no FP16-only candidate is selected.
   \item With FP32 preferred, only candidates permitted by the operation's numerical contract can be ranked as alternatives.
   \item A context-scoped allocation/submission requirement is not satisfied by a provider/device declaration alone; the created context must report the capability and conform to the corresponding optional protocol.
-  \item Distinct declared input handles already device-local on the exact candidate target produce a zero bound-input staging estimate; repeated references are counted once.
-  \item Missing input-resource bindings, foreign-target resources, conflicting descriptors, and host/shared/managed/external domains never become an assumed zero-transfer result.
+  \item Distinct declared input handles already device-local on the exact candidate target and carrying the same provider registration UUID as the candidate produce a zero bound-input staging estimate; repeated references are counted once.
+  \item Missing input-resource bindings, missing/old provider-registration provenance, foreign-target resources, conflicting descriptors, and host/shared/managed/external domains never become an assumed zero-transfer result.
+  \item A device-local input handle from a prior provider registration is rejected for direct use even when the replacement provider reuses the same provider/device identifiers.
   \item A pixel-backed composite input qualifies only when every selected layer and every plane resource is bound; a fully bound composite remains valid.
   \item Existing device-local input allocation capacity is reported separately and is not added to the new per-invocation output/temporary allocation comparison.
   \item A busy/unavailable GPU routes to CPU only when CPU is registered, qualified, and fallback is permitted.
@@ -130,7 +132,7 @@
 \deliverables
 \begin{enumerate}
   \item An execution coordinator that prepares, reserves/acquires, submits, awaits, validates, and releases execution resources through \GEP{}.
-  \item Snapshot freshness and pre-execution revalidation. If a critical reservation fails, refresh and resolve again only within the original hard constraints. Revalidate resource-owner/provider-instance compatibility as well as stable target identity; a matching provider/device identifier alone does not prove native interoperability after provider replacement.
+  \item Snapshot freshness and pre-execution revalidation. If a critical reservation fails, refresh and resolve again only within the original hard constraints. Revalidate resource-owner/provider-registration compatibility as well as stable target identity; a matching provider/device identifier alone does not prove native interoperability after provider replacement. Registration UUID provenance now supports this check for device-local input handles.
   \item A first pipeline planner that considers operation adjacency, provider transitions, data residency, conversion requirements, and complete estimated cost.
   \item Explicit handling of managed runtimes whose internal scheduling is opaque; the outer runtime treats them as one implementation candidate unless reliable partition/resource facts are exposed.
   \item Cancellation, error propagation, device-loss handling, and resource cleanup.
