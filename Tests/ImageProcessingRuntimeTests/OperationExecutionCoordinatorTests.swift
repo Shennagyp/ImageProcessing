@@ -584,10 +584,12 @@ struct OperationExecutionCoordinatorTests {
             providerID: ExecutionProviderID(rawValue: "provider.execution-coordinator.import-source")!
         )
         let providers = ExecutionProviderRegistry()
-        let weakSourceProvider = WeakCoordinatedProviderBox(
-            CoordinatedProvider(identifier: sourceTarget.providerID)
+        var sourceProvider: CoordinatedProvider? = CoordinatedProvider(
+            identifier: sourceTarget.providerID
         )
-        try await providers.register(weakSourceProvider.value!)
+        let weakSourceProvider = WeakCoordinatedProviderBox(sourceProvider!)
+        try await providers.register(sourceProvider!)
+        sourceProvider = nil
         try await providers.register(CoordinatedProvider(identifier: destinationProviderID))
         let registrations = await providers.registeredProviders()
         let sourceRegistration = try #require(
