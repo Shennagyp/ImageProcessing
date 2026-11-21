@@ -205,7 +205,7 @@ The intended package relationship is shown below. The arrow denotes a source-lev
 \texttt{GeneralExecution\allowbreak Protocol} & The lower-level, reusable execution contract: providers, devices, contexts, generic resources, submission, completion, synchronization, transfer, static capabilities, and observable dynamic execution state. It has no dependency on \texttt{ImageProcessing\allowbreak Protocol}. \\
 Concrete execution providers & Implement \texttt{GeneralExecution\allowbreak Protocol} for CPU, Metal, CUDA, OpenCL, Direct3D 12, or another execution technology. \\
 Image-operation implementation packages & Supply independent classes conforming to the generic operation-implementation contract. Each class declares an implementation specification and uses a provider or managed algorithm runtime. They are selected and registered by the consuming application. \\
-\texttt{ImageProcessingRuntime} & Integrates the two protocols. Operation/provider registries, partial provider/device discovery, runtime work/resource-access accounting, input-bound qualification, output descriptor validation, operation-derived output/temporary resource planning, and initial eligible-candidate ranking exist. Single-operation read-only input import/remapping, source-provider pinning when provenance exists, output allocation/binding, submission/completion coordination, and transactional result publication are implemented. Whole-pipeline planning, physical-capacity reservation, and multi-step publication remain to implement. \\
+\texttt{ImageProcessingRuntime} & Integrates the two protocols. Operation/provider registries, partial provider/device discovery, runtime work/resource-access accounting, input-bound qualification, output descriptor validation, operation-derived output/temporary resource planning, and initial eligible-candidate ranking exist. Single-operation read-only input import/remapping, source-provider pinning for direct/imported resources, output allocation/binding, submission/completion coordination, and transactional single-image publication are implemented. Basic typed sequential \texttt{ImageFunction} execution resolves each step against a fresh environment and the preceding output. Global sequence search, cross-step optimization, physical-capacity reservation, and transactional multi-step publication remain deferred. \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -1364,10 +1364,16 @@ ImageProcessingRuntime/
   TypeErasure, ResourceReservation, ExecutionCoordinator
   ImageResult, ReplacementTransaction
 
-ExternalExecutionProviderPacks/
-  CPU, Metal, CUDA, OpenCL, Direct3D12, Vulkan
+ImageProcessingCPUProvider/
+  CPUExecutionProvider, CPUBufferResource
 
-ExternalOperationImplementationPacks/
+ImageProcessingReferenceOperations/
+  ReferenceNegateFloat32, CPUReferenceNegateFloat32Implementation
+
+OtherExecutionProviderPacks/
+  Metal, CUDA, OpenCL, Direct3D12, Vulkan
+
+OtherOperationImplementationPacks/
   GaussianBlur: CPU, Metal, CUDA, OpenCV, ...
   Resize: CPU, Metal, CUDA, OpenCV, ...
   CoreImage, Accelerate, OpenCV, ONNXRuntime, CoreML adapters
@@ -1377,9 +1383,9 @@ Dependency rules:
 \begin{itemize}
   \item \texttt{GeneralExecution\allowbreak Protocol} has no dependency on image-processing types.
   \item \texttt{ImageProcessing\allowbreak Protocol} may depend on \texttt{GeneralExecution\allowbreak Protocol} for generic execution contracts, but the reverse dependency is forbidden.
-  \item Provider implementations conform to \texttt{GeneralExecution\allowbreak Protocol}.
-  \item Operation adapters conform to \texttt{ImageProcessing\allowbreak Protocol}; native operation adapters may also consume a concrete provider implementation.
-  \item \texttt{ImageProcessingRuntime} integrates the protocols and implements registry/selection/execution orchestration without becoming a provider.
+  \item Provider implementations conform to \texttt{GeneralExecution\allowbreak Protocol}; `ImageProcessingCPUProvider` depends only on that protocol.
+  \item Operation adapters conform to \texttt{ImageProcessing\allowbreak Protocol}; a native operation adapter may also consume its concrete provider package. `ImageProcessingReferenceOperations` depends on both protocols and `ImageProcessingCPUProvider`.
+  \item \texttt{ImageProcessingRuntime} integrates the protocols and implements registry/selection/execution orchestration without becoming a provider; it imports neither reference pack.
 \end{itemize}
 
 \section{Reference API vocabulary (provisional)}
