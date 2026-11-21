@@ -130,7 +130,7 @@
 \deliverables
 \begin{enumerate}
   \item An execution coordinator that prepares, reserves/acquires, submits, awaits, validates, and releases execution resources through \GEP{}.
-  \item Snapshot freshness and pre-execution revalidation. If a critical reservation fails, refresh and resolve again only within the original hard constraints.
+  \item Snapshot freshness and pre-execution revalidation. If a critical reservation fails, refresh and resolve again only within the original hard constraints. Revalidate resource-owner/provider-instance compatibility as well as stable target identity; a matching provider/device identifier alone does not prove native interoperability after provider replacement.
   \item A first pipeline planner that considers operation adjacency, provider transitions, data residency, conversion requirements, and complete estimated cost.
   \item Explicit handling of managed runtimes whose internal scheduling is opaque; the outer runtime treats them as one implementation candidate unless reliable partition/resource facts are exposed.
   \item Cancellation, error propagation, device-loss handling, and resource cleanup.
@@ -146,6 +146,7 @@
   \item A sequence is not dispatched greedily without accounting for residency and transition costs.
   \item Resource reservation failure causes safe re-resolution or a structured failure; it never weakens hard requirements.
   \item Cancellation and device loss do not corrupt image state or release resources before work is complete.
+  \item Direct use of a long-lived resource is accepted only when its owning provider instance is still valid and the candidate context can access it; otherwise a validated import/remapping route or a structured failure is required.
   \item Image-owned device-local resources remain usable while their image revision is retained; replacing the current revision does not invalidate older snapshots or already-submitted work.
   \item Output resources are retained by the published image storage bindings, while temporary resources are released only after their final submitted/dependent use completes.
   \item Failed execution or output validation leaves the original image revision unchanged.
