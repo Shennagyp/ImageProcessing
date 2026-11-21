@@ -721,7 +721,10 @@ public protocol ImageOperation: Sendable {
     func resourcePlan(for input: Input) throws -> OperationResourcePlan
 
     /// Optional operation-defined primary work-item count for this invocation.
-    /// This is the reference unit for implementation per-element performance hints.
+    /// The result must be deterministic and derived only from this operation instance
+    /// and its typed input; it must not depend on the selected implementation, provider,
+    /// device state, or runtime telemetry. This is the reference unit for implementation
+    /// per-element performance hints.
     func workload(for input: Input) -> OperationWorkload?
 
     /// Operation-owned, typed postcondition for the actual returned value.
