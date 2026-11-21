@@ -163,7 +163,7 @@ public struct CPUExecutionProvider: ExecutionProvider, Sendable {
         registrationIdentifier: UUID
     ) async throws -> any ExecutionContext {
         guard target == Self.target else {
-            throw ExecutionProviderFailure(
+            throw try ExecutionProviderFailure(
                 providerID: Self.identifier,
                 kind: .providerContractViolation,
                 recovery: .permanent,
@@ -204,7 +204,7 @@ private struct CPUExecutionContext:
     ) async throws -> any ExecutionResource {
         guard request.kind == .buffer,
               request.memoryDomain == .host else {
-            throw ExecutionProviderFailure(
+            throw try ExecutionProviderFailure(
                 providerID: CPUExecutionProvider.identifier,
                 target: target,
                 kind: .resourceAllocationFailed,
@@ -226,7 +226,7 @@ private struct CPUExecutionContext:
         access: ExecutionResourceAccessMode
     ) async throws -> any ExecutionResource {
         guard access == .read else {
-            throw ExecutionProviderFailure(
+            throw try ExecutionProviderFailure(
                 providerID: CPUExecutionProvider.identifier,
                 target: target,
                 kind: .resourceImportFailed,
@@ -237,7 +237,7 @@ private struct CPUExecutionContext:
         guard let source = resource as? CPUBufferResource,
               source.descriptor.kind == .buffer,
               source.descriptor.memoryDomain == .host else {
-            throw ExecutionProviderFailure(
+            throw try ExecutionProviderFailure(
                 providerID: CPUExecutionProvider.identifier,
                 target: target,
                 kind: .resourceImportFailed,
