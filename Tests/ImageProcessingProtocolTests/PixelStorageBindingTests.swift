@@ -2,11 +2,18 @@ import GeneralExecutionProtocol
 import ImageProcessingProtocol
 import Testing
 
+private final class BindingTestOwnerLifetime: ExecutionResourceOwnerLifetime {}
+
 private final class BindingTestResource: ExecutionResource, @unchecked Sendable {
     let descriptor: ExecutionResourceDescriptor
+    let ownerLifetime: (any ExecutionResourceOwnerLifetime)?
 
-    init(_ descriptor: ExecutionResourceDescriptor) {
+    init(
+        _ descriptor: ExecutionResourceDescriptor,
+        ownerLifetime: (any ExecutionResourceOwnerLifetime)? = nil
+    ) {
         self.descriptor = descriptor
+        self.ownerLifetime = ownerLifetime
     }
 }
 
@@ -15,7 +22,8 @@ struct PixelStorageBindingTests {
         id: String,
         capacity: UInt64,
         alignment: UInt64 = 1,
-        target: ExecutionTargetReference? = nil
+        target: ExecutionTargetReference? = nil,
+        ownerLifetime: (any ExecutionResourceOwnerLifetime)? = nil
     ) throws -> BindingTestResource {
         let providerID = try #require(ExecutionProviderID(rawValue: "provider.pixel-storage"))
         let deviceID = try #require(ExecutionDeviceID(rawValue: "device.pixel-storage"))
@@ -31,7 +39,7 @@ struct PixelStorageBindingTests {
             alignmentBytes: alignment,
             memoryDomain: .host
         )
-        return BindingTestResource(descriptor)
+        return BindingTestResource(descriptor, ownerLifetime: ownerLifetime)
     }
 
     private func planarRGBDescriptor(offsets: [UInt64]) throws -> PixelDataDescriptor {
@@ -198,11 +206,17 @@ struct PixelStorageBindingTests {
     }
 
     @Test
-    func bindingRetainsResourceHandlesAndExposesDeclaredAccesses() throws {
+    func bindingRetainsResourceAndItsNativeOwnerLifetime() throws {
         let descriptor = try planarRGBDescriptor(offsets: [0, 0, 0])
-        var resource: BindingTestResource? = try self.resource(id: "rgb.retained", capacity: 8)
+        var ownerLifetime: BindingTestOwnerLifetime? = BindingTestOwnerLifetime()
+        weak var weakOwnerLifetime = ownerLifetime
+        var resource: BindingTestResource? = try self.resource(
+            id: "rgb.retained",
+            capacity: 8,
+            ownerLifetime: ownerLifetime
+        )
         weak var weakResource = resource
-        let binding = try PixelStorageBinding(
+        var binding: PixelStorageBinding? = try PixelStorageBinding(
             descriptor: descriptor,
             planeBindings: [
                 PixelPlaneResourceBinding(
@@ -213,9 +227,15 @@ struct PixelStorageBindingTests {
             ]
         )
         resource = nil
+        ownerLifetime = nil
 
         #expect(weakResource != nil)
-        #expect(binding.executionResourceAccesses.first?.mode == .readWrite)
+        #expect(weakOwnerLifetime != nil)
+        #expect(binding?.executionResourceAccesses.first?.mode == .readWrite)
+
+        binding = nil
+        #expect(weakResource == nil)
+        #expect(weakOwnerLifetime == nil)
     }
 }
 
