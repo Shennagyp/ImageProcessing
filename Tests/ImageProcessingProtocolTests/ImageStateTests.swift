@@ -230,6 +230,126 @@ struct ImageStateTests {
     }
 
     @Test
+    func preparedSnapshotReplacementPublishesExactStorageBindings() throws {
+        let pixels = try pixels()
+        let image = try Image(canvas: canvas(), layers: [])
+        let raster = try layer(id: "layer.prepared-output", pixels: pixels)
+        let nextRevision = try ImageRevision.initial.next()
+        let document = try ImageDocumentSnapshot(
+            identifier: image.identifier,
+            revision: nextRevision,
+            canvas: canvas(),
+            layers: [raster]
+        )
+        let reference = raster.reference(in: image.identifier)
+        let storage = try binding(pixels: pixels, id: "resource.prepared-output")
+        let bindingSet = try ImageStorageBindingSet(
+            snapshot: document,
+            bindings: [LayerPixelStorageBinding(reference: reference, storage: storage)]
+        )
+        let candidate = try ImageStateSnapshot(
+            document: document,
+            storageBindings: bindingSet
+        )
+
+        let committed = try image.replace(expectedRevision: .initial, with: candidate)
+        let committedResource = try #require(
+            committed.storageBindings
+                .binding(for: reference)?
+                .planeBindings.first?.resource.descriptor.identifier
+        )
+        let expectedResource = try #require(
+            ExecutionResourceIdentifier(rawValue: "resource.prepared-output")
+        )
+
+        #expect(committed.identifier == image.identifier)
+        #expect(committed.revision == nextRevision)
+        #expect(committed.storageBindings.boundLayerCount == 1)
+        #expect(committedResource == expectedResource)
+        #expect(image.snapshot().revision == nextRevision)
+    }
+
+    @Test
+    func preparedSnapshotReplacementRejectsWrongIdentityAndRevision() throws {
+        let image = try Image(canvas: canvas(), layers: [])
+        let foreignID = try #require(ImageIdentifier(rawValue: "image.prepared.foreign"))
+        let foreignDocument = try ImageDocumentSnapshot(
+            identifier: foreignID,
+            revision: ImageRevision(rawValue: 1),
+            canvas: canvas(),
+            layers: []
+        )
+        let foreignBindings = try ImageStorageBindingSet(snapshot: foreignDocument, bindings: [])
+        let foreignCandidate = try ImageStateSnapshot(
+            document: foreignDocument,
+            storageBindings: foreignBindings
+        )
+
+        #expect(throws: ImageError.replacementImageIdentifierMismatch(
+            expected: image.identifier,
+            actual: foreignID
+        )) {
+            try image.replace(expectedRevision: .initial, with: foreignCandidate)
+        }
+
+        let wrongRevisionDocument = try ImageDocumentSnapshot(
+            identifier: image.identifier,
+            revision: ImageRevision(rawValue: 2),
+            canvas: canvas(),
+            layers: []
+        )
+        let wrongRevisionBindings = try ImageStorageBindingSet(
+            snapshot: wrongRevisionDocument,
+            bindings: []
+        )
+        let wrongRevisionCandidate = try ImageStateSnapshot(
+            document: wrongRevisionDocument,
+            storageBindings: wrongRevisionBindings
+        )
+
+        #expect(throws: ImageError.replacementRevisionMismatch(
+            expected: ImageRevision(rawValue: 1),
+            actual: ImageRevision(rawValue: 2)
+        )) {
+            try image.replace(expectedRevision: .initial, with: wrongRevisionCandidate)
+        }
+        #expect(image.snapshot().revision == .initial)
+    }
+
+    @Test
+    func preparedSnapshotReplacementUsesCompareAndSwap() throws {
+        let pixels = try pixels()
+        let image = try Image(canvas: canvas(), layers: [])
+        let currentLayer = try layer(id: "layer.current", pixels: pixels)
+        let competingLayer = try layer(id: "layer.competing", pixels: pixels)
+        _ = try image.replace(
+            expectedRevision: .initial,
+            canvas: canvas(),
+            layers: [currentLayer]
+        )
+
+        let document = try ImageDocumentSnapshot(
+            identifier: image.identifier,
+            revision: ImageRevision(rawValue: 1),
+            canvas: canvas(),
+            layers: [competingLayer]
+        )
+        let bindings = try ImageStorageBindingSet(snapshot: document, bindings: [])
+        let staleCandidate = try ImageStateSnapshot(
+            document: document,
+            storageBindings: bindings
+        )
+
+        #expect(throws: ImageError.revisionConflict(
+            expected: .initial,
+            actual: ImageRevision(rawValue: 1)
+        )) {
+            try image.replace(expectedRevision: .initial, with: staleCandidate)
+        }
+        #expect(image.snapshot().document.layers == [currentLayer])
+    }
+
+    @Test
     func capturedOldSnapshotRetainsResourcesAfterReplacement() throws {
         let pixels = try pixels()
         let raster = try layer(id: "layer.retained", pixels: pixels)

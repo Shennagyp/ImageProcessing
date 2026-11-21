@@ -128,6 +128,7 @@ public enum OperationOutputValidationError: Error, Equatable, Sendable {
     case unknownProducedLayer(LayerReference)
     case producedLayerKindUnsupported(LayerReference, LayerKind)
     case pixelOutputLayerRequired
+    case producedPixelLayerStorageBindingRequired(LayerReference)
     case operationPixelRepresentationUnsupported(LayerReference)
     case implementationPixelRepresentationUnsupported(LayerReference)
     case operationOutputStoragePrecisionUnsupported(LayerReference, PixelComponentType)
@@ -137,16 +138,22 @@ public enum OperationOutputValidationError: Error, Equatable, Sendable {
     case operationPostconditionFailed(String)
 }
 
-/// Identifies the concrete layers produced or replaced by one operation.
-/// The document may also contain preserved, unrelated layers.
-public struct ImageOperationOutputDescriptor: Hashable, Sendable {
-    public let document: ImageDocumentSnapshot
+/// Identifies the immutable image revision produced or replaced by one operation.
+/// The snapshot retains the exact storage bindings, and therefore the resources,
+/// for as long as the operation output remains alive. The document may also
+/// contain preserved, unrelated layers.
+public struct ImageOperationOutputDescriptor: Sendable {
+    public let imageState: ImageStateSnapshot
     public let producedLayers: [LayerReference]
 
+    public var document: ImageDocumentSnapshot { imageState.document }
+    public var storageBindings: ImageStorageBindingSet { imageState.storageBindings }
+
     public init(
-        document: ImageDocumentSnapshot,
+        imageState: ImageStateSnapshot,
         producedLayers: [LayerReference]
     ) throws {
+        let document = imageState.document
         var seen = Set<LayerReference>()
         for reference in producedLayers {
             guard seen.insert(reference).inserted else {
@@ -159,13 +166,13 @@ public struct ImageOperationOutputDescriptor: Hashable, Sendable {
                 throw OperationOutputValidationError.unknownProducedLayer(reference)
             }
         }
-        self.document = document
+        self.imageState = imageState
         self.producedLayers = producedLayers
     }
 }
 
-/// An image-producing operation value exposes its immutable document
-/// descriptor and explicitly identifies which layers it produced or replaced.
+/// An image-producing operation value exposes its immutable image revision,
+/// including storage bindings, and explicitly identifies which layers it produced or replaced.
 public protocol ImageOperationOutputValue: OperationValue {
     var imageOperationOutputDescriptor: ImageOperationOutputDescriptor { get }
 }
@@ -586,6 +593,12 @@ public struct AnyImageOperationStep: Sendable {
             }
             guard let pixels else { continue }
             containsPixelOutput = true
+
+            guard try descriptor.storageBindings.binding(for: reference) != nil else {
+                throw OperationOutputValidationError.producedPixelLayerStorageBindingRequired(
+                    reference
+                )
+            }
 
             if let operationPixelDomain,
                !operationPixelDomain.supports(pixels) {

@@ -216,7 +216,7 @@ A pipeline may require FP32 computation and prefer low latency. A compatible CPU
 
 ## ADR-008 — Image identity and concurrent replacement
 
-**Status:** Baseline
+**Status:** Baseline and prepared-snapshot compare-and-swap publication implemented
 
 ### Decision
 
@@ -224,7 +224,7 @@ Represent Image as a stable logical document handle with an immutable ImageIdent
 
 Image.snapshot() captures one immutable ImageStateSnapshot containing both the document snapshot and the ImageStorageBindingSet for exactly that image identity and revision. The snapshot retains all referenced execution resources independently of later Image replacements.
 
-Image.replace(expectedRevision:canvas:layers:storageBindings:) constructs and validates the candidate document and its matching resource-binding set outside the lock. It then locks, verifies the current revision still equals expectedRevision, and publishes the complete candidate state in one assignment. If another replacement committed first, it throws a revisionConflict. No automatic replay or silent overwrite occurs.
+Image.replace(expectedRevision:canvas:layers:storageBindings:) constructs and validates the candidate document and its matching resource-binding set outside the lock. It then locks, verifies the current revision still equals expectedRevision, and publishes the complete candidate state in one assignment. The prepared-snapshot overload accepts an already-validated ImageStateSnapshot without unpacking or rebuilding its storage bindings; it requires the same ImageIdentifier and exactly expectedRevision.next(), then performs the same compare-and-swap publication. If another replacement committed first, it throws a revisionConflict. No automatic replay or silent overwrite occurs.
 
 The initial Image initializer may generate an identity or accept an explicit ImageIdentifier. Explicit identity is required when callers construct initial LayerReference-based resource bindings before Image creation.
 
@@ -241,6 +241,7 @@ applying creates a new logical Image identity. apply retains the existing Image 
 ### Invariants
 
 - ImageIdentifier is immutable for the lifetime of an Image instance.
+- Prepared snapshot replacement requires the same ImageIdentifier and exactly the next ImageRevision; a stale expected revision cannot overwrite a concurrent commit.
 - Snapshot capture is consistent and holds the lock only while acquiring value/reference ownership.
 - No processing, provider call, resource allocation, import, or await occurs while the Image lock is held.
 - The document and its revision-scoped ImageStorageBindingSet are published atomically.
@@ -884,7 +885,7 @@ Input resource access declarations must also agree with operation semantics: wri
 
 - Provider-backed physical memory reservation, residency and full interop feasibility, including imported resource remapping for a resource from another provider registration.
 - Quality-aware weighting and refresh policy for telemetry; the initial ranker consumes only fresh comparable queue-delay values while preserving source, quality, and validity metadata, and does not use stale/unknown values to rank.
-- Provider-backed allocation, returned-resource descriptor validation, residency/import feasibility, and result storage-binding validation; logical output descriptor and typed postcondition validation are implemented under ADR-033.
+- Provider-backed allocation, returned-resource descriptor/residency validation, plan-role mapping to output planes, and atomic Image publication; ADR-033 now requires produced pixel layers to carry revision-matched storage bindings in the returned image snapshot.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
 - Complete end-to-end cost estimates, precision-preference ranking, whole-pipeline planning, and execution coordination; the initial scoped objective ranker is implemented.
 
@@ -954,7 +955,7 @@ The resolver can produce candidate-bound, data-derived output and temporary allo
 
 - Provider-backed allocation and actual returned-resource validation (target, kind, capacity, alignment, memory domain).
 - Selection among allowed memory domains and capability verification for resource kind/domain.
-- Output resource binding into the typed output value and validation of output descriptors/postconditions.
+- Mapping planned provider allocations into the typed output value's exact image snapshot and validating returned resource descriptors/residency; produced pixel-layer binding and output descriptor/postcondition validation are implemented.
 - Temporary resource lifecycle and cleanup after their sizes/alignment are represented by the operation-derived plan.
 - Residency transitions, imported-input remapping, and provider allocation failure/re-resolution behavior.
 - Source-quality weighting/refresh, complete end-to-end cost estimation, and objective-specific energy/throughput models; an initial queue-delay/resource-capacity/determinism ranker is implemented.
@@ -997,27 +998,28 @@ Qualification no longer labels an output/temporary resource path eligible merely
 
 ---
 
-## ADR-033 — Returned image values expose produced layers and typed postconditions
+## ADR-033 — Returned image values retain produced storage and enforce typed postconditions
 
-**Status:** Dispatch-boundary descriptor validation and typed operation postconditions implemented; resource binding/publication pending
+**Status:** Revision-bound output storage retention, produced-pixel binding validation, descriptor validation, typed operation postconditions, and the prepared-snapshot Image compare-and-swap primitive implemented; provider allocation, plan-role mapping, and execution-to-publication orchestration pending
 
 ### Decision
 
-An operation that declares image output semantics returns an `ImageOperationOutputValue`. The value exposes an `ImageOperationOutputDescriptor` composed of the immutable output `ImageDocumentSnapshot` and explicit `LayerReference` values identifying the layers this operation produced or replaced. The document may contain unrelated preserved layers; those are not interpreted as operation output.
+An operation that declares image output semantics returns an `ImageOperationOutputValue`. The value exposes an `ImageOperationOutputDescriptor` composed of the exact immutable `ImageStateSnapshot` (the output `ImageDocumentSnapshot` and its revision-matched `ImageStorageBindingSet`) plus explicit `LayerReference` values identifying the layers this operation produced or replaced. The document may contain unrelated preserved layers; those are not interpreted as operation output. Since the snapshot retains its storage bindings and those bindings retain their provider resource handles, the returned output value owns the produced pixel storage for as long as it remains retained.
 
-Before returning a dispatched result, the runtime validates that every produced-layer reference belongs to the output document and resolves uniquely. Each produced layer kind must satisfy the operation's `producedOutputKinds` and the selected implementation's `layerSupport.outputKinds`. Pixel-bearing produced layers must satisfy both the operation and implementation output `PixelRepresentationDomain` and output storage precision contracts. Where the numerical output-range contract is `clip` or `normalize`, declared channel value ranges must be present and contained in the required interval.
+Before returning a dispatched result, the runtime validates that every produced-layer reference belongs to the output document and resolves uniquely. Each produced layer kind must satisfy the operation's `producedOutputKinds` and the selected implementation's `layerSupport.outputKinds`. Every produced pixel-bearing layer must have a storage binding in the exact output snapshot; an unbound produced pixel layer is rejected. Bound pixel layers must satisfy both the operation and implementation output `PixelRepresentationDomain` and output storage precision contracts. Where the numerical output-range contract is `clip` or `normalize`, declared channel value ranges must be present and contained in the required interval.
 
 After generic descriptor checks, the runtime invokes the exact typed operation's `validateOutput(output, for: input)` method. This method belongs to operation semantics and may enforce input-dependent postconditions such as dimension relationships that cannot be expressed as a static format domain. The default implementation is a no-op for operations with no additional typed postconditions.
 
 ### Invariants
 
 - An operation declaring image output kinds, output pixel representation, or output storage precision must return an `ImageOperationOutputValue`.
+- The output descriptor contains the exact image revision and its matching storage bindings; produced pixel layers without storage bindings are rejected.
 - The output descriptor identifies produced/replaced layers explicitly; preserved layers are not treated as produced output.
 - Produced output layer kinds, pixel representation, and output storage precision must be supported by both the operation and selected implementation.
 - Clip/normalize output-range metadata must be known and contained in the declared range.
 - Typed operation postconditions run against the exact input and output values captured by dispatch.
 - Output validation failure is an execution failure; the result must not be published.
-- Descriptor validation does not prove the output's underlying resource handles are bound, resident, synchronized, or retained correctly.
+- Descriptor validation proves that each produced pixel layer has a revision-matched resource binding and that the snapshot retains it. It does not prove provider allocation provenance, current residency, synchronization, or device availability.
 
 ### Consequence
 

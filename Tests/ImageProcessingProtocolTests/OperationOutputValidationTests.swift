@@ -16,6 +16,14 @@ private struct MissingDescriptorOutput: OperationValue {
     static let typeIdentifier = OutputValidationOutput.typeIdentifier
 }
 
+private final class OutputValidationResource: ExecutionResource, @unchecked Sendable {
+    let descriptor: ExecutionResourceDescriptor
+
+    init(_ descriptor: ExecutionResourceDescriptor) {
+        self.descriptor = descriptor
+    }
+}
+
 private struct OutputValidationOperation: ImageOperation {
     typealias Input = OutputValidationInput
     typealias Output = OutputValidationOutput
@@ -73,7 +81,8 @@ private enum OutputValidationFixture {
 
     static func output(
         componentType: PixelComponentType = .uint8,
-        layerKind: LayerKind = .raster
+        layerKind: LayerKind = .raster,
+        bindStorage: Bool = true
     ) throws -> OutputValidationOutput {
         let imageID = try #require(ImageIdentifier(rawValue: "output-validation.image"))
         let layerID = try #require(LayerIdentifier(rawValue: "output-validation.layer"))
@@ -134,8 +143,48 @@ private enum OutputValidationFixture {
             canvas: ImageCanvasDescriptor(extent: extent),
             layers: [layer]
         )
-        let descriptor = try ImageOperationOutputDescriptor(
+
+        var layerBindings: [LayerPixelStorageBinding] = []
+        if bindStorage, case let .raster(pixelDescriptor) = content {
+            let providerID = try #require(ExecutionProviderID(rawValue: "output-validation.provider"))
+            let deviceID = try #require(ExecutionDeviceID(rawValue: "output-validation.device"))
+            let resourceDescriptor = try ExecutionResourceDescriptor(
+                identifier: try #require(ExecutionResourceIdentifier(rawValue: "output-validation.resource")),
+                target: ExecutionTargetReference(providerID: providerID, deviceID: deviceID),
+                kind: .buffer,
+                capacityBytes: pixelDescriptor.minimumRequiredStorageBytes,
+                alignmentBytes: 256,
+                memoryDomain: .host
+            )
+            let resource = OutputValidationResource(resourceDescriptor)
+            let storage = try PixelStorageBinding(
+                descriptor: pixelDescriptor,
+                planeBindings: [
+                    PixelPlaneResourceBinding(
+                        resource: resource,
+                        planeIndices: [0],
+                        access: .readWrite
+                    )
+                ]
+            )
+            layerBindings.append(
+                LayerPixelStorageBinding(
+                    reference: layer.reference(in: imageID),
+                    storage: storage
+                )
+            )
+        }
+
+        let storageBindings = try ImageStorageBindingSet(
+            snapshot: document,
+            bindings: layerBindings
+        )
+        let imageState = try ImageStateSnapshot(
             document: document,
+            storageBindings: storageBindings
+        )
+        let descriptor = try ImageOperationOutputDescriptor(
+            imageState: imageState,
             producedLayers: [layer.reference(in: imageID)]
         )
         return OutputValidationOutput(imageOperationOutputDescriptor: descriptor)
@@ -155,6 +204,30 @@ struct OperationOutputValidationTests {
             for: OutputValidationInput(expectedWidth: 1),
             implementation: OutputValidationFixture.implementation
         )
+    }
+
+    @Test
+    func producedPixelLayerMustRetainItsStorageBinding() throws {
+        let output = try OutputValidationFixture.output(bindStorage: false)
+        let reference = output.imageOperationOutputDescriptor.producedLayers[0]
+
+        #expect(throws: OperationOutputValidationError.producedPixelLayerStorageBindingRequired(
+            reference
+        )) {
+            try step().validateOutput(
+                output,
+                for: OutputValidationInput(expectedWidth: 1),
+                implementation: OutputValidationFixture.implementation
+            )
+        }
+    }
+
+    @Test
+    func outputDescriptorRetainsStorageInItsExactImageRevision() throws {
+        let output = try OutputValidationFixture.output()
+
+        #expect(output.imageOperationOutputDescriptor.imageState.revision == .initial)
+        #expect(output.imageOperationOutputDescriptor.storageBindings.boundLayerCount == 1)
     }
 
     @Test

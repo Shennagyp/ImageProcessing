@@ -29,6 +29,8 @@ public struct ImageStateSnapshot: Sendable {
 
 public enum ImageError: Error, Equatable, Sendable {
     case revisionConflict(expected: ImageRevision, actual: ImageRevision)
+    case replacementImageIdentifierMismatch(expected: ImageIdentifier, actual: ImageIdentifier)
+    case replacementRevisionMismatch(expected: ImageRevision, actual: ImageRevision)
 }
 
 /// Thread-safe mutable owner of one logical image document.
@@ -132,6 +134,46 @@ public final class Image: @unchecked Sendable {
             document: document,
             storageBindings: bindingSet
         )
+
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard currentState.revision == expectedRevision else {
+            throw ImageError.revisionConflict(
+                expected: expectedRevision,
+                actual: currentState.revision
+            )
+        }
+
+        currentState = candidate
+        return candidate
+    }
+
+    /// Publishes a fully prepared immutable image revision without unpacking or
+    /// rebuilding its storage bindings. The candidate must belong to this Image
+    /// and be exactly the next revision after expectedRevision.
+    ///
+    /// Candidate construction and resource ownership remain outside the lock;
+    /// only the final revision check and state swap occur inside it.
+    @discardableResult
+    public func replace(
+        expectedRevision: ImageRevision,
+        with candidate: ImageStateSnapshot
+    ) throws -> ImageStateSnapshot {
+        guard candidate.identifier == identifier else {
+            throw ImageError.replacementImageIdentifierMismatch(
+                expected: identifier,
+                actual: candidate.identifier
+            )
+        }
+
+        let requiredRevision = try expectedRevision.next()
+        guard candidate.revision == requiredRevision else {
+            throw ImageError.replacementRevisionMismatch(
+                expected: requiredRevision,
+                actual: candidate.revision
+            )
+        }
 
         stateLock.lock()
         defer { stateLock.unlock() }
