@@ -193,8 +193,8 @@ struct ImageFunctionExecutionCoordinatorTests {
 
         #expect(result.output.value == 20)
         #expect(result.steps.count == 2)
-        #expect(result.steps.map(\\.stepIdentifier) == function.stepIdentifiers)
-        #expect(result.steps.map(\\.rank) == [1, 1])
+        #expect(result.steps.map(\.stepIdentifier) == function.stepIdentifiers)
+        #expect(result.steps.map(\.rank) == [1, 1])
         #expect(result.steps[0].implementation.identifier.rawValue == "function-execution.add.cpu")
         #expect(result.steps[1].implementation.identifier.rawValue == "function-execution.multiply.cpu")
         #expect(
@@ -253,7 +253,7 @@ struct ImageFunctionExecutionCoordinatorTests {
             Issue.record("Expected the second step to fail qualification.")
         } catch let failure as ImageFunctionStepExecutionFailure {
             #expect(failure.failedStepIdentifier == function.stepIdentifiers[1])
-            #expect(failure.completedSteps.map(\\.stepIdentifier) == [function.stepIdentifiers[0]])
+            #expect(failure.completedSteps.map(\.stepIdentifier) == [function.stepIdentifiers[0]])
             if let underlying = failure.underlying as? ImageFunctionExecutionCoordinatorError,
                case let .noQualifiedCandidate(stepIdentifier, _) = underlying {
                 #expect(stepIdentifier == function.stepIdentifiers[1])
