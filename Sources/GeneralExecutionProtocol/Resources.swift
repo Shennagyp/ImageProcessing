@@ -206,16 +206,28 @@ public protocol ExecutionWorkSubmittingContext: ExecutionContext {
 public struct ExecutionResourceReference: Hashable, Sendable {
     public let target: ExecutionTargetReference
     public let identifier: ExecutionResourceIdentifier
+    /// Distinguishes allocations created by different registrations that reuse
+    /// the same stable provider/device and resource identifiers.
+    public let providerRegistrationIdentifier: UUID?
 
-    public init(target: ExecutionTargetReference, identifier: ExecutionResourceIdentifier) {
+    public init(
+        target: ExecutionTargetReference,
+        identifier: ExecutionResourceIdentifier,
+        providerRegistrationIdentifier: UUID? = nil
+    ) {
         self.target = target
         self.identifier = identifier
+        self.providerRegistrationIdentifier = providerRegistrationIdentifier
     }
 }
 
 public extension ExecutionResourceDescriptor {
     var reference: ExecutionResourceReference {
-        ExecutionResourceReference(target: target, identifier: identifier)
+        ExecutionResourceReference(
+            target: target,
+            identifier: identifier,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
+        )
     }
 }
 
