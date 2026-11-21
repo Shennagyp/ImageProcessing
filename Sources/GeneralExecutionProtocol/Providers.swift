@@ -1,3 +1,5 @@
+import Foundation
+
 public struct ExecutionProviderDescriptor: Hashable, Sendable {
     public let identifier: ExecutionProviderID
     public let version: SemanticVersion
