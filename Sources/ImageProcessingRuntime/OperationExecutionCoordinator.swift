@@ -407,6 +407,9 @@ public actor OperationExecutionCoordinator {
         let allocatedReferences = Set(
             allocated.resources.bindings.map { $0.resource.descriptor.reference }
         )
+        let directReferences = Set(
+            directAccesses.map { $0.resource.descriptor.reference }
+        )
         let sourceReferences = Set(
             importRequests.map { $0.source.descriptor.reference }
         )
@@ -430,9 +433,15 @@ public actor OperationExecutionCoordinator {
                         accessing: [sourceAccess]
                     )
                     try await workLedger.markSubmitted(sourceLease)
-                } catch {
-                    try? await workLedger.cancelReservation(sourceLease)
-                    throw error
+                } catch let primaryError {
+                    do {
+                        try await workLedger.cancelReservation(sourceLease)
+                    } catch let cleanupError {
+                        throw OperationExecutionCoordinatorError.inputResourceImportCleanupFailed(
+                            "Source reservation failed: \\(primaryError). Reservation cancellation failed: \\(cleanupError)."
+                        )
+                    }
+                    throw primaryError
                 }
                 sourceLeases.append(sourceLease)
 
@@ -469,6 +478,11 @@ public actor OperationExecutionCoordinator {
                     )
                 }
                 if sourceReferences.contains(importedReference), importedReference != sourceReference {
+                    throw OperationExecutionCoordinatorError.inputResourceImportIdentityCollision(
+                        importedReference
+                    )
+                }
+                if directReferences.contains(importedReference) {
                     throw OperationExecutionCoordinatorError.inputResourceImportIdentityCollision(
                         importedReference
                     )
