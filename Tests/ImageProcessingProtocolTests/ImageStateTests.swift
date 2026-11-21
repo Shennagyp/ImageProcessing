@@ -1,3 +1,4 @@
+import Foundation
 import GeneralExecutionProtocol
 import ImageProcessingProtocol
 import Testing
@@ -277,7 +278,7 @@ struct ImageStateTests {
             try captured?.storageBindings
                 .binding(for: raster.reference(in: document.identifier))?
                 .planeBindings.first?.resource.descriptor.providerRegistrationIdentifier
-                == providerRegistrationIdentifier
+                == .some(providerRegistrationIdentifier)
         )
 
         captured = nil
