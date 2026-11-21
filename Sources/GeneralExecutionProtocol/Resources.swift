@@ -115,12 +115,26 @@ public struct ExecutionResourceRequest: Hashable, Sendable {
     }
 }
 
+/// Optional strong owner token for native destruction code or a dynamically
+/// loaded provider package. Resource handles and image snapshots retain the
+/// resource object; the resource implementation must retain this token strongly
+/// for the same lifetime whenever its release path depends on external code.
+public protocol ExecutionResourceOwnerLifetime: AnyObject, Sendable {}
+
 /// A resource is a reference-counted opaque provider allocation. Its descriptor
 /// is immutable for the lifetime of the handle and identifies that exact allocation.
 /// Implementations release native storage when the resource handle and all
-/// submission-retained references are released.
+/// submission-retained references are released. They must either be independently
+/// releasable after provider unregister, or strongly retain an owner-lifetime token.
 public protocol ExecutionResource: AnyObject, Sendable {
     var descriptor: ExecutionResourceDescriptor { get }
+    /// Non-nil when safe native destruction requires a provider/package lifetime.
+    /// Nil means the resource handle's release path is self-contained.
+    var ownerLifetime: (any ExecutionResourceOwnerLifetime)? { get }
+}
+
+public extension ExecutionResource {
+    var ownerLifetime: (any ExecutionResourceOwnerLifetime)? { nil }
 }
 
 public enum ExecutionResourceAccessMode: String, Hashable, Sendable {
