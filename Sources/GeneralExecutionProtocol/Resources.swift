@@ -149,9 +149,12 @@ public protocol ExecutionResourceAllocatingContext: ExecutionContext {
     /// work required before the declared access must already be complete.
     ///
     /// The returned descriptor must identify this context's target and the exact
-    /// provider registration that created the destination handle. The imported
-    /// handle must retain the source allocation for as long as the imported handle
-    /// or dependent submitted work can still access it. The provider is responsible
+    /// provider registration that created the destination handle. A distinct
+    /// resource reference represents independent destination storage; the provider
+    /// must not hide a writable alias of the source behind a different reference.
+    /// If that guarantee cannot be made, the import must fail. The imported handle
+    /// must retain the source allocation for as long as the imported handle or
+    /// dependent submitted work can still access it. The provider is responsible
     /// for any source-side synchronization required to perform the import.
     func importResource(
         _ resource: any ExecutionResource,
