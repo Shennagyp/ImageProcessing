@@ -52,7 +52,8 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
 
     init(
         gate: CoordinatorExecutionGate? = nil,
-        inputAccess: ExecutionResourceAccessMode = .read
+        inputAccess: ExecutionResourceAccessMode = .read,
+        requiresImport: Bool = true
     ) {
         self.gate = gate
         let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
@@ -75,7 +76,7 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
                     minimumCapacityBytes: 128,
                     minimumAlignmentBytes: 64,
                     access: inputAccess,
-                    requiresImport: true
+                    requiresImport: requiresImport
                 )
             ]
         )
@@ -571,6 +572,69 @@ struct OperationExecutionCoordinatorTests {
             try implementation.specification.validate(
                 implements: CoordinatedImportOperation.specification.erased
             )
+        }
+    }
+
+    @Test
+    func directInputFromAReplacedProviderRegistrationFailsClosed() async throws {
+        let providerID = ExecutionProviderID(
+            rawValue: "provider.execution-coordinator.direct-stale"
+        )!
+        let target = ExecutionTargetReference(providerID: providerID)
+        let providers = ExecutionProviderRegistry()
+        try await providers.register(CoordinatedProvider(identifier: providerID))
+        let registeredProvider = try #require(await providers.registeredProviders().first)
+        let context = try await providers.makeContext(
+            for: target,
+            expecting: registeredProvider.descriptor,
+            registrationIdentifier: registeredProvider.registrationIdentifier
+        )
+        let staleResourceDescriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.stale.shared")!,
+            target: target,
+            kind: .buffer,
+            capacityBytes: 256,
+            alignmentBytes: 64,
+            memoryDomain: .shared,
+            providerRegistrationIdentifier: UUID()
+        )
+        let staleResource = CoordinatedResource(staleResourceDescriptor)
+        let input = CoordinatedResourceInput(value: 5, resource: staleResource)
+
+        let implementations = OperationImplementationRegistry()
+        try await implementations.register(
+            CoordinatedImportImplementation(requiresImport: false)
+        )
+        let registeredImplementation = try #require(
+            await implementations.registeredImplementations().first
+        )
+        let candidate = QualifiedOperationImplementation(
+            implementation: registeredImplementation,
+            providerRegistrationIdentifier: registeredProvider.registrationIdentifier,
+            operationStep: AnyImageOperationStep(operation: CoordinatedImportOperation()),
+            input: input,
+            target: target,
+            context: context,
+            imageInputContext: nil,
+            environmentObservations: CandidateEnvironmentObservations(
+                environmentSnapshotIdentifier: RuntimeEnvironmentSnapshotIdentifier(),
+                providerState: ExecutionProviderStateSnapshot(availability: .available),
+                deviceState: nil,
+                assessedAt: Date()
+            ),
+            resourceAllocations: [],
+            inputResourceAccesses: [
+                ExecutionResourceAccess(resource: staleResource, mode: .read)
+            ]
+        )
+        let coordinator = OperationExecutionCoordinator(
+            implementations: implementations,
+            providers: providers,
+            workLedger: RuntimeWorkLedger()
+        )
+
+        await #expect(throws: ExecutionProviderRegistryError.providerRegistrationChanged(providerID)) {
+            _ = try await coordinator.execute(candidate)
         }
     }
 
