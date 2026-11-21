@@ -33,7 +33,7 @@ public final class CPUBufferResource: ExecutionResource, @unchecked Sendable {
 
         let descriptor = try ExecutionResourceDescriptor(
             identifier: ExecutionResourceIdentifier(
-                rawValue: "cpu.buffer.\\(UUID().uuidString.lowercased())"
+                rawValue: "cpu.buffer.\(UUID().uuidString.lowercased())"
             )!,
             target: target,
             kind: .buffer,
