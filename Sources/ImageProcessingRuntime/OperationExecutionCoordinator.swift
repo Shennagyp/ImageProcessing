@@ -24,11 +24,45 @@ public enum OperationExecutionCoordinatorError: Error, Equatable, Sendable {
     case temporaryResourceEscapedInvocation(ImplementationResourceRole, ExecutionResourceReference)
     case completionAccountingFailed(executionFailure: String?, accountingFailure: String)
     case reservationCancellationFailed(primaryFailure: String, cleanupFailure: String)
+    case inputResourceBindingMissing(Int)
+    case inputResourceBindingsChanged
+    case inputResourceAccessInsufficient(Int, ExecutionResourceReference, actual: ExecutionResourceAccessMode, required: ExecutionResourceAccessMode)
+    case inputResourceImportContextUnavailable(Int)
+    case inputResourceImportDescriptorMismatch(Int, ExecutionResourceReference, ExecutionResourceDescriptor)
+    case inputResourceImportRegistrationMismatch(Int, expected: UUID, actual: UUID?)
+    case inputResourceImportAliasesWritableSource(Int, ExecutionResourceReference)
+    case inputResourceImportIdentityCollision(ExecutionResourceReference)
+    case inputResourceImportAliasesAllocation(ImplementationResourceRole, ExecutionResourceReference)
+    case inputResourceImportCleanupFailed(String)
 }
 
 private struct AllocatedOperationResourceSet: Sendable {
     let resources: OperationExecutionResources
     let accesses: [ExecutionResourceAccess]
+}
+
+private struct InputResourceImportRequest: Sendable {
+    let inputIndex: Int
+    let source: any ExecutionResource
+    let requirement: ImplementationResourceRequirement
+}
+
+private struct PreparedOperationInputResources: Sendable {
+    let accesses: [ExecutionResourceAccess]
+    let importedBindings: [OperationInputResourceBinding]
+    let sourceLeases: [ExecutionWorkLease]
+}
+
+private struct InputResourceAccessSignature: Hashable {
+    let objectIdentifier: ObjectIdentifier
+    let reference: ExecutionResourceReference
+    let descriptor: ExecutionResourceDescriptor
+    let mode: ExecutionResourceAccessMode
+}
+
+private struct SourceLeaseReleaseReport: Sendable {
+    let remaining: [ExecutionWorkLease]
+    let failures: [String]
 }
 
 /// Executes one already-qualified operation occurrence.
@@ -127,8 +161,8 @@ public actor OperationExecutionCoordinator {
             )
         }
 
-        // Pin the exact provider before any asynchronous allocation. A provider
-        // removed after this point remains alive for this invocation only.
+        // Pin the exact provider before any asynchronous allocation or import.
+        // A provider removed after this point remains alive for this invocation.
         let providerUse = try await providers.retainUse(
             for: candidate.target,
             registrationIdentifier: candidate.providerRegistrationIdentifier,
@@ -139,72 +173,400 @@ public actor OperationExecutionCoordinator {
             for: candidate,
             memoryDomains: memoryDomains
         )
-        let completeAccessSet = candidate.inputResourceAccesses + allocated.accesses
-
-        let lease = try await workLedger.reserveWork(
-            on: candidate.target,
-            accessing: completeAccessSet
+        let preparedInputs = try await prepareInputResources(
+            for: candidate,
+            allocated: allocated
         )
+        var sourceLeasesToRelease = preparedInputs.sourceLeases
 
         do {
-            try await workLedger.revalidate(
-                lease,
+            // Only handles that are accessible on this exact target enter the
+            // destination lease. Foreign source handles remain under their own
+            // source-target read leases while an imported handle can depend on them.
+            let completeAccessSet = preparedInputs.accesses + allocated.accesses
+            let lease = try await workLedger.reserveWork(
+                on: candidate.target,
                 accessing: completeAccessSet
             )
-            try await workLedger.markSubmitted(lease)
-        } catch let primaryError {
+
             do {
-                try await workLedger.cancelReservation(lease)
-            } catch let cleanupError {
-                throw OperationExecutionCoordinatorError.reservationCancellationFailed(
-                    primaryFailure: String(describing: primaryError),
-                    cleanupFailure: String(describing: cleanupError)
+                try await workLedger.revalidate(
+                    lease,
+                    accessing: completeAccessSet
+                )
+                try await workLedger.markSubmitted(lease)
+            } catch let primaryError {
+                do {
+                    try await workLedger.cancelReservation(lease)
+                } catch let cleanupError {
+                    throw OperationExecutionCoordinatorError.reservationCancellationFailed(
+                        primaryFailure: String(describing: primaryError),
+                        cleanupFailure: String(describing: cleanupError)
+                    )
+                }
+                throw primaryError
+            }
+
+            let executionResources = try OperationExecutionResources(
+                bindings: allocated.resources.bindings,
+                importedInputBindings: preparedInputs.importedBindings
+            )
+            let executionResult: Result<any OperationValue, Error>
+            do {
+                let output = try await implementations.execute(
+                    using: candidate,
+                    resources: executionResources
+                )
+                try validateAllocatedResourceBindings(
+                    allocated,
+                    in: output
+                )
+                executionResult = .success(output)
+            } catch {
+                executionResult = .failure(error)
+            }
+
+            do {
+                try await workLedger.completeSubmission(lease)
+            } catch {
+                let executionFailure: String?
+                if case let .failure(executionError) = executionResult {
+                    executionFailure = String(describing: executionError)
+                } else {
+                    executionFailure = nil
+                }
+                withExtendedLifetime((providerUse, allocated, preparedInputs, executionResources)) {}
+                throw OperationExecutionCoordinatorError.completionAccountingFailed(
+                    executionFailure: executionFailure,
+                    accountingFailure: String(describing: error)
                 )
             }
-            throw primaryError
-        }
 
-        let executionResult: Result<any OperationValue, Error>
-        do {
-            let output = try await implementations.execute(
-                using: candidate,
-                resources: allocated.resources
-            )
-            try validateAllocatedResourceBindings(
-                allocated,
-                in: output
-            )
-            executionResult = .success(output)
-        } catch {
-            executionResult = .failure(error)
-        }
-
-        do {
-            try await workLedger.completeSubmission(lease)
-        } catch {
-            let executionFailure: String?
-            if case let .failure(executionError) = executionResult {
-                executionFailure = String(describing: executionError)
-            } else {
-                executionFailure = nil
+            let sourceRelease = await releaseSubmittedSourceLeases(sourceLeasesToRelease)
+            sourceLeasesToRelease = sourceRelease.remaining
+            if !sourceRelease.failures.isEmpty {
+                let executionFailure: String?
+                if case let .failure(executionError) = executionResult {
+                    executionFailure = String(describing: executionError)
+                } else {
+                    executionFailure = nil
+                }
+                withExtendedLifetime((providerUse, allocated, preparedInputs, executionResources)) {}
+                throw OperationExecutionCoordinatorError.completionAccountingFailed(
+                    executionFailure: executionFailure,
+                    accountingFailure: sourceRelease.failures.joined(separator: "; ")
+                )
             }
-            withExtendedLifetime((providerUse, allocated)) {}
-            throw OperationExecutionCoordinatorError.completionAccountingFailed(
-                executionFailure: executionFailure,
-                accountingFailure: String(describing: error)
+
+            // Output bindings retain output resources beyond this point. Imported
+            // handles and temporary resources remain alive through the implementation
+            // completion boundary; source leases are released only after that boundary.
+            withExtendedLifetime((providerUse, allocated, preparedInputs, executionResources)) {}
+
+            switch executionResult {
+            case let .success(output):
+                return output
+            case let .failure(error):
+                throw error
+            }
+        } catch {
+            let sourceRelease = await releaseSubmittedSourceLeases(sourceLeasesToRelease)
+            sourceLeasesToRelease = sourceRelease.remaining
+            if !sourceRelease.failures.isEmpty {
+                throw OperationExecutionCoordinatorError.completionAccountingFailed(
+                    executionFailure: String(describing: error),
+                    accountingFailure: sourceRelease.failures.joined(separator: "; ")
+                )
+            }
+            throw error
+        }
+    }
+
+    private func prepareInputResources(
+        for candidate: QualifiedOperationImplementation,
+        allocated: AllocatedOperationResourceSet
+    ) async throws -> PreparedOperationInputResources {
+        let inputRequirements = candidate.implementation.specification.resourceRequirements
+            .compactMap { requirement -> (index: Int, requirement: ImplementationResourceRequirement)? in
+                guard case let .input(index) = requirement.role else { return nil }
+                return (index, requirement)
+            }
+            .sorted { $0.index < $1.index }
+
+        if inputRequirements.isEmpty {
+            guard candidate.inputResourceAccesses.isEmpty else {
+                throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+            }
+            return PreparedOperationInputResources(
+                accesses: [],
+                importedBindings: [],
+                sourceLeases: []
             )
         }
 
-        // Output bindings retain output resources beyond this point. Temporary
-        // resources remain held here until execution completion, then fall out
-        // of scope with the invocation resource set.
-        withExtendedLifetime((providerUse, allocated)) {}
+        guard let inputValue = candidate.input as? any OperationResourceInputValue else {
+            throw OperationExecutionCoordinatorError.inputResourceBindingMissing(
+                inputRequirements[0].index
+            )
+        }
 
-        switch executionResult {
-        case let .success(output):
-            return output
-        case let .failure(error):
+        let currentBindings = inputValue.operationInputResourceBindings
+        var qualifiedAccesses: [ExecutionResourceAccess] = []
+        var directAccesses: [ExecutionResourceAccess] = []
+        var importRequests: [InputResourceImportRequest] = []
+
+        for entry in inputRequirements {
+            let bindings = currentBindings.filter { $0.inputIndex == entry.index }
+            guard !bindings.isEmpty else {
+                throw OperationExecutionCoordinatorError.inputResourceBindingMissing(entry.index)
+            }
+
+            for binding in bindings {
+                let descriptor = binding.resource.descriptor
+                guard descriptor.kind == entry.requirement.kind,
+                      descriptor.capacityBytes >= entry.requirement.minimumCapacityBytes,
+                      descriptor.alignmentBytes >= entry.requirement.minimumAlignmentBytes,
+                      descriptor.alignmentBytes.isMultiple(of: entry.requirement.minimumAlignmentBytes),
+                      entry.requirement.allowedMemoryDomains.contains(descriptor.memoryDomain) else {
+                    throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+                }
+
+                let requiredSourceAccess: ExecutionResourceAccessMode =
+                    entry.requirement.requiresImport ? .read : entry.requirement.access
+                guard Self.bindingAccess(binding.access, satisfies: requiredSourceAccess) else {
+                    throw OperationExecutionCoordinatorError.inputResourceAccessInsufficient(
+                        entry.index,
+                        descriptor.reference,
+                        actual: binding.access,
+                        required: requiredSourceAccess
+                    )
+                }
+
+                qualifiedAccesses.append(
+                    ExecutionResourceAccess(
+                        resource: binding.resource,
+                        mode: entry.requirement.access
+                    )
+                )
+
+                let registrationMismatch = descriptor.memoryDomain == .deviceLocal
+                    && descriptor.providerRegistrationIdentifier != candidate.providerRegistrationIdentifier
+                let mustImport = entry.requirement.requiresImport
+                    || descriptor.target != candidate.target
+                    || registrationMismatch
+
+                if mustImport {
+                    guard candidate.context is any ExecutionResourceAllocatingContext else {
+                        throw OperationExecutionCoordinatorError.inputResourceImportContextUnavailable(
+                            entry.index
+                        )
+                    }
+                    importRequests.append(
+                        InputResourceImportRequest(
+                            inputIndex: entry.index,
+                            source: binding.resource,
+                            requirement: entry.requirement
+                        )
+                    )
+                } else {
+                    guard descriptor.target == candidate.target else {
+                        throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+                    }
+                    directAccesses.append(
+                        ExecutionResourceAccess(
+                            resource: binding.resource,
+                            mode: entry.requirement.access
+                        )
+                    )
+                }
+            }
+        }
+
+        guard Self.accessSignatures(qualifiedAccesses) ==
+              Self.accessSignatures(candidate.inputResourceAccesses) else {
+            throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+        }
+
+        guard !importRequests.isEmpty else {
+            return PreparedOperationInputResources(
+                accesses: directAccesses,
+                importedBindings: [],
+                sourceLeases: []
+            )
+        }
+
+        guard let allocator = candidate.context as? any ExecutionResourceAllocatingContext else {
+            throw OperationExecutionCoordinatorError.inputResourceImportContextUnavailable(
+                importRequests[0].inputIndex
+            )
+        }
+
+        let allocatedReferences = Set(
+            allocated.resources.bindings.map { $0.resource.descriptor.reference }
+        )
+        let sourceReferences = Set(
+            importRequests.map { $0.source.descriptor.reference }
+        )
+        var importedSourceByDestination: [ExecutionResourceReference: ExecutionResourceReference] = [:]
+        var importedBindings: [OperationInputResourceBinding] = []
+        var importedAccesses: [ExecutionResourceAccess] = []
+        var sourceLeases: [ExecutionWorkLease] = []
+
+        do {
+            for request in importRequests {
+                let sourceDescriptor = request.source.descriptor
+                let sourceReference = sourceDescriptor.reference
+                let sourceAccess = ExecutionResourceAccess(resource: request.source, mode: .read)
+                let sourceLease = try await workLedger.reserveWork(
+                    on: sourceDescriptor.target,
+                    accessing: [sourceAccess]
+                )
+                do {
+                    try await workLedger.revalidate(
+                        sourceLease,
+                        accessing: [sourceAccess]
+                    )
+                    try await workLedger.markSubmitted(sourceLease)
+                } catch {
+                    try? await workLedger.cancelReservation(sourceLease)
+                    throw error
+                }
+                sourceLeases.append(sourceLease)
+
+                let imported = try await allocator.importResource(
+                    request.source,
+                    access: request.requirement.access
+                )
+                let importedDescriptor = imported.descriptor
+                let importedReference = importedDescriptor.reference
+
+                guard importedDescriptor.target == candidate.target,
+                      importedDescriptor.kind == request.requirement.kind,
+                      importedDescriptor.capacityBytes >= request.requirement.minimumCapacityBytes,
+                      importedDescriptor.alignmentBytes >= request.requirement.minimumAlignmentBytes,
+                      importedDescriptor.alignmentBytes.isMultiple(of: request.requirement.minimumAlignmentBytes),
+                      request.requirement.allowedMemoryDomains.contains(importedDescriptor.memoryDomain) else {
+                    throw OperationExecutionCoordinatorError.inputResourceImportDescriptorMismatch(
+                        request.inputIndex,
+                        sourceReference,
+                        importedDescriptor
+                    )
+                }
+                guard importedDescriptor.providerRegistrationIdentifier == candidate.providerRegistrationIdentifier else {
+                    throw OperationExecutionCoordinatorError.inputResourceImportRegistrationMismatch(
+                        request.inputIndex,
+                        expected: candidate.providerRegistrationIdentifier,
+                        actual: importedDescriptor.providerRegistrationIdentifier
+                    )
+                }
+                if importedReference == sourceReference, request.requirement.access != .read {
+                    throw OperationExecutionCoordinatorError.inputResourceImportAliasesWritableSource(
+                        request.inputIndex,
+                        sourceReference
+                    )
+                }
+                if sourceReferences.contains(importedReference), importedReference != sourceReference {
+                    throw OperationExecutionCoordinatorError.inputResourceImportIdentityCollision(
+                        importedReference
+                    )
+                }
+                if let existingSource = importedSourceByDestination[importedReference],
+                   existingSource != sourceReference {
+                    throw OperationExecutionCoordinatorError.inputResourceImportIdentityCollision(
+                        importedReference
+                    )
+                }
+                importedSourceByDestination[importedReference] = sourceReference
+
+                if allocatedReferences.contains(importedReference) {
+                    throw OperationExecutionCoordinatorError.inputResourceImportAliasesAllocation(
+                        .input(request.inputIndex),
+                        importedReference
+                    )
+                }
+
+                // importResource's return is already a readiness boundary. When a
+                // provider also exposes explicit synchronization, use the narrow
+                // imported-resource scope before making the handle visible to the
+                // implementation.
+                if let synchronizer = candidate.context as? any ExecutionSynchronizingContext {
+                    try await synchronizer.synchronize(.resource(importedReference))
+                }
+
+                guard let binding = OperationInputResourceBinding(
+                    inputIndex: request.inputIndex,
+                    resource: imported,
+                    access: request.requirement.access
+                ) else {
+                    throw OperationExecutionCoordinatorError.inputResourceBindingsChanged
+                }
+                importedBindings.append(binding)
+                importedAccesses.append(
+                    ExecutionResourceAccess(
+                        resource: imported,
+                        mode: request.requirement.access
+                    )
+                )
+            }
+
+            return PreparedOperationInputResources(
+                accesses: directAccesses + importedAccesses,
+                importedBindings: importedBindings,
+                sourceLeases: sourceLeases
+            )
+        } catch {
+            let cleanup = await releaseSubmittedSourceLeases(sourceLeases)
+            if !cleanup.failures.isEmpty {
+                throw OperationExecutionCoordinatorError.inputResourceImportCleanupFailed(
+                    "Import failed: \(error). Source-lease cleanup failed: \(cleanup.failures.joined(separator: "; "))."
+                )
+            }
             throw error
+        }
+    }
+
+    private func releaseSubmittedSourceLeases(
+        _ leases: [ExecutionWorkLease]
+    ) async -> SourceLeaseReleaseReport {
+        var remaining: [ExecutionWorkLease] = []
+        var failures: [String] = []
+        for lease in leases {
+            do {
+                try await workLedger.completeSubmission(lease)
+            } catch {
+                remaining.append(lease)
+                failures.append(String(describing: error))
+            }
+        }
+        return SourceLeaseReleaseReport(remaining: remaining, failures: failures)
+    }
+
+    private static func accessSignatures(
+        _ accesses: [ExecutionResourceAccess]
+    ) -> [InputResourceAccessSignature: Int] {
+        var counts: [InputResourceAccessSignature: Int] = [:]
+        for access in accesses {
+            let signature = InputResourceAccessSignature(
+                objectIdentifier: ObjectIdentifier(access.resource),
+                reference: access.resource.descriptor.reference,
+                descriptor: access.resource.descriptor,
+                mode: access.mode
+            )
+            counts[signature, default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func bindingAccess(
+        _ available: ExecutionResourceAccessMode,
+        satisfies required: ExecutionResourceAccessMode
+    ) -> Bool {
+        switch (available, required) {
+        case (.read, .read), (.write, .write), (.readWrite, .read),
+             (.readWrite, .write), (.readWrite, .readWrite):
+            true
+        default:
+            false
         }
     }
 
