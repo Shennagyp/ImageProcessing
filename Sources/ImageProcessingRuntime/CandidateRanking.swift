@@ -707,7 +707,12 @@ enum CandidateInputResidencyEstimator {
         let leftDevice = left.target.deviceID?.rawValue ?? ""
         let rightDevice = right.target.deviceID?.rawValue ?? ""
         if leftDevice != rightDevice { return leftDevice < rightDevice }
-        return left.identifier.rawValue < right.identifier.rawValue
+        if left.identifier.rawValue != right.identifier.rawValue {
+            return left.identifier.rawValue < right.identifier.rawValue
+        }
+        let leftRegistration = left.providerRegistrationIdentifier?.uuidString ?? ""
+        let rightRegistration = right.providerRegistrationIdentifier?.uuidString ?? ""
+        return leftRegistration < rightRegistration
     }
 }
 
