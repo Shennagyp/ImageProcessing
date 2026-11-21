@@ -23,6 +23,7 @@ public enum CandidateCostEstimateEvidenceKind: String, Hashable, Sendable {
     case deviceObservation
     case implementationHint
     case resourceRequirement
+    case resourceBinding
 }
 
 public struct CandidateCostEstimateEvidence: Hashable, Sendable {
@@ -66,9 +67,13 @@ public enum CandidateCostComponent: String, Hashable, Sendable, CaseIterable {
     case deviceQueueDepth
     case availableDeviceMemory
     case deviceUtilization
+    case deviceLocalInputCapacityBytes
+    case boundInputTransferTime
     case implementationFixedOverhead
     case operationsPerElement
     case temporaryBytesPerElement
+    case minimumPlannedOutputCapacityBytes
+    case minimumPlannedTemporaryCapacityBytes
     case minimumPlannedResourceCapacityBytes
     case transferTime
     case conversionTime
@@ -81,13 +86,16 @@ public enum CandidateCostComponent: String, Hashable, Sendable, CaseIterable {
 
     public var unit: CandidateCostEstimateUnit {
         switch self {
-        case .providerQueueDelay, .deviceQueueDelay, .implementationFixedOverhead,
-             .transferTime, .conversionTime, .allocationTime, .computeTime,
-             .synchronizationTime, .outputMaterializationTime:
+        case .providerQueueDelay, .deviceQueueDelay, .boundInputTransferTime,
+             .implementationFixedOverhead, .transferTime, .conversionTime,
+             .allocationTime, .computeTime, .synchronizationTime,
+             .outputMaterializationTime:
             .nanoseconds
         case .providerQueueDepth, .deviceQueueDepth:
             .count
-        case .availableDeviceMemory, .minimumPlannedResourceCapacityBytes:
+        case .availableDeviceMemory, .deviceLocalInputCapacityBytes,
+             .minimumPlannedOutputCapacityBytes, .minimumPlannedTemporaryCapacityBytes,
+             .minimumPlannedResourceCapacityBytes:
             .bytes
         case .deviceUtilization:
             .fraction
@@ -149,6 +157,35 @@ public struct CandidateResourceMemoryDomainOptions: Hashable, Sendable {
     }
 }
 
+public enum CandidateInputResourceResidencyDisposition: String, Hashable, Sendable {
+    /// Device-local and owned by the exact execution target being considered.
+    case deviceLocalOnTarget
+    /// Owned by the candidate target, but not in device-local memory.
+    case nonDeviceLocalOnTarget
+    /// Owned by another provider or execution target.
+    case foreignTarget
+    /// Multiple handles reported different descriptors for one resource identity.
+    case inconsistentDescriptor
+}
+
+public struct CandidateInputResourceResidency: Hashable, Sendable {
+    public let resource: ExecutionResourceReference
+    public let memoryDomain: ExecutionMemoryDomain
+    public let capacityBytes: UInt64
+    public let disposition: CandidateInputResourceResidencyDisposition
+}
+
+/// Evidence is limited to distinct handles exposed through this candidate's
+/// declared input-resource accesses. It does not assert that every value in the
+/// typed operation input is represented by a generic resource binding.
+public struct CandidateInputResidencyEstimate: Hashable, Sendable {
+    public let resources: [CandidateInputResourceResidency]
+    /// Existing target-local device memory, not incremental invocation allocation.
+    public let deviceLocalCapacityBytes: CandidateCostEstimateState
+    /// Staging/import time for the declared resource handles only.
+    public let boundInputTransferTime: CandidateCostEstimateState
+}
+
 public struct CandidatePreferenceRankingContribution: Hashable, Sendable {
     public let declaration: OptimizationPreferenceDeclaration
     /// Weighted win rate over candidate pairs for which this preference had
@@ -168,6 +205,7 @@ public struct RankedOperationImplementationCandidate: Sendable {
     public let rank: Int
     public let candidate: QualifiedOperationImplementation
     public let costEstimate: CandidateCostEstimate
+    public let inputResidency: CandidateInputResidencyEstimate
     public let resourceMemoryDomainOptions: [CandidateResourceMemoryDomainOptions]
     public let preferenceContributions: [CandidatePreferenceRankingContribution]
     public let priorityScores: [CandidatePreferencePriorityScore]
@@ -203,7 +241,19 @@ enum OperationImplementationCandidateRanker {
             }
         }
 
-        let estimates = candidates.map(CandidateCostEstimator.estimate)
+        let inputResidencies = candidates.map { candidate in
+            CandidateInputResidencyEstimator.estimate(
+                resourceAccesses: candidate.inputResourceAccesses,
+                on: candidate.target,
+                source: candidate.implementation.specification.identifier.rawValue
+            )
+        }
+        let estimates = candidates.indices.map { index in
+            CandidateCostEstimator.estimate(
+                candidates[index],
+                inputResidency: inputResidencies[index]
+            )
+        }
         let domainOptions = candidates.map { memoryDomainOptions(for: $0) }
         var contributions = Array(
             repeating: [CandidatePreferenceRankingContribution](),
@@ -283,6 +333,7 @@ enum OperationImplementationCandidateRanker {
                 rank: offset + 1,
                 candidate: candidates[index],
                 costEstimate: estimates[index],
+                inputResidency: inputResidencies[index],
                 resourceMemoryDomainOptions: domainOptions[index],
                 preferenceContributions: contributions[index],
                 priorityScores: priorityScores
@@ -325,6 +376,7 @@ enum OperationImplementationCandidateRanker {
         let components: [CandidateCostComponent] = [
             .providerQueueDelay,
             .deviceQueueDelay,
+            .boundInputTransferTime,
             .implementationFixedOverhead
         ]
         var leftIsBetter = false
@@ -506,9 +558,133 @@ enum OperationImplementationCandidateRanker {
     }
 }
 
+enum CandidateInputResidencyEstimator {
+    static func estimate(
+        resourceAccesses: [ExecutionResourceAccess],
+        on candidateTarget: ExecutionTargetReference,
+        source: String
+    ) -> CandidateInputResidencyEstimate {
+        var descriptors: [ExecutionResourceReference: ExecutionResourceDescriptor] = [:]
+        var inconsistentReferences = Set<ExecutionResourceReference>()
+
+        for access in resourceAccesses {
+            let descriptor = access.resource.descriptor
+            let reference = descriptor.reference
+            if let existing = descriptors[reference] {
+                if existing != descriptor {
+                    inconsistentReferences.insert(reference)
+                }
+            } else {
+                descriptors[reference] = descriptor
+            }
+        }
+
+        let resources = descriptors.keys.sorted(by: referencePrecedes).compactMap { reference in
+            guard let descriptor = descriptors[reference] else { return nil }
+            let disposition: CandidateInputResourceResidencyDisposition
+            if inconsistentReferences.contains(reference) {
+                disposition = .inconsistentDescriptor
+            } else if descriptor.target != candidateTarget {
+                disposition = .foreignTarget
+            } else if descriptor.memoryDomain == .deviceLocal {
+                disposition = .deviceLocalOnTarget
+            } else {
+                disposition = .nonDeviceLocalOnTarget
+            }
+            return CandidateInputResourceResidency(
+                resource: reference,
+                memoryDomain: descriptor.memoryDomain,
+                capacityBytes: descriptor.capacityBytes,
+                disposition: disposition
+            )
+        }
+
+        let capacityEvidence = CandidateCostEstimateEvidence(
+            kind: .resourceBinding,
+            source: source,
+            detail: "Capacity of distinct declared input resource bindings. This is already allocated storage, not an incremental allocation request."
+        )
+
+        let deviceLocalCapacity: CandidateCostEstimateState
+        if resources.isEmpty {
+            deviceLocalCapacity = .unknown(
+                reason: "No declared input-resource access bindings are available; current residency cannot be inferred."
+            )
+        } else if !inconsistentReferences.isEmpty {
+            deviceLocalCapacity = .unknown(
+                reason: "Conflicting descriptors exist for an input resource identity; resident capacity cannot be aggregated."
+            )
+        } else {
+            var total: UInt64 = 0
+            var overflowed = false
+            for resource in resources where resource.disposition == .deviceLocalOnTarget {
+                let (next, overflow) = total.addingReportingOverflow(resource.capacityBytes)
+                if overflow {
+                    overflowed = true
+                    break
+                }
+                total = next
+            }
+            deviceLocalCapacity = overflowed
+                ? .unknown(reason: "Summing device-local input resource capacities overflowed UInt64.")
+                : .estimated(value: .integer(total), evidence: [capacityEvidence])
+        }
+
+        let boundInputTransferTime: CandidateCostEstimateState
+        if resources.isEmpty {
+            boundInputTransferTime = .unknown(
+                reason: "No declared input-resource access bindings are available; absence of bindings is not evidence of zero transfer."
+            )
+        } else if resources.allSatisfy({ $0.disposition == .deviceLocalOnTarget }) {
+            boundInputTransferTime = .estimated(
+                value: .integer(0),
+                evidence: [
+                    CandidateCostEstimateEvidence(
+                        kind: .resourceBinding,
+                        source: source,
+                        detail: "Every distinct declared input resource handle is device-local on the exact candidate target. No staging or import is required for these handles; this excludes unrepresented inputs, synchronization, and total execution latency."
+                    )
+                ]
+            )
+        } else if resources.contains(where: { $0.disposition == .inconsistentDescriptor }) {
+            boundInputTransferTime = .unknown(
+                reason: "Conflicting descriptors exist for an input resource identity; zero transfer cannot be established."
+            )
+        } else if resources.contains(where: { $0.disposition == .foreignTarget }) {
+            boundInputTransferTime = .unknown(
+                reason: "At least one input resource belongs to another execution target; import, remapping, and transfer cost are not modeled."
+            )
+        } else {
+            boundInputTransferTime = .unknown(
+                reason: "At least one input resource is not device-local; host/shared/managed/external staging or migration cost is not modeled."
+            )
+        }
+
+        return CandidateInputResidencyEstimate(
+            resources: resources,
+            deviceLocalCapacityBytes: deviceLocalCapacity,
+            boundInputTransferTime: boundInputTransferTime
+        )
+    }
+
+    private static func referencePrecedes(
+        _ left: ExecutionResourceReference,
+        _ right: ExecutionResourceReference
+    ) -> Bool {
+        if left.target.providerID.rawValue != right.target.providerID.rawValue {
+            return left.target.providerID.rawValue < right.target.providerID.rawValue
+        }
+        let leftDevice = left.target.deviceID?.rawValue ?? ""
+        let rightDevice = right.target.deviceID?.rawValue ?? ""
+        if leftDevice != rightDevice { return leftDevice < rightDevice }
+        return left.identifier.rawValue < right.identifier.rawValue
+    }
+}
+
 enum CandidateCostEstimator {
     static func estimate(
-        _ candidate: QualifiedOperationImplementation
+        _ candidate: QualifiedOperationImplementation,
+        inputResidency: CandidateInputResidencyEstimate
     ) -> CandidateCostEstimate {
         let observation = candidate.environmentObservations
         let implementation = candidate.implementation.specification
@@ -535,6 +711,14 @@ enum CandidateCostEstimator {
                 )
             ),
             .init(
+                component: .deviceLocalInputCapacityBytes,
+                state: inputResidency.deviceLocalCapacityBytes
+            ),
+            .init(
+                component: .boundInputTransferTime,
+                state: inputResidency.boundInputTransferTime
+            ),
+            .init(
                 component: .implementationFixedOverhead,
                 state: hintEstimate(
                     hint?.fixedOverheadNanoseconds,
@@ -559,8 +743,34 @@ enum CandidateCostEstimator {
                 )
             ),
             .init(
+                component: .minimumPlannedOutputCapacityBytes,
+                state: minimumPlannedResourceCapacityEstimate(
+                    candidate,
+                    matching: { role in
+                        if case .output = role { return true }
+                        return false
+                    },
+                    description: "output"
+                )
+            ),
+            .init(
+                component: .minimumPlannedTemporaryCapacityBytes,
+                state: minimumPlannedResourceCapacityEstimate(
+                    candidate,
+                    matching: { role in
+                        if case .temporary = role { return true }
+                        return false
+                    },
+                    description: "temporary"
+                )
+            ),
+            .init(
                 component: .minimumPlannedResourceCapacityBytes,
-                state: minimumPlannedResourceCapacityEstimate(candidate)
+                state: minimumPlannedResourceCapacityEstimate(
+                    candidate,
+                    matching: { _ in true },
+                    description: "output and temporary"
+                )
             )
         ]
 
@@ -676,17 +886,19 @@ enum CandidateCostEstimator {
     }
 
     private static func minimumPlannedResourceCapacityEstimate(
-        _ candidate: QualifiedOperationImplementation
+        _ candidate: QualifiedOperationImplementation,
+        matching predicate: (ImplementationResourceRole) -> Bool,
+        description: String
     ) -> CandidateCostEstimateState {
         guard !candidate.resourceAllocations.isEmpty else {
             return .unknown(reason: "The invocation has no declared output/temporary allocation slots.")
         }
 
         var total: UInt64 = 0
-        for allocation in candidate.resourceAllocations {
+        for allocation in candidate.resourceAllocations where predicate(allocation.role) {
             let (next, overflow) = total.addingReportingOverflow(allocation.minimumCapacityBytes)
             guard !overflow else {
-                return .unknown(reason: "Summing the minimum output/temporary allocation requirements overflowed UInt64.")
+                return .unknown(reason: "Summing the minimum planned (description) resource capacities overflowed UInt64.")
             }
             total = next
         }
@@ -697,7 +909,7 @@ enum CandidateCostEstimator {
                 CandidateCostEstimateEvidence(
                     kind: .resourceRequirement,
                     source: candidate.implementation.specification.identifier.rawValue,
-                    detail: "Sum of declared per-invocation minimum output and temporary resource capacities. This is a planned-capacity lower bound, not a physical allocation size or measured peak memory."
+                    detail: "Sum of declared per-invocation minimum (description) resource capacities. This is a planned-capacity lower bound, not physical allocation size or measured peak memory."
                 )
             ]
         )
