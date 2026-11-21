@@ -49,10 +49,17 @@ private struct InputResourceImportRequest: Sendable {
     let requirement: ImplementationResourceRequirement
 }
 
+private struct RetainedSourceResourceLease: Sendable {
+    let workLease: ExecutionWorkLease
+    /// Keeps the package that owns a registered source allocation available
+    /// until the imported resource no longer depends on that source.
+    let providerUse: ExecutionProviderUseLease?
+}
+
 private struct PreparedOperationInputResources: Sendable {
     let accesses: [ExecutionResourceAccess]
     let importedBindings: [OperationInputResourceBinding]
-    let sourceLeases: [ExecutionWorkLease]
+    let sourceLeases: [RetainedSourceResourceLease]
 }
 
 private struct InputResourceAccessSignature: Hashable {
@@ -63,7 +70,7 @@ private struct InputResourceAccessSignature: Hashable {
 }
 
 private struct SourceLeaseReleaseReport: Sendable {
-    let remaining: [ExecutionWorkLease]
+    let remaining: [RetainedSourceResourceLease]
     let failures: [String]
 }
 
@@ -420,12 +427,20 @@ public actor OperationExecutionCoordinator {
         var importedSourceByDestination: [ExecutionResourceReference: ExecutionResourceReference] = [:]
         var importedBindings: [OperationInputResourceBinding] = []
         var importedAccesses: [ExecutionResourceAccess] = []
-        var sourceLeases: [ExecutionWorkLease] = []
+        var sourceLeases: [RetainedSourceResourceLease] = []
 
         do {
             for request in importRequests {
                 let sourceDescriptor = request.source.descriptor
                 let sourceReference = sourceDescriptor.reference
+                let sourceProviderUse: ExecutionProviderUseLease?
+                if sourceDescriptor.providerRegistrationIdentifier != nil {
+                    sourceProviderUse = try await providers.retainResourceOwner(
+                        for: request.source
+                    )
+                } else {
+                    sourceProviderUse = nil
+                }
                 let sourceAccess = ExecutionResourceAccess(resource: request.source, mode: .read)
                 let sourceLease = try await workLedger.reserveWork(
                     on: sourceDescriptor.target,
@@ -447,7 +462,12 @@ public actor OperationExecutionCoordinator {
                     }
                     throw primaryError
                 }
-                sourceLeases.append(sourceLease)
+                sourceLeases.append(
+                    RetainedSourceResourceLease(
+                        workLease: sourceLease,
+                        providerUse: sourceProviderUse
+                    )
+                )
 
                 let imported = try await allocator.importResource(
                     request.source,
@@ -547,13 +567,13 @@ public actor OperationExecutionCoordinator {
     }
 
     private func releaseSubmittedSourceLeases(
-        _ leases: [ExecutionWorkLease]
+        _ leases: [RetainedSourceResourceLease]
     ) async -> SourceLeaseReleaseReport {
-        var remaining: [ExecutionWorkLease] = []
+        var remaining: [RetainedSourceResourceLease] = []
         var failures: [String] = []
         for lease in leases {
             do {
-                try await workLedger.completeSubmission(lease)
+                try await workLedger.completeSubmission(lease.workLease)
             } catch {
                 remaining.append(lease)
                 failures.append(String(describing: error))
