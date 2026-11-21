@@ -114,6 +114,7 @@
   \item A context-scoped allocation/submission requirement is not satisfied by a provider/device declaration alone; the created context must report the capability and conform to the corresponding optional protocol.
   \item Distinct declared input handles already device-local on the exact candidate target produce a zero bound-input staging estimate; repeated references are counted once.
   \item Missing input-resource bindings, foreign-target resources, conflicting descriptors, and host/shared/managed/external domains never become an assumed zero-transfer result.
+  \item A pixel-backed composite input qualifies only when every selected layer and every plane resource is bound; a fully bound composite remains valid.
   \item Existing device-local input allocation capacity is reported separately and is not added to the new per-invocation output/temporary allocation comparison.
   \item A busy/unavailable GPU routes to CPU only when CPU is registered, qualified, and fallback is permitted.
   \item A required CUDA request never silently falls back to CPU.
