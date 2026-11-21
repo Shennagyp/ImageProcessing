@@ -505,14 +505,17 @@ struct OperationInputQualificationTests {
 
         #expect(report.qualifiedCandidates.isEmpty)
         #expect(report.evaluations[0].rejections.contains {
-            if case .inputResourceProviderRegistrationMismatch(
-                0,
-                inputFixture.reference,
-                memoryDomain: .deviceLocal,
+            if case let .inputResourceProviderRegistrationMismatch(
+                index,
+                reference,
+                memoryDomain: domain,
                 expected: _,
-                actual: previousRegistration
+                actual: actual
             ) = $0 {
-                return true
+                return index == 0
+                    && reference == inputFixture.reference
+                    && domain == .deviceLocal
+                    && actual == previousRegistration
             }
             return false
         })
