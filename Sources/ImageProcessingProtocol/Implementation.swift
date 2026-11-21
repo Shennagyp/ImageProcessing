@@ -270,6 +270,7 @@ public enum ImplementationSpecificationValidationError: Error, Equatable, Sendab
     case invalidResourceRequirement(ImplementationResourceRole)
     case resourceAccessContractMismatch(ImplementationResourceRole)
     case resourceImportRequiresInputRole(ImplementationResourceRole)
+    case resourceImportRequiresReadOnlyInput(ImplementationResourceRole)
     case duplicateResourceRequirement(ImplementationResourceRole)
     case invalidNumericalSupport
     case missingNumericalSupport
@@ -461,6 +462,11 @@ public struct ImplementationSpecification: Hashable, Sendable {
             if requirement.requiresImport {
                 guard case .input(_) = requirement.role else {
                     throw ImplementationSpecificationValidationError.resourceImportRequiresInputRole(
+                        requirement.role
+                    )
+                }
+                guard requirement.access == .read else {
+                    throw ImplementationSpecificationValidationError.resourceImportRequiresReadOnlyInput(
                         requirement.role
                     )
                 }
