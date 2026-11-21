@@ -58,6 +58,25 @@ struct CandidateResidencyTests {
     }
 
     @Test
+    func resourceReferencesDistinguishProviderRegistrationGenerations() throws {
+        let target = try target(provider: "provider.gpu", device: "device.0")
+        let firstRegistration = registrationIdentifier
+        let secondRegistration = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let first = try resource(
+            id: "input.reused-name",
+            target: target,
+            providerRegistrationIdentifier: firstRegistration
+        )
+        let second = try resource(
+            id: "input.reused-name",
+            target: target,
+            providerRegistrationIdentifier: secondRegistration
+        )
+
+        #expect(first.descriptor.reference != second.descriptor.reference)
+    }
+
+    @Test
     func targetLocalDeviceMemoryHasNoBoundInputStagingCost() throws {
         let target = try target(provider: "provider.gpu", device: "device.0")
         let first = try resource(id: "input.first", target: target, capacity: 4_096, providerRegistrationIdentifier: registrationIdentifier)
