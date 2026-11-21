@@ -15,12 +15,15 @@ public enum QualificationRequirement: Hashable, Sendable {
     case deterministicResults
 }
 
-public enum OptimizationObjective: String, Hashable, Sendable {
+/// A soft objective used only to order candidates that already satisfy hard requirements.
+/// Precision preferences name a concrete precision value in one semantic dimension.
+public enum OptimizationObjective: Hashable, Sendable {
     case lowLatency
     case lowMemory
     case lowEnergy
     case highThroughput
     case deterministicResults
+    case precision(PrecisionDimension, PrecisionValue)
 }
 
 public struct PolicyDeclarationOrigin: Hashable, Sendable {
@@ -75,6 +78,7 @@ public struct OptimizationPreferenceDeclaration: Hashable, Sendable {
 public enum QualificationPolicyConflictDimension: Hashable, Sendable {
     case provider
     case precision(PrecisionDimension)
+    case precisionPreference(PrecisionDimension)
     case executionCapability(ExecutionCapabilityID, ExecutionCapabilityScope)
     case objective(OptimizationObjective)
 }
@@ -215,13 +219,29 @@ public struct QualificationPolicy: Hashable, Sendable {
                stepsByID[identifier] == nil {
                 throw QualificationPolicyValidationError.unknownStep(identifier, declaration.origin)
             }
-            if declaration.objective == .deterministicResults {
+            switch declaration.objective {
+            case let .precision(dimension, value):
+                guard Self.precisionValue(value, matches: dimension) else {
+                    throw QualificationPolicyValidationError.invalidPrecisionValue(
+                        dimension,
+                        declaration.origin
+                    )
+                }
+                try validateApplicability(
+                    Self.operationQualificationDimension(for: dimension),
+                    for: declaration.origin,
+                    stepsByID: stepsByID,
+                    steps: steps
+                )
+            case .deterministicResults:
                 try validateApplicability(
                     .deterministicResults,
                     for: declaration.origin,
                     stepsByID: stepsByID,
                     steps: steps
                 )
+            default:
+                break
             }
         }
 
@@ -247,15 +267,18 @@ public struct QualificationPolicy: Hashable, Sendable {
                 let first = preferences[index]
                 let second = preferences[otherIndex]
                 guard first.origin.scope == second.origin.scope,
-                      first.objective == second.objective,
-                      first.priority != second.priority || first.weight != second.weight else {
+                      Self.preferencesShareObjectiveDimension(first.objective, second.objective) else {
                     continue
                 }
-                throw QualificationPolicyConflict(
-                    dimension: .objective(first.objective),
-                    priorDeclarations: [first.origin],
-                    incomingDeclaration: second.origin
-                )
+                guard first.objective == second.objective,
+                      first.priority == second.priority,
+                      first.weight == second.weight else {
+                    throw QualificationPolicyConflict(
+                        dimension: Self.preferenceConflictDimension(first.objective),
+                        priorDeclarations: [first.origin],
+                        incomingDeclaration: second.origin
+                    )
+                }
             }
         }
     }
@@ -394,6 +417,29 @@ public struct QualificationPolicy: Hashable, Sendable {
                     origin
                 )
             }
+        }
+    }
+
+    private static func preferencesShareObjectiveDimension(
+        _ lhs: OptimizationObjective,
+        _ rhs: OptimizationObjective
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case let (.precision(leftDimension, _), .precision(rightDimension, _)):
+            leftDimension == rightDimension
+        default:
+            lhs == rhs
+        }
+    }
+
+    private static func preferenceConflictDimension(
+        _ objective: OptimizationObjective
+    ) -> QualificationPolicyConflictDimension {
+        switch objective {
+        case let .precision(dimension, _):
+            .precisionPreference(dimension)
+        default:
+            .objective(objective)
         }
     }
 
