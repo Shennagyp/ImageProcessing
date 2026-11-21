@@ -43,6 +43,13 @@ public protocol ExecutionContext: Sendable {
     var capabilities: ExecutionCapabilities { get }
 }
 
+/// Optional context identity for providers whose resources are scoped to one
+/// runtime registration. Resource-producing contexts should implement this
+/// protocol and stamp the same identifier on every resource they create.
+public protocol ExecutionProviderRegistrationBoundContext: ExecutionContext {
+    var providerRegistrationIdentifier: UUID { get }
+}
+
 public extension ExecutionContext {
     /// Context-specific capabilities default to empty for providers that do not
     /// expose them. Optional context protocols remain the executable proof.
@@ -61,4 +68,17 @@ public protocol ExecutionProvider: Sendable {
     func observeState() async throws -> ExecutionProviderStateSnapshot
     func discoverDevices() async throws -> [any ExecutionDevice]
     func makeContext(for target: ExecutionTargetReference) async throws -> any ExecutionContext
+}
+
+public extension ExecutionProvider {
+    /// Registration-aware context creation. Providers that allocate or import
+    /// resources should capture this identity and place it on each resulting
+    /// ExecutionResourceDescriptor. The default preserves legacy providers;
+    /// their resources cannot prove registration-local device residency.
+    func makeContext(
+        for target: ExecutionTargetReference,
+        registrationIdentifier: UUID
+    ) async throws -> any ExecutionContext {
+        try await makeContext(for: target)
+    }
 }
