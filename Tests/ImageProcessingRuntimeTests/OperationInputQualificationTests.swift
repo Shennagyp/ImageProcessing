@@ -502,6 +502,59 @@ struct OperationInputQualificationTests {
     }
 
     @Test
+    func compositeInputCannotHideAnUnboundPixelBackedLayer() async throws {
+        let descriptor = try pixelDescriptor()
+        let imageID = ImageIdentifier.generate()
+        let firstID = LayerIdentifier.generate()
+        let secondID = LayerIdentifier.generate()
+        let firstReference = LayerReference(imageID: imageID, layerID: firstID)
+        let secondReference = LayerReference(imageID: imageID, layerID: secondID)
+        let firstResource = try InputQualificationResource(
+            target: target(),
+            identifier: "composite.bound.first",
+            capacityBytes: descriptor.minimumRequiredStorageBytesByPlane[0],
+            memoryDomain: .host
+        )
+        let firstStorage = try PixelStorageBinding(
+            descriptor: descriptor,
+            planeBindings: [
+                PixelPlaneResourceBinding(
+                    resource: firstResource,
+                    planeIndices: [0],
+                    access: .read
+                )
+            ]
+        )
+        let image = try Image(
+            identifier: imageID,
+            canvas: ImageCanvasDescriptor(extent: descriptor.extent),
+            layers: [
+                LayerDescriptor(identifier: firstID, content: .raster(descriptor)),
+                LayerDescriptor(identifier: secondID, content: .raster(descriptor))
+            ],
+            storageBindings: [
+                LayerPixelStorageBinding(reference: firstReference, storage: firstStorage)
+            ]
+        )
+        let context = try ImageOperationInputContext(inputs: [
+            ImageOperationInputBinding(
+                inputIndex: 0,
+                imageState: image.snapshot(),
+                target: .composite([firstReference, secondReference])
+            )
+        ])
+
+        let report = try await makeReport(
+            input: RasterQualificationInput(imageOperationInputContext: context)
+        )
+
+        #expect(report.qualifiedCandidates.isEmpty)
+        #expect(report.evaluations[0].rejections.contains(
+            .inputResourceBindingMissing(0, secondReference)
+        ))
+    }
+
+    @Test
     func resourceOnAnotherExecutionTargetRequiresDeclaredImport() async throws {
         let sourceTarget = target(device: "device.source")
         let inputFixture = try imageInput(resourceTarget: sourceTarget)
