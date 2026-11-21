@@ -428,7 +428,7 @@ private struct CoordinatedContext: ExecutionResourceAllocatingContext, Execution
     ) async throws -> any ExecutionResource {
         let source = resource.descriptor
         let descriptor = try ExecutionResourceDescriptor(
-            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.imported.\\(UUID().uuidString)")!,
+            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.imported.\(UUID().uuidString)")!,
             target: target,
             kind: source.kind,
             capacityBytes: source.capacityBytes,
