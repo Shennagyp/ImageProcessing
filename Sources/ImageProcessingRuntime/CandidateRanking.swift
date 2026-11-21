@@ -899,7 +899,7 @@ enum CandidateCostEstimator {
         for allocation in candidate.resourceAllocations where predicate(allocation.role) {
             let (next, overflow) = total.addingReportingOverflow(allocation.minimumCapacityBytes)
             guard !overflow else {
-                return .unknown(reason: "Summing the minimum planned (description) resource capacities overflowed UInt64.")
+                return .unknown(reason: "Summing the minimum planned \\(description) resource capacities overflowed UInt64.")
             }
             total = next
         }
@@ -910,7 +910,7 @@ enum CandidateCostEstimator {
                 CandidateCostEstimateEvidence(
                     kind: .resourceRequirement,
                     source: candidate.implementation.specification.identifier.rawValue,
-                    detail: "Sum of declared per-invocation minimum (description) resource capacities. This is a planned-capacity lower bound, not physical allocation size or measured peak memory."
+                    detail: "Sum of declared per-invocation minimum \\(description) resource capacities. This is a planned-capacity lower bound, not physical allocation size or measured peak memory."
                 )
             ]
         )
