@@ -48,8 +48,10 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
     typealias Operation = CoordinatedImportOperation
 
     let specification: ImplementationSpecification
+    let gate: CoordinatorExecutionGate?
 
-    init() {
+    init(gate: CoordinatorExecutionGate? = nil) {
+        self.gate = gate
         let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
         let upper = SemanticVersion(major: 2, minor: 0, patch: 0)!
         specification = ImplementationSpecification(
@@ -90,6 +92,9 @@ private struct CoordinatedImportImplementation: ImageOperationImplementation {
         context: any ExecutionContext,
         resources: OperationExecutionResources
     ) async throws -> CoordinatedOutput {
+        if let gate {
+            await gate.suspend()
+        }
         let imported = resources.importedInputResources(for: 0)
         guard imported.count == 1,
               let binding = imported.first,
@@ -586,8 +591,9 @@ struct OperationExecutionCoordinatorTests {
             registrationIdentifier: registeredProvider.registrationIdentifier
         )
 
+        let gate = CoordinatorExecutionGate()
         let implementations = OperationImplementationRegistry()
-        try await implementations.register(CoordinatedImportImplementation())
+        try await implementations.register(CoordinatedImportImplementation(gate: gate))
         let registeredImplementation = try #require(
             await implementations.registeredImplementations().first
         )
@@ -617,7 +623,16 @@ struct OperationExecutionCoordinatorTests {
             workLedger: ledger
         )
 
-        let output = try await coordinator.execute(candidate) as? CoordinatedOutput
+        let execution = Task {
+            try await coordinator.execute(candidate) as? CoordinatedOutput
+        }
+        await gate.waitUntilSuspended()
+
+        #expect(await ledger.activeLeaseCount == 2)
+        #expect(source.descriptor.reference.target == sourceTarget)
+
+        await gate.resume()
+        let output = try await execution.value
 
         #expect(output?.value == 19)
         #expect(source.descriptor.reference.target == sourceTarget)
