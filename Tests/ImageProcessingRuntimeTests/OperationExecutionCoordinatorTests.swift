@@ -24,6 +24,87 @@ private struct CoordinatedOperation: ImageOperation {
     )
 }
 
+private struct CoordinatedResourceInput: OperationResourceInputValue {
+    static let typeIdentifier = OperationValueIdentifier(rawValue: "execution-coordinator.resource-input")!
+    let value: Int
+    let resource: any ExecutionResource
+
+    var operationInputResourceBindings: [OperationInputResourceBinding] {
+        [OperationInputResourceBinding(inputIndex: 0, resource: resource, access: .read)!]
+    }
+}
+
+private struct CoordinatedImportOperation: ImageOperation {
+    typealias Input = CoordinatedResourceInput
+    typealias Output = CoordinatedOutput
+
+    static let specification = OperationSpecification<Input, Output>(
+        identifier: OperationIdentifier(rawValue: "execution-coordinator.import-input")!,
+        semanticVersion: SemanticVersion(major: 1, minor: 0, patch: 0)!
+    )
+}
+
+private struct CoordinatedImportImplementation: ImageOperationImplementation {
+    typealias Operation = CoordinatedImportOperation
+
+    let specification: ImplementationSpecification
+
+    init() {
+        let lower = SemanticVersion(major: 1, minor: 0, patch: 0)!
+        let upper = SemanticVersion(major: 2, minor: 0, patch: 0)!
+        specification = ImplementationSpecification(
+            identifier: OperationImplementationIdentifier(rawValue: "execution-coordinator.import-input")!,
+            version: lower,
+            operationIdentifier: CoordinatedImportOperation.specification.identifier,
+            supportedOperationVersions: SemanticVersionRange(
+                lowerBound: lower,
+                upperBound: upper
+            )!,
+            inputType: CoordinatedResourceInput.typeIdentifier,
+            outputType: CoordinatedOutput.typeIdentifier,
+            resourceRequirements: [
+                ImplementationResourceRequirement(
+                    role: .input(0),
+                    kind: .buffer,
+                    allowedMemoryDomains: [.deviceLocal, .shared],
+                    minimumCapacityBytes: 128,
+                    minimumAlignmentBytes: 64,
+                    access: .read,
+                    requiresImport: true
+                )
+            ]
+        )
+    }
+
+    func execute(
+        operation: CoordinatedImportOperation,
+        input: CoordinatedResourceInput,
+        context: any ExecutionContext
+    ) async throws -> CoordinatedOutput {
+        CoordinatedOutput(value: input.value)
+    }
+
+    func execute(
+        operation: CoordinatedImportOperation,
+        input: CoordinatedResourceInput,
+        context: any ExecutionContext,
+        resources: OperationExecutionResources
+    ) async throws -> CoordinatedOutput {
+        let imported = resources.importedInputResources(for: 0)
+        guard imported.count == 1,
+              let binding = imported.first,
+              binding.resource.descriptor.target == context.target,
+              let registrationBoundContext = context as? any ExecutionProviderRegistrationBoundContext,
+              binding.resource.descriptor.providerRegistrationIdentifier
+                == registrationBoundContext.providerRegistrationIdentifier else {
+            throw OperationOutputValidationError.operationPostconditionFailed(
+                "input resource was not remapped into the exact execution registration"
+            )
+        }
+        return CoordinatedOutput(value: input.value)
+    }
+}
+
 private struct CoordinatedImageInput: ImageOperationInputValue {
     static let typeIdentifier = OperationValueIdentifier(rawValue: "execution-coordinator.image-input")!
     let imageOperationInputContext: ImageOperationInputContext
@@ -323,6 +404,7 @@ private struct CoordinatedContext: ExecutionResourceAllocatingContext, Execution
         (try? ExecutionCapabilities([
             ExecutionCapability(identifier: .resourceAllocation, value: .boolean(true)),
             ExecutionCapability(identifier: .bufferResources, value: .boolean(true)),
+            ExecutionCapability(identifier: .resourceImport, value: .boolean(true)),
             ExecutionCapability(identifier: .resourceMemoryDomains, value: .stringSet(["host", "shared"]))
         ])) ?? .init()
     }
@@ -344,7 +426,17 @@ private struct CoordinatedContext: ExecutionResourceAllocatingContext, Execution
         _ resource: any ExecutionResource,
         access: ExecutionResourceAccessMode
     ) async throws -> any ExecutionResource {
-        throw CoordinatedContextError.importUnsupported
+        let source = resource.descriptor
+        let descriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.imported.\\(UUID().uuidString)")!,
+            target: target,
+            kind: source.kind,
+            capacityBytes: source.capacityBytes,
+            alignmentBytes: source.alignmentBytes,
+            memoryDomain: .shared,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
+        )
+        return CoordinatedResource(descriptor)
     }
 }
 
@@ -461,6 +553,75 @@ struct OperationExecutionCoordinatorTests {
             candidate: candidate,
             weakProvider: weakProvider
         )
+    }
+
+    @Test
+    func importsForeignInputIntoTheExactContextAndRetainsTheSourceLeaseUntilCompletion() async throws {
+        let destinationProviderID = ExecutionProviderID(
+            rawValue: "provider.execution-coordinator.import-destination"
+        )!
+        let destinationTarget = ExecutionTargetReference(providerID: destinationProviderID)
+        let sourceTarget = ExecutionTargetReference(
+            providerID: ExecutionProviderID(rawValue: "provider.execution-coordinator.import-source")!
+        )
+        let sourceRegistration = UUID()
+        let sourceDescriptor = try ExecutionResourceDescriptor(
+            identifier: ExecutionResourceIdentifier(rawValue: "coordinator.source.buffer")!,
+            target: sourceTarget,
+            kind: .buffer,
+            capacityBytes: 256,
+            alignmentBytes: 64,
+            memoryDomain: .deviceLocal,
+            providerRegistrationIdentifier: sourceRegistration
+        )
+        let source = CoordinatedResource(sourceDescriptor)
+        let input = CoordinatedResourceInput(value: 19, resource: source)
+
+        let providers = ExecutionProviderRegistry()
+        try await providers.register(CoordinatedProvider(identifier: destinationProviderID))
+        let registeredProvider = try #require(await providers.registeredProviders().first)
+        let context = try await providers.makeContext(
+            for: destinationTarget,
+            expecting: registeredProvider.descriptor,
+            registrationIdentifier: registeredProvider.registrationIdentifier
+        )
+
+        let implementations = OperationImplementationRegistry()
+        try await implementations.register(CoordinatedImportImplementation())
+        let registeredImplementation = try #require(
+            await implementations.registeredImplementations().first
+        )
+        let candidate = QualifiedOperationImplementation(
+            implementation: registeredImplementation,
+            providerRegistrationIdentifier: registeredProvider.registrationIdentifier,
+            operationStep: AnyImageOperationStep(operation: CoordinatedImportOperation()),
+            input: input,
+            target: destinationTarget,
+            context: context,
+            imageInputContext: nil,
+            environmentObservations: CandidateEnvironmentObservations(
+                environmentSnapshotIdentifier: RuntimeEnvironmentSnapshotIdentifier(),
+                providerState: ExecutionProviderStateSnapshot(availability: .available),
+                deviceState: nil,
+                assessedAt: Date()
+            ),
+            resourceAllocations: [],
+            inputResourceAccesses: [
+                ExecutionResourceAccess(resource: source, mode: .read)
+            ]
+        )
+        let ledger = RuntimeWorkLedger()
+        let coordinator = OperationExecutionCoordinator(
+            implementations: implementations,
+            providers: providers,
+            workLedger: ledger
+        )
+
+        let output = try await coordinator.execute(candidate) as? CoordinatedOutput
+
+        #expect(output?.value == 19)
+        #expect(source.descriptor.reference.target == sourceTarget)
+        #expect(await ledger.activeLeaseCount == 0)
     }
 
     @Test
