@@ -35,6 +35,7 @@ public enum OperationExecutionCoordinatorError: Error, Equatable, Sendable {
     case inputResourceImportAliasesWritableSource(Int, ExecutionResourceReference)
     case inputResourceImportIdentityCollision(ExecutionResourceReference)
     case inputResourceImportAliasesAllocation(ImplementationResourceRole, ExecutionResourceReference)
+    case importedInputResourceEscapedInvocation(Int, ExecutionResourceReference)
     case inputResourceImportCleanupFailed(String)
 }
 
@@ -230,6 +231,10 @@ public actor OperationExecutionCoordinator {
                 )
                 try validateAllocatedResourceBindings(
                     allocated,
+                    in: output
+                )
+                try validateImportedInputResourcesDidNotEscape(
+                    preparedInputs.importedBindings,
                     in: output
                 )
                 executionResult = .success(output)
@@ -826,6 +831,31 @@ public actor OperationExecutionCoordinator {
                 }
             case .input(_):
                 throw OperationExecutionCoordinatorError.unsupportedAllocatedResourceRole(binding.role)
+            }
+        }
+    }
+
+    private func validateImportedInputResourcesDidNotEscape(
+        _ importedBindings: [OperationInputResourceBinding],
+        in output: any OperationValue
+    ) throws {
+        guard !importedBindings.isEmpty,
+              let imageOutput = output as? any ImageOperationOutputValue else {
+            return
+        }
+
+        let outputReferences = Set(
+            imageOutput.imageOperationOutputDescriptor.storageBindings.layerBindings.flatMap {
+                $0.storage.planeBindings.map { $0.resource.descriptor.reference }
+            }
+        )
+        for binding in importedBindings {
+            let reference = binding.resource.descriptor.reference
+            guard !outputReferences.contains(reference) else {
+                throw OperationExecutionCoordinatorError.importedInputResourceEscapedInvocation(
+                    binding.inputIndex,
+                    reference
+                )
             }
         }
     }
