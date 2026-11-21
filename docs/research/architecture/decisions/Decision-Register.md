@@ -1323,3 +1323,50 @@ Provider-use leases remain invocation-scoped. They protect provider methods and 
 ### Consequence
 
 The generic library can preserve native release behavior across provider unregister and image-revision lifetime without hiding provider-specific resource types. Each production provider package must implement and validate its own owner token when dynamic package unloading or external releaser code requires it; that platform-specific unload integration is not claimed by the generic protocol test.
+
+
+---
+
+## ADR-040 — ImageFunction execution is sequential, per-step resolved, and non-transactional
+
+**Status:** Basic typed sequential execution implemented; global sequence planning and transactional multi-step publication remain deferred
+
+### Context
+
+`ImageFunction<Input, Output>` stores a typed, immutable sequence of heterogeneous operation occurrences. Each step has an associated input/output contract, and composition requires the previous output type to match the next input type. A composed function can therefore execute without a global graph search: the output value from one step is the exact typed input value for the next step.
+
+Operation eligibility and ranking depend on the actual input value, current provider/device observations, resource bindings, and the function's scoped qualification policy. Those facts can change after a preceding step executes. Reusing one environment snapshot for an entire function could qualify a later operation against stale residency, queue, or provider state.
+
+### Decision
+
+`ImageFunctionExecutionCoordinator` executes an existing function in its stored step order. For every step it:
+- Captures a new `RuntimeEnvironmentSnapshot`.
+- Resolves that occurrence against the actual `OperationValue` produced by the previous step, using the function's complete declarative policy (the resolver applies pipeline-scoped and matching step-scoped declarations).
+- Selects only the first/top-ranked qualified candidate and passes that exact candidate to `OperationExecutionCoordinator`.
+- Passes the validated typed output value to the next step.
+- Records only the step identifier, implementation key, target, environment snapshot identifier, and rank in the successful execution summary.
+
+The caller may supply memory-domain choices keyed by the actual composed step identifier and resource role. Existing hard qualification rules remain authoritative; the runner does not infer or relax a missing choice.
+
+The runner MUST NOT:
+- Search combinations or permutations of implementations across steps.
+- Retry another candidate or silently switch target/domain after a selected candidate fails.
+- Add cost-based cross-step optimization, speculative preallocation, or implicit conversion.
+- Rewrite or publish intermediate `Image` revisions. A returned image output remains an immutable snapshot value; mutable-image publication remains an explicit operation-coordinator boundary.
+- Claim that a multi-step function is atomic or rollback-capable.
+
+If a step fails, `ImageFunctionStepExecutionFailure` reports the failed step, compact summaries of earlier completed steps, and the original underlying error. The underlying provider/runtime error remains inspectable. Completed earlier side effects are not rolled back; the runner is sequential and non-transactional.
+
+### Invariants
+
+- Step order is exactly `ImageFunction.steps` order.
+- Every step is resolved from the actual prior output, not from the original function input or an assumed intermediate type conversion.
+- Each step uses a fresh environment snapshot and its own operation-level resource lifecycle.
+- Only a fully qualified candidate can be selected; the ranker cannot make a rejected or indeterminate candidate eligible.
+- A failed execution does not trigger automatic candidate or target fallback.
+- The public report does not retain qualified candidates or intermediate `OperationValue` instances; resource lifetime follows the values and snapshots actually retained by execution.
+- An empty identity function returns its input unchanged and performs no environment discovery or dispatch.
+
+### Consequence
+
+The MVP can execute typed sequential functions using the already-implemented qualification, ranking, and single-operation coordinator contracts. It does not need a new pipeline graph, route optimizer, or resource cache. Global implementation-sequence planning, cross-step cost optimization, transition/conversion planning, transaction boundaries, rollback, and atomic multi-step image publication remain later work.
