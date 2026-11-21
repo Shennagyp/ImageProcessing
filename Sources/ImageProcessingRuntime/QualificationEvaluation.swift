@@ -98,6 +98,13 @@ public enum CandidateQualificationRejection: Hashable, Sendable {
     case inputResourceAlignmentInsufficient(Int, ExecutionResourceReference, required: UInt64, actual: UInt64)
     case inputResourceMemoryDomainUnsupported(Int, ExecutionResourceReference, ExecutionMemoryDomain)
     case inputResourceAccessInsufficient(Int, ExecutionResourceReference, actual: ExecutionResourceAccessMode, required: ExecutionResourceAccessMode)
+    case inputResourceProviderRegistrationMismatch(
+        Int,
+        ExecutionResourceReference,
+        memoryDomain: ExecutionMemoryDomain,
+        expected: UUID,
+        actual: UUID?
+    )
     case inputResourceNotAccessibleFromTarget(Int, ExecutionResourceReference, ExecutionTargetReference)
     case contextCapabilityInvalid(ExecutionCapabilityID)
     case contextResourceKindUnsupported(ImplementationResourceRole, ExecutionResourceKind)
