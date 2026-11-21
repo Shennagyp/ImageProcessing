@@ -13,6 +13,7 @@ public enum ExecutionProviderRegistryError: Error, Equatable, Sendable {
     case targetProviderMismatch(expected: ExecutionProviderID, actual: ExecutionProviderID)
     case providerDescriptorChanged(ExecutionProviderID)
     case providerRegistrationChanged(ExecutionProviderID)
+    case resourceRegistrationIdentityMissing(ExecutionResourceReference)
     case contextRegistrationMismatch(ExecutionProviderID)
     case contextTargetMismatch(expected: ExecutionTargetReference, actual: ExecutionTargetReference)
 }
@@ -164,6 +165,42 @@ public actor ExecutionProviderRegistry {
         if let boundContext = context as? any ExecutionProviderRegistrationBoundContext,
            boundContext.providerRegistrationIdentifier != registrationIdentifier {
             throw ExecutionProviderRegistryError.contextRegistrationMismatch(target.providerID)
+        }
+
+        return ExecutionProviderUseLease(
+            descriptor: entry.descriptor,
+            registrationIdentifier: entry.registrationIdentifier,
+            provider: entry.provider
+        )
+    }
+
+    /// Retains the provider package that created a resource, even when the
+    /// resource is being imported by a different target's context. A resource
+    /// with explicit registration provenance cannot be imported after that
+    /// registration has been removed or replaced.
+    func retainResourceOwner(
+        for resource: any ExecutionResource
+    ) throws -> ExecutionProviderUseLease {
+        let descriptor = resource.descriptor
+        guard let registrationIdentifier = descriptor.providerRegistrationIdentifier else {
+            throw ExecutionProviderRegistryError.resourceRegistrationIdentityMissing(
+                descriptor.reference
+            )
+        }
+        guard let entry = entries[descriptor.target.providerID] else {
+            throw ExecutionProviderRegistryError.providerNotRegistered(
+                descriptor.target.providerID
+            )
+        }
+        guard entry.registrationIdentifier == registrationIdentifier else {
+            throw ExecutionProviderRegistryError.providerRegistrationChanged(
+                descriptor.target.providerID
+            )
+        }
+        guard entry.provider.descriptor == entry.descriptor else {
+            throw ExecutionProviderRegistryError.providerDescriptorChanged(
+                descriptor.target.providerID
+            )
         }
 
         return ExecutionProviderUseLease(
