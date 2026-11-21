@@ -747,7 +747,7 @@ enum CandidateCostEstimator {
                 state: minimumPlannedResourceCapacityEstimate(
                     candidate,
                     matching: { role in
-                        if case .output = role { return true }
+                        if case .output(_) = role { return true }
                         return false
                     },
                     description: "output"
@@ -758,7 +758,7 @@ enum CandidateCostEstimator {
                 state: minimumPlannedResourceCapacityEstimate(
                     candidate,
                     matching: { role in
-                        if case .temporary = role { return true }
+                        if case .temporary(_) = role { return true }
                         return false
                     },
                     description: "temporary"
