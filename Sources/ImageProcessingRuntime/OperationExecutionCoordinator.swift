@@ -105,7 +105,10 @@ public actor OperationExecutionCoordinator {
         _ candidate: QualifiedOperationImplementation,
         memoryDomains: [ImplementationResourceRole: ExecutionMemoryDomain] = [:]
     ) async throws -> any OperationValue {
-        try await dispatch(candidate, memoryDomains: memoryDomains)
+        try Task.checkCancellation()
+        let output = try await dispatch(candidate, memoryDomains: memoryDomains)
+        try Task.checkCancellation()
+        return output
     }
 
     /// Executes an image-producing operation and atomically publishes its output
@@ -117,6 +120,7 @@ public actor OperationExecutionCoordinator {
         updating image: Image,
         memoryDomains: [ImplementationResourceRole: ExecutionMemoryDomain] = [:]
     ) async throws -> any OperationValue {
+        try Task.checkCancellation()
         let specification = candidate.operationStep.specification
         let declaresImageOutput = !specification.layerContract.producedOutputKinds.isEmpty
             || specification.pixelDataContract.output != nil
@@ -151,6 +155,7 @@ public actor OperationExecutionCoordinator {
         }
 
         let output = try await dispatch(candidate, memoryDomains: memoryDomains)
+        try Task.checkCancellation()
         guard let imageOutput = output as? any ImageOperationOutputValue else {
             throw OperationExecutionCoordinatorError.imageOutputValueRequired
         }
@@ -166,6 +171,7 @@ public actor OperationExecutionCoordinator {
         _ candidate: QualifiedOperationImplementation,
         memoryDomains: [ImplementationResourceRole: ExecutionMemoryDomain]
     ) async throws -> any OperationValue {
+        try Task.checkCancellation()
         guard candidate.context.target == candidate.target else {
             throw ExecutionProviderRegistryError.contextTargetMismatch(
                 expected: candidate.target,
@@ -180,11 +186,13 @@ public actor OperationExecutionCoordinator {
             registrationIdentifier: candidate.providerRegistrationIdentifier,
             context: candidate.context
         )
+        try Task.checkCancellation()
 
         let allocated = try await allocateResources(
             for: candidate,
             memoryDomains: memoryDomains
         )
+        try Task.checkCancellation()
         let preparedInputs = try await prepareInputResources(
             for: candidate,
             allocated: allocated
@@ -192,6 +200,7 @@ public actor OperationExecutionCoordinator {
         var sourceLeasesToRelease = preparedInputs.sourceLeases
 
         do {
+            try Task.checkCancellation()
             // Only handles that are accessible on this exact target enter the
             // destination lease. Foreign source handles remain under their own
             // source-target read leases while an imported handle can depend on them.
@@ -206,10 +215,12 @@ public actor OperationExecutionCoordinator {
             )
 
             do {
+                try Task.checkCancellation()
                 try await workLedger.revalidate(
                     lease,
                     accessing: completeAccessSet
                 )
+                try Task.checkCancellation()
                 try await workLedger.markSubmitted(lease)
             } catch let primaryError {
                 do {
@@ -436,6 +447,7 @@ public actor OperationExecutionCoordinator {
 
         do {
             for request in importRequests {
+                try Task.checkCancellation()
                 let sourceDescriptor = request.source.descriptor
                 let sourceReference = sourceDescriptor.reference
                 let sourceProviderUse: ExecutionProviderUseLease?
@@ -473,11 +485,13 @@ public actor OperationExecutionCoordinator {
                         providerUse: sourceProviderUse
                     )
                 )
+                try Task.checkCancellation()
 
                 let imported = try await allocator.importResource(
                     request.source,
                     access: request.requirement.access
                 )
+                try Task.checkCancellation()
                 let importedDescriptor = imported.descriptor
                 let importedReference = importedDescriptor.reference
 
@@ -538,6 +552,7 @@ public actor OperationExecutionCoordinator {
                 if let synchronizer = candidate.context as? any ExecutionSynchronizingContext {
                     try await synchronizer.synchronize(.resource(importedReference))
                 }
+                try Task.checkCancellation()
 
                 guard let binding = OperationInputResourceBinding(
                     inputIndex: request.inputIndex,
@@ -620,6 +635,7 @@ public actor OperationExecutionCoordinator {
         for candidate: QualifiedOperationImplementation,
         memoryDomains: [ImplementationResourceRole: ExecutionMemoryDomain]
     ) async throws -> AllocatedOperationResourceSet {
+        try Task.checkCancellation()
         let allocations = candidate.resourceAllocations.sorted {
             Self.rolePrecedes($0.role, $1.role)
         }
@@ -641,6 +657,7 @@ public actor OperationExecutionCoordinator {
         let inputReferences = Set(candidate.inputResourceAccesses.map { $0.resource.descriptor.reference })
 
         for allocation in allocations {
+            try Task.checkCancellation()
             switch allocation.role {
             case .output(_), .temporary(_):
                 break
@@ -704,6 +721,7 @@ public actor OperationExecutionCoordinator {
                     reason: String(describing: error)
                 )
             }
+            try Task.checkCancellation()
             let descriptor = resource.descriptor
             guard request.isSatisfied(by: descriptor, on: candidate.target) else {
                 throw OperationExecutionCoordinatorError.allocatedResourceDoesNotSatisfyRequest(
