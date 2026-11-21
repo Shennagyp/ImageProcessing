@@ -874,7 +874,7 @@ A \textbf{requirement} removes candidates that cannot satisfy it. A \textbf{pref
 For example:
 \begin{itemize}
   \item \texttt{require(computationPrecision: fp32)} means an FP16-only implementation is not eligible.
-  \item \texttt{prefer(computationPrecision: fp32)} means FP32 is ranked higher, but a lower precision may be selected only if the operation specification permits it and its declared numerical guarantee remains acceptable.
+  \item \texttt{prefer(.precision(.computation, .float32))} ranks qualified implementations declaring FP32 computation support ahead of otherwise-comparable candidates without that support. This remains a soft preference; candidates using another operation-permitted precision stay eligible unless FP32 is required.
   \item \texttt{prefer(lowLatency)} may select CPU while a GPU is busy if CPU is eligible and its estimated end-to-end latency is lower.
   \item \texttt{require(provider: CUDA)} forbids CPU fallback. If CUDA is unavailable or cannot reserve required resources, the request waits/retries according to the execution policy or returns a structured failure.
 \end{itemize}
