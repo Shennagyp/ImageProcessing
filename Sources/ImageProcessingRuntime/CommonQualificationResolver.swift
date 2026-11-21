@@ -540,29 +540,55 @@ public actor CommonQualificationResolver {
         var accesses: [ExecutionResourceAccess] = []
         for (inputIndex, requirement) in inputRequirements {
             let bindings = resourceBindings.filter { $0.inputIndex == inputIndex }
-            guard !bindings.isEmpty else {
-                if let imageInput = imageInputContext?.input(at: inputIndex) {
-                    let references = imageInput.target.layerReferences
-                    if references.isEmpty {
-                        rejections.append(.inputBindingMissing(inputIndex))
-                    }
-                    for reference in references {
-                        let storage: PixelStorageBinding?
-                        do {
-                            storage = try imageInput.imageState.storageBindings.binding(for: reference)
-                        } catch {
-                            rejections.append(.inputResourceBindingMissing(inputIndex, reference))
-                            continue
-                        }
-                        if storage == nil {
-                            rejections.append(.inputResourceBindingMissing(inputIndex, reference))
-                        }
-                    }
-                } else {
-                    rejections.append(.inputResourceContextMissing(inputIndex))
+            let imageInput = imageInputContext?.input(at: inputIndex)
+
+            if let imageInput {
+                let references = imageInput.target.layerReferences
+                if references.isEmpty {
+                    rejections.append(.inputBindingMissing(inputIndex))
                 }
-                continue
+
+                for reference in references {
+                    guard let layer = try? imageInput.imageState.document.layer(for: reference) else {
+                        rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                        continue
+                    }
+
+                    let isPixelBacked: Bool
+                    switch layer.content {
+                    case .raster(_), .mask(_), .labelMap(_):
+                        isPixelBacked = true
+                    case .annotation(_):
+                        isPixelBacked = false
+                    }
+                    guard isPixelBacked else { continue }
+
+                    let storage: PixelStorageBinding?
+                    do {
+                        storage = try imageInput.imageState.storageBindings.binding(for: reference)
+                    } catch {
+                        rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                        continue
+                    }
+                    guard let storage else {
+                        rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                        continue
+                    }
+
+                    let missingPlaneResource = storage.planeBindings.contains { planeBinding in
+                        !bindings.contains {
+                            $0.resource.descriptor.reference == planeBinding.resource.descriptor.reference
+                        }
+                    }
+                    if missingPlaneResource {
+                        rejections.append(.inputResourceBindingMissing(inputIndex, reference))
+                    }
+                }
+            } else if bindings.isEmpty {
+                rejections.append(.inputResourceContextMissing(inputIndex))
             }
+
+            guard !bindings.isEmpty else { continue }
 
             for binding in bindings {
                 let descriptor = binding.resource.descriptor
