@@ -40,7 +40,9 @@ private final class ReservedResourceFixture: ExecutionResource, Sendable {
     init(
         target: ExecutionTargetReference,
         identifier: String,
-        capacityBytes: UInt64 = 4096
+        capacityBytes: UInt64 = 4096,
+        memoryDomain: ExecutionMemoryDomain = .host,
+        providerRegistrationIdentifier: UUID? = nil
     ) throws {
         descriptor = try ExecutionResourceDescriptor(
             identifier: ExecutionResourceIdentifier(rawValue: identifier)!,
@@ -48,7 +50,8 @@ private final class ReservedResourceFixture: ExecutionResource, Sendable {
             kind: .buffer,
             capacityBytes: capacityBytes,
             alignmentBytes: 16,
-            memoryDomain: .host
+            memoryDomain: memoryDomain,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
         )
     }
 }
@@ -310,6 +313,44 @@ extension RuntimeEnvironmentSnapshotTests {
         )
         try await ledger.cancelReservation(firstWriter)
         try await ledger.cancelReservation(held)
+    }
+
+    @Test
+    func resourceLeasesDoNotAliasAcrossProviderRegistrationGenerations() async throws {
+        let ledger = RuntimeWorkLedger()
+        let target = target("provider.gpu", "gpu.0")
+        let firstRegistration = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let secondRegistration = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let oldResource = try ReservedResourceFixture(
+            target: target,
+            identifier: "reused-buffer",
+            memoryDomain: .deviceLocal,
+            providerRegistrationIdentifier: firstRegistration
+        )
+        let replacementResource = try ReservedResourceFixture(
+            target: target,
+            identifier: "reused-buffer",
+            memoryDomain: .deviceLocal,
+            providerRegistrationIdentifier: secondRegistration
+        )
+
+        #expect(oldResource.descriptor.reference != replacementResource.descriptor.reference)
+
+        let oldLease = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: oldResource, mode: .write)]
+        )
+        let replacementLease = try await ledger.reserveWork(
+            on: target,
+            accessing: [ExecutionResourceAccess(resource: replacementResource, mode: .write)]
+        )
+
+        let snapshot = await ledger.snapshot()
+        #expect(snapshot.reservationLoad(for: oldResource.descriptor.reference)?.reservedWriteCount == 1)
+        #expect(snapshot.reservationLoad(for: replacementResource.descriptor.reference)?.reservedWriteCount == 1)
+
+        try await ledger.cancelReservation(oldLease)
+        try await ledger.cancelReservation(replacementLease)
     }
 
     @Test
