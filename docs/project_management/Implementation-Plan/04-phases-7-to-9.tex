@@ -2,7 +2,7 @@
 
 \textbf{Objective.} Prove that the core is genuinely implementation-independent by supplying provider and operation implementations from separate packages and consuming them from an application.
 
-This is an integration phase for the first supported reference combination, not a vendor roadmap. The provider and operation packages remain independently buildable and independently versioned. Other packs may be developed in parallel or later according to target requirements.
+This is an integration phase for the first supported reference combination, not a vendor roadmap. The provider and operation packages remain independently buildable and independently versioned. Other packs may be developed in parallel or later according to target requirements. **Current repository slice:** `ImageProcessingCPUProvider` implements the lower-level provider contract with one opaque host-memory target; `ImageProcessingReferenceOperations` supplies a scalar Float32 raster negation implementation and depends on the CPU provider's concrete buffer type. The runtime imports neither pack.
 
 \subsection{Package families}
 
@@ -23,10 +23,10 @@ An operation pack may depend on a provider pack, a higher-level library, or a ma
 \subsection{Reference integration deliverables}
 
 \begin{enumerate}
-  \item A separate reference CPU provider package implementing \GEP{}; it is not part of the core runtime dependency.
+  \item **Implemented:** separate `ImageProcessingCPUProvider` SwiftPM product implementing \GEP{}; it depends only on \GEP{} and is not part of the core runtime dependency. Its one opaque CPU-managed target allocates aligned host buffers, stamps registration identity, provides bounded synchronized byte access, and copies CPU-owned buffers for read-only imports. It does not yet expose a hardware device or non-host memory domain.
   \item At least two independent implementation classes for one operation, registered under the same operation identity and semantic version. A deterministic test implementation may be used to prove dispatch before a second real hardware backend is available.
-  \item At least one numerical reference implementation for the initial operation suite and a reusable conformance harness.
-  \item A sample consumer application that imports the core protocols/runtime and explicitly selects/registers provider and operation packages.
+  \item **Partially implemented:** separate `ImageProcessingReferenceOperations` product with `ReferenceNegateFloat32` and `CPUReferenceNegateFloat32Implementation`. It runs through common qualification and the single-operation coordinator, allocates a host output buffer, negates one interleaved single-channel scientific Float32 raster, and returns an immutable next image revision while preserving layer identity/layout. Provider allocation and end-to-end operation tests are authored; execution verification is pending.
+  \item **Pending:** a sample consumer application that imports the core protocols/runtime and explicitly selects/registers provider and operation packages.
   \item Demonstration that adding or removing an implementation package changes candidate availability without modifying core source or operation definitions.
   \item Package metadata and compatibility checks for operation semantic version, implementation version, and provider requirements.
   \item Separate provider and operation conformance suites with real-device tests for any claimed hardware backend.
@@ -42,7 +42,7 @@ An operation pack may depend on a provider pack, a higher-level library, or a ma
   \item Unsupported combinations are rejected with structured diagnostics rather than stubbed or silently approximated.
 \end{itemize}
 
-\textbf{Workstream rule.} CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, and Accelerate are not sequential core phases. Select them based on supported platforms, application workloads, hardware access, maintenance cost, and conformance evidence.
+\textbf{Workstream rule.} CPU, Metal, CUDA, OpenCL, Direct3D 12, Vulkan, OpenCV, Core Image, and Accelerate are not sequential core phases. Select them based on supported platforms, application workloads, hardware access, maintenance cost, and conformance evidence. The current CPU reference slice is a narrow correctness example, not a production performance baseline or a claim of full CPU-provider conformance.
 
 \phase{8 --- Measured optimization}
 
