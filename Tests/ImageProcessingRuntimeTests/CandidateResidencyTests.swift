@@ -11,6 +11,7 @@ private final class CandidateResidencyTestResource: ExecutionResource, @unchecke
 }
 
 struct CandidateResidencyTests {
+    private let registrationIdentifier = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     private func target(
         provider: String,
         device: String
@@ -25,7 +26,8 @@ struct CandidateResidencyTests {
         id: String,
         target: ExecutionTargetReference,
         capacity: UInt64 = 4_096,
-        domain: ExecutionMemoryDomain = .deviceLocal
+        domain: ExecutionMemoryDomain = .deviceLocal,
+        providerRegistrationIdentifier: UUID? = nil
     ) throws -> CandidateResidencyTestResource {
         let descriptor = try ExecutionResourceDescriptor(
             identifier: try #require(ExecutionResourceIdentifier(rawValue: id)),
@@ -33,20 +35,23 @@ struct CandidateResidencyTests {
             kind: .buffer,
             capacityBytes: capacity,
             alignmentBytes: 256,
-            memoryDomain: domain
+            memoryDomain: domain,
+            providerRegistrationIdentifier: providerRegistrationIdentifier
         )
         return CandidateResidencyTestResource(descriptor: descriptor)
     }
 
     private func estimate(
         _ resources: [any ExecutionResource],
-        on target: ExecutionTargetReference
+        on target: ExecutionTargetReference,
+        registrationIdentifier: UUID? = nil
     ) -> CandidateInputResidencyEstimate {
         CandidateInputResidencyEstimator.estimate(
             resourceAccesses: resources.map {
                 ExecutionResourceAccess(resource: $0, mode: .read)
             },
             on: target,
+            providerRegistrationIdentifier: registrationIdentifier ?? self.registrationIdentifier,
             source: "candidate-residency-test"
         )
     }
@@ -54,8 +59,8 @@ struct CandidateResidencyTests {
     @Test
     func targetLocalDeviceMemoryHasNoBoundInputStagingCost() throws {
         let target = try target(provider: "provider.gpu", device: "device.0")
-        let first = try resource(id: "input.first", target: target, capacity: 4_096)
-        let second = try resource(id: "input.second", target: target, capacity: 8_192)
+        let first = try resource(id: "input.first", target: target, capacity: 4_096, providerRegistrationIdentifier: registrationIdentifier)
+        let second = try resource(id: "input.second", target: target, capacity: 8_192, providerRegistrationIdentifier: registrationIdentifier)
 
         let result = estimate([first, second], on: target)
 
@@ -81,7 +86,7 @@ struct CandidateResidencyTests {
     @Test
     func repeatedReferencesAreCountedOnceInResidentCapacity() throws {
         let target = try target(provider: "provider.gpu", device: "device.0")
-        let shared = try resource(id: "input.shared", target: target, capacity: 16_384)
+        let shared = try resource(id: "input.shared", target: target, capacity: 16_384, providerRegistrationIdentifier: registrationIdentifier)
 
         let result = estimate([shared, shared, shared], on: target)
 
@@ -144,6 +149,39 @@ struct CandidateResidencyTests {
     }
 
     @Test
+    func sameTargetResourceFromAnotherProviderRegistrationIsNotResidentForCandidate() throws {
+        let target = try target(provider: "provider.gpu", device: "device.0")
+        let previousRegistration = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let input = try resource(
+            id: "input.previous-registration",
+            target: target,
+            providerRegistrationIdentifier: previousRegistration
+        )
+
+        let result = estimate([input], on: target)
+
+        #expect(result.resources.first?.disposition == .providerRegistrationMismatch)
+        #expect({
+            if case .unknown = result.boundInputTransferTime { return true }
+            return false
+        }())
+    }
+
+    @Test
+    func deviceLocalResourceWithoutProviderRegistrationRemainsUnknown() throws {
+        let target = try target(provider: "provider.gpu", device: "device.0")
+        let input = try resource(id: "input.unattributed", target: target)
+
+        let result = estimate([input], on: target)
+
+        #expect(result.resources.first?.disposition == .providerRegistrationUnknown)
+        #expect({
+            if case .unknown = result.boundInputTransferTime { return true }
+            return false
+        }())
+    }
+
+    @Test
     func absentResourceBindingsRemainUnknown() throws {
         let target = try target(provider: "provider.gpu", device: "device.0")
 
@@ -165,12 +203,14 @@ struct CandidateResidencyTests {
         let smaller = try resource(
             id: "input.conflict",
             target: target,
-            capacity: 4_096
+            capacity: 4_096,
+            providerRegistrationIdentifier: registrationIdentifier
         )
         let larger = try resource(
             id: "input.conflict",
             target: target,
-            capacity: 8_192
+            capacity: 8_192,
+            providerRegistrationIdentifier: registrationIdentifier
         )
 
         let result = estimate([smaller, larger], on: target)
