@@ -792,11 +792,11 @@ Provider packages and operation implementation packages can be selected independ
 
 ## ADR-027 — Provider registration and discovery preserve partial environment results
 
-**Status:** Provider registry, partial discovery, and provider registration identity in environment snapshots/context creation implemented; discovery timeouts and cancellation remain deferred
+**Status:** Provider registry, partial discovery, provider registration identity in environment snapshots, registration-aware context creation, post-await registration revalidation, and optional bound-context identity validation implemented; discovery timeouts, cancellation, and provider-package lifetime after unregister remain deferred
 
 ### Decision
 
-ExecutionProviderRegistry lives in ImageProcessingRuntime and is independent of OperationImplementationRegistry. It stores one selected provider package per stable ExecutionProviderID, rejects duplicate registrations, supports explicit unregister, and returns deterministic metadata snapshots.
+ExecutionProviderRegistry lives in ImageProcessingRuntime and is independent of OperationImplementationRegistry. It stores one selected provider package per stable ExecutionProviderID, rejects duplicate registrations, supports explicit unregister, and returns deterministic metadata snapshots. Each registration receives a UUID that is passed to the provider's registration-aware context factory. A provider may implement ExecutionProviderRegistrationBoundContext so the registry can verify the context was created for that exact registration.
 
 Discovery queries each registered provider's state and device list and each valid discovered device's state. The caller supplies an explicit ExecutionPlatformDescriptor; this initial registry does not infer or hardcode the host platform.
 
@@ -809,6 +809,8 @@ A provider returning no devices is valid because it may represent an opaque mana
 - Provider registration does not imply provider availability.
 - Operation implementation registration and provider registration have independent identities and lifecycles.
 - The environment snapshot includes only validated provider/device ownership relationships.
+- Context creation is checked both before and after the asynchronous provider factory call; a context returned after unregister/replacement cannot escape qualification.
+- A context that reports a provider registration identity must report the exact identity supplied by the registry.
 - Unknown or failed state observations remain unknown; they are never rewritten as idle or available.
 - One failing provider/device cannot erase successful discoveries from another provider.
 - Platform identity is supplied as an explicit environment fact rather than inferred as a provider preference.
@@ -853,7 +855,7 @@ RuntimeEnvironmentSnapshotCoordinator combines the current provider discovery re
 - Runtime accounting integration with actual submission/completion and cancellation paths.
 ## ADR-029 — Operation input context binds typed inputs to explicit image revisions and generic resources
 
-**Status:** Input binding/qualification (including complete pixel-backed composite plane coverage), operation-derived output/temporary planning, context resource feasibility, output descriptor validation, initial candidate ranking, and descriptor-based residency classification for declared input handles implemented; provider-backed allocation, physical capacity reservation, residency transitions, import/remapping, and output binding pending
+**Status:** Input binding/qualification (including complete pixel-backed composite plane coverage and provider-registration checks for device-local resources), operation-derived output/temporary planning, context resource feasibility, output descriptor validation, initial candidate ranking, and registration-aware descriptor-based residency classification implemented; provider-backed allocation, physical capacity reservation, residency transitions, cross-registration import/remapping, and output binding pending
 
 ### Decision
 
@@ -861,9 +863,9 @@ The runtime accepts an actual `OperationValue` during qualification. The core va
 
 Image-backed values conform to `ImageOperationInputValue`, which extends the generic resource-input contract. Their `ImageOperationInputContext` explicitly maps logical input indices to one or more immutable `ImageStateSnapshot` values and an explicit `LayerReference` or ordered composite of references. Input indices are nonnegative and unique but need not be contiguous. The context validates image identity and layer existence; it never infers a target from layer order, visibility, or first-match behavior.
 
-The common resolver checks the concrete Swift operation/input types in addition to stable semantic type identifiers. For each selected image layer it validates operation and implementation layer-kind support, actual pixel representation, input storage component precision, and the exact revision-scoped storage binding. For every resource-declared pixel-backed image input, each selected layer and every plane resource must be represented by the input's bindings; one bound member cannot hide an unbound member of a composite. Qualification coverage includes both a fully bound composite that remains eligible and a partially bound composite that is rejected. Generic input resource requirements are checked against actual resource kind, capacity, alignment, memory domain, access, and execution target. Cross-target resources require an explicit import requirement and a context that truthfully supports importing, but import and remapping into the typed input remain Phase 6 work.
+The common resolver checks the concrete Swift operation/input types in addition to stable semantic type identifiers. For each selected image layer it validates operation and implementation layer-kind support, actual pixel representation, input storage component precision, and the exact revision-scoped storage binding. For every resource-declared pixel-backed image input, each selected layer and every plane resource must be represented by the input's bindings; one bound member cannot hide an unbound member of a composite. Qualification coverage includes both a fully bound composite that remains eligible and a partially bound composite that is rejected. Generic input resource requirements are checked against actual resource kind, capacity, alignment, memory domain, access, and execution target. ExecutionResourceDescriptor may carry the provider registration UUID that created the resource, and ExecutionResourceReference includes that UUID so registrations that reuse a target/resource name remain distinct identities. A device-local input resource is accepted for direct use only when its provider registration identifier matches the candidate's registration; missing or different provenance is rejected. Cross-target resources require an explicit import requirement and a context that truthfully supports importing, but import and remapping into the typed input remain Phase 6 work.
 
-Each implementation and provider registration receives a unique registration identifier in addition to its stable identity. Provider registration identifiers are captured in the runtime environment discovery snapshot, and context creation requires the exact identifier used during discovery. A qualified candidate carries the operation occurrence, typed input value, implementation and provider registration identities, target, context, exact image input snapshots, and required input resource accesses. Dispatch consumes that candidate as one unit. If an implementation registration was removed or replaced, dispatch fails rather than silently substituting a different implementation under the same key. A provider registration replaced after discovery cannot supply a context for the old snapshot.
+Each implementation and provider registration receives a unique registration identifier in addition to its stable identity. Provider registration identifiers are captured in the runtime environment discovery snapshot and passed to registration-aware context creation. The registry verifies the registration again after the asynchronous context factory returns; a bound context that reports a different identifier is rejected. Resource-producing providers stamp that same identifier into resource descriptors. A qualified candidate carries the operation occurrence, typed input value, implementation and provider registration identities, target, context, exact image input snapshots, and required input resource accesses. Dispatch consumes that candidate as one unit. If an implementation registration was removed or replaced, dispatch fails rather than silently substituting a different implementation under the same key. A provider registration replaced after discovery cannot supply a context for the old snapshot.
 
 Input resource access declarations must also agree with operation semantics: writable input roles require both operation and implementation contracts to permit input mutation; output and temporary resource roles must be writable.
 
@@ -872,13 +874,15 @@ Input resource access declarations must also agree with operation semantics: wri
 - Generic `OperationValue` remains valid for non-image computation; image metadata is supplied only through the optional image-input contract.
 - GEP remains image-agnostic. The generic input-resource contract is in IPP and describes only generic execution resources.
 - Each image target is bound to an exact immutable image identity/revision and explicit layer references.
+- Resource identity includes stable target, provider resource identifier, and optional provider registration identity; resource IDs reused by a replacement registration do not alias the prior registration's handles.
+- A device-local resource without matching registration provenance is not considered directly resident on a candidate, even when stable provider/device identifiers match.
 - A candidate cannot change its operation step, typed input, target, or prepared context between qualification and dispatch.
 - A re-registered implementation cannot inherit a previous candidate's identity.
 - Resource access declarations cannot silently contradict input-mutation semantics.
 
 ### Deferred
 
-- Provider-backed physical memory reservation, residency and full interop feasibility.
+- Provider-backed physical memory reservation, residency and full interop feasibility, including imported resource remapping for a resource from another provider registration.
 - Quality-aware weighting and refresh policy for telemetry; the initial ranker consumes only fresh comparable queue-delay values while preserving source, quality, and validity metadata, and does not use stale/unknown values to rank.
 - Provider-backed allocation, returned-resource descriptor validation, residency/import feasibility, and result storage-binding validation; logical output descriptor and typed postcondition validation are implemented under ADR-033.
 - Retaining removed implementation/provider plugin code until all qualified candidates and contexts release it; current behavior invalidates stale implementations and prevents stale provider snapshots from creating contexts from replacements.
@@ -1058,14 +1062,14 @@ The first ranker uses the policy's existing scoped preference declarations. Appl
 
 The first objective comparisons are deliberately narrow:
 
-- lowLatency uses pairwise Pareto dominance over components available and comparable for both candidates: provider queue delay, device queue delay, bound-input staging time for declared input resources, and implementation fixed submission/setup overhead. The bound-input staging component is known zero only when every distinct declared input-resource handle is device-local on the exact candidate target. A candidate wins only when it is no worse on every shared comparable component and strictly better on at least one. Unknown routes are skipped rather than treated as zero.
+- lowLatency uses pairwise Pareto dominance over components available and comparable for both candidates: provider queue delay, device queue delay, bound-input staging time for declared input resources, and implementation fixed submission/setup overhead. The bound-input staging component is known zero only when every distinct declared input-resource handle is device-local on the exact candidate target and carries the same provider registration identifier as the candidate. Missing, unknown, or mismatched registration provenance is not treated as zero. A candidate wins only when it is no worse on every shared comparable component and strictly better on at least one. Unknown routes are skipped rather than treated as zero.
 - lowMemory compares the sum of per-role minimum planned output and temporary resource capacities. The output and temporary subtotals are also exposed separately. Existing device-local input allocation capacity is reported as residency evidence but is not added to this incremental per-invocation allocation estimate; this avoids charging a persistent input allocation again for every operation. The planned values are lower bounds from invocation plans and implementation minima, not physical allocation size, peak memory, or current free memory.
 - deterministicResults prefers an implementation that declares deterministic behavior when compared with one that declares nondeterministic behavior.
 - lowEnergy and highThroughput remain unranked until an explicit measured or validated model exists.
 
 Each candidate receives a component estimate record with a unit and one of estimated, stale, or unknown states. Known telemetry retains source, ObservationQuality, observation timestamp, and expiry. Resource-binding evidence is distinguished from provider/device telemetry. The residency report lists distinct declared input-resource references, their memory domain, allocation capacity, and relationship to the candidate target. Stale and unknown values remain visible in diagnostics but do not participate in pairwise comparisons. No source-quality confidence scale is invented. The ranker also exposes each output/temporary role's feasible memory-domain alternatives; it does not select a domain, allocate resources, or reserve capacity.
 
-The first estimate set can expose provider/device queue depth, available memory, utilization, implementation hints such as operations-per-element and temporary-bytes-per-element, and input-resource residency facts. The bound-input staging estimate is zero only for the distinct declared handles already device-local on the exact candidate target. No zero is inferred from a missing binding, or from host, shared, managed, external, or foreign-target resources. Target locality is determined from stable ExecutionTargetReference equality and the descriptor's memory domain; the current descriptor does not carry a provider-registration generation. This is not proof of native interoperability after provider replacement or device loss. Cross-target import/remapping is not implemented by this estimate; its cost remains unknown. The full transferTime component remains unknown because this narrow fact is not an end-to-end transfer estimate and does not cover unrepresented input data or synchronization. Until operation workload size, other residency/transfer routes, conversion requirements, allocation latency, compute throughput, context cost, synchronization, and output materialization have explicit models or measured history, those end-to-end cost terms remain unknown.
+The first estimate set can expose provider/device queue depth, available memory, utilization, implementation hints such as operations-per-element and temporary-bytes-per-element, and input-resource residency facts. The bound-input staging estimate is zero only for distinct declared handles already device-local on the exact candidate target and carrying the exact candidate provider registration identifier. No zero is inferred from a missing binding, missing registration provenance, a prior registration, or host, shared, managed, external, or foreign-target resources. Resource references include provider registration identity so reused provider/device/resource names from different registration generations do not collide. Cross-target and cross-registration import/remapping is not implemented by this estimate; its cost remains unknown. The full transferTime component remains unknown because this narrow fact is not an end-to-end transfer estimate and does not cover unrepresented input data or synchronization. Until operation workload size, other residency/transfer routes, conversion requirements, allocation latency, compute throughput, context cost, synchronization, and output materialization have explicit models or measured history, those end-to-end cost terms remain unknown.
 
 Resource ownership and residency are separate from candidate scoring. An ImageStateSnapshot retains the ImageStorageBindingSet for its exact revision; those bindings retain their PixelStorageBinding values and provider resource handles. Replacing the current Image revision therefore does not release resources still referenced by older snapshots or submitted work. A resource may remain device-local for the lifetime of the image revision, including for the lifetime of the application when that revision remains retained. No independent runtime-wide GPU cache is introduced. Once Phase 6 binds a newly allocated output resource to a produced layer/plane and publishes that binding set, the resulting image revision becomes its owner. Temporary resources remain retained through submitted work and dependent uses, then may be released.
 
@@ -1078,7 +1082,7 @@ Resource ownership and residency are separate from candidate scoring. An ImageSt
 - Cost components retain their units. The first low-latency comparison is Pareto-based rather than a scalar sum across unrelated terms.
 - Minimum planned resource capacity is not physical allocation, free capacity, or peak memory.
 - Existing input allocation capacity is a residency fact, not incremental per-invocation allocation; it is not added to the lowMemory planned-output/temporary comparison.
-- A known zero bound-input staging estimate applies only to distinct declared input handles whose descriptors identify device-local memory on the exact candidate target. It does not establish complete input coverage, output residency, synchronization cost, or whole-operation transfer time.
+- A known zero bound-input staging estimate applies only to distinct declared input handles whose descriptors identify device-local memory on the exact candidate target and carry the same provider registration identifier as the candidate. It does not establish complete input coverage, output residency, synchronization cost, or whole-operation transfer time.
 - Every feasible memory domain remains an option until the Phase 6 coordinator chooses one after ranking.
 - No allocation, reservation, provider submission, or image publication occurs during ranking.
 - Identical registered candidate bindings and the same policy/environment evidence produce a deterministic order.
@@ -1094,3 +1098,40 @@ The runtime can now express a first explainable preference order without couplin
 - Precision-preference objectives over otherwise eligible storage/computation alternatives.
 - Candidate selection with an explicit memory-domain choice, resource acquisition/reservation, execution planning, and full lifecycle diagnostics.
 - Calibration against measured per-operation/per-input-size/per-device execution history and end-to-end benchmarks.
+
+
+---
+
+## ADR-035 — Provider registration provenance scopes resource identity and device-local residency
+
+**Status:** Registration-aware context creation, resource descriptor provenance, registration-scoped resource references, qualification checks, and candidate residency classification implemented; provider-side migration and import/remapping remain pending
+
+### Decision
+
+The stable `ExecutionTargetReference` identifies a logical provider/device target. It is not sufficient to identify a native allocation across provider unregister/re-register cycles, because a replacement provider may reuse the same provider ID, device ID, and resource name.
+
+Each provider registration receives a UUID. The runtime passes it to the registration-aware context factory. A resource-producing provider captures that UUID in the context and stamps it into every `ExecutionResourceDescriptor` it creates. A provider may conform to `ExecutionProviderRegistrationBoundContext` so the registry can verify its context carries the requested registration identity. The registry rechecks the active registration after the asynchronous context factory returns, preventing a context produced by a concurrently removed or replaced provider from entering a qualified candidate.
+
+The provider registration UUID is optional on a resource descriptor to support external resources and legacy providers. When present, it is also part of `ExecutionResourceReference`; two registrations reusing the same stable target and resource identifier therefore remain distinct resource identities in the work ledger and reservation snapshots.
+
+A device-local resource is directly eligible as an input for a candidate only when its descriptor target and provider registration identity both match the candidate. A device-local descriptor with missing or different registration provenance is rejected for direct use. The initial ranker emits zero bound-input staging only for those same-registration resources. Other routes remain unknown until a coordinator implements a validated import/remapping path.
+
+### Invariants
+
+- Stable target identity and provider registration identity are separate dimensions; neither substitutes for the other.
+- A resource handle created by one provider registration cannot be mistaken for a directly accessible handle of a replacement registration that reused the same target/resource names.
+- Resource references, resource-access reservations, and revalidation preserve provider registration identity.
+- Missing registration provenance is unknown for device-local residency; it is never interpreted as a matching or zero-transfer state.
+- The runtime does not silently downgrade a mismatched device-local resource to direct access. A future import path must create a new target/registration-bound resource handle and remap the typed input before execution.
+- Persistent image resources remain owned by their image revision through reference-counted storage bindings. Registration provenance does not create a second global GPU cache or alter image-revision lifetime.
+
+### Consequence
+
+A long-lived GPU allocation can be reused by operations qualified against the same provider registration without being mistaken for a newly allocated output. If the provider is replaced, the old resource remains a distinct retained object, but a new registration cannot directly qualify it as its own device-local input. A future coordinator may explicitly import it if a verified interop path exists.
+
+### Deferred
+
+- Provider resource-handle retention of the provider package/native releaser through image lifetime and asynchronous submissions.
+- Cross-registration and cross-target import/remapping, including typed input rebinding and source-resource retention through transfer completion.
+- Provider eviction, memory-pressure observation, device-loss invalidation, and physical allocation reservation.
+- A full coordinator-owned policy for unregistering providers while candidates, contexts, image resources, or submitted work still reference them.
