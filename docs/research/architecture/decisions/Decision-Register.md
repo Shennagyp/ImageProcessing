@@ -1370,3 +1370,41 @@ If a step fails, `ImageFunctionStepExecutionFailure` reports the failed step, co
 ### Consequence
 
 The MVP can execute typed sequential functions using the already-implemented qualification, ranking, and single-operation coordinator contracts. It does not need a new pipeline graph, route optimizer, or resource cache. Global implementation-sequence planning, cross-step cost optimization, transition/conversion planning, transaction boundaries, rollback, and atomic multi-step image publication remain later work.
+
+
+---
+
+## ADR-041 — Keep the reference CPU provider separate from CPU operation implementations
+
+**Status:** Initial CPU provider and Float32 reference operation packs implemented; package verification remains pending
+
+### Context
+
+The core runtime must resolve and execute providers and operation implementations without depending on a concrete backend or algorithm pack. A reference implementation is still needed to prove the complete execution path, including provider registration, environment discovery, qualification, resource allocation, typed dispatch, pixel-storage binding, and immutable image output.
+
+Putting the CPU allocator and image algorithms in one module would couple generic execution-resource ownership to image semantics. Putting either inside `ImageProcessingRuntime` would make the runtime depend on one provider/implementation and would invert the package boundary.
+
+### Decision
+
+Maintain separate SwiftPM products:
+- `ImageProcessingCPUProvider` depends only on `GeneralExecutionProtocol`. It exposes one opaque provider-managed CPU target, host-memory buffer allocation, exact registration-stamped descriptors, synchronized bounded byte access, and read-only copying of CPU-owned buffers. It has no image-specific concepts and no hardware device discovery.
+- `ImageProcessingReferenceOperations` depends on `GeneralExecutionProtocol`, `ImageProcessingProtocol`, and `ImageProcessingCPUProvider`. It contains `ReferenceNegateFloat32` and `CPUReferenceNegateFloat32Implementation`, which use the CPU provider's concrete buffer API for a narrow raster representation.
+- `ImageProcessingRuntime` continues to depend only on the two core protocol products and does not import either reference pack. A consuming application or integration test registers the provider and operation implementation explicitly.
+
+The reference operation is deliberately constrained to one interleaved, single-channel, scientific Float32 raster layer. It negates every sample with a scalar pass, preserves pixel layout/strides and padding, keeps the logical image and layer identifiers, advances the immutable image revision, binds the output resource to the produced layer, and retains unchanged layer/storage bindings.
+
+The CPU provider supports host buffers only. Its imported-resource path copies only CPU-owned host buffers and accepts read-only access. It does not claim device-local memory, SIMD acceleration, multithreading, export/peer transfer, eviction policy, hardware-device discovery, or measured performance characteristics.
+
+### Invariants
+
+- The generic CPU provider has no dependency on `ImageProcessingProtocol` or `ImageProcessingRuntime`.
+- The reference operation pack may depend on a concrete provider because its implementation consumes that provider's public resource type; the dependency does not flow back into the runtime.
+- The runtime selects the CPU implementation through the same resolver and exact-candidate coordinator used for any other provider/implementation.
+- Output memory is allocated by the provider through the declared resource plan; the operation implementation does not allocate its own output buffer.
+- Input image snapshots and input storage remain unchanged. The result is a new immutable image state with the same image/layer identity and next revision.
+- The reference kernel makes no performance claim and does not add a general CPU execution scheduler.
+- Source and output buffer memory follows the existing resource-handle and image-revision lifetime contracts.
+
+### Consequence
+
+The repository has a small end-to-end reference combination without contaminating the generic core. Phase 7 remains incomplete until there is at least one additional implementation for the same operation, a sample consuming application, and provider/operation conformance evidence. The new source and test declarations remain unverified until builds and tests are run in the user's environment/CI.
