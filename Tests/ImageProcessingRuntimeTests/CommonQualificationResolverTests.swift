@@ -431,6 +431,44 @@ struct CommonQualificationResolverTests {
         )
     }
 
+    private func makePrecisionResolution(
+        providers: [QualificationTestProvider],
+        implementations: [QualificationImplementation],
+        policy: QualificationPolicy,
+        now: Date
+    ) async throws -> OperationImplementationResolutionReport {
+        let implementationRegistry = OperationImplementationRegistry()
+        for implementation in implementations {
+            try await implementationRegistry.register(implementation)
+        }
+
+        let providerRegistry = ExecutionProviderRegistry()
+        for provider in providers {
+            try await providerRegistry.register(provider)
+        }
+
+        let coordinator = RuntimeEnvironmentSnapshotCoordinator(
+            providers: providerRegistry,
+            workLedger: RuntimeWorkLedger()
+        )
+        let environment = try await coordinator.capture(
+            platform: platform(),
+            capturedAt: now
+        )
+        let resolver = CommonQualificationResolver(
+            implementations: implementationRegistry,
+            providers: providerRegistry
+        )
+        return try await resolver.resolve(
+            step: AnyImageOperationStep(operation: QualificationOperation()),
+            input: QualificationInput(),
+            policy: policy,
+            environment: environment,
+            freshness: freshness(),
+            now: now
+        )
+    }
+
     private func makeQueueProvider(
         identifier: String,
         delay: ExecutionObservation<UInt64>,
@@ -1198,8 +1236,6 @@ struct CommonQualificationResolverTests {
         #expect(resolution.rankedCandidates[0].priorityScores[1].weightedScore == 0)
     }
 
-}
-
 
     @Test
     func precisionPreferenceRanksImplementationsThatSupportThePreferredMode() async throws {
@@ -1242,3 +1278,4 @@ struct CommonQualificationResolverTests {
         #expect(resolution.rankedCandidates[0].preferenceContributions.first?.weightedWinRate == 1)
         #expect(resolution.rankedCandidates[1].preferenceContributions.first?.weightedWinRate == 0)
     }
+}
