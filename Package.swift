@@ -15,6 +15,14 @@ let package = Package(
         .library(
             name: "ImageProcessingRuntime",
             targets: ["ImageProcessingRuntime"]
+        ),
+        .library(
+            name: "ImageProcessingCPUProvider",
+            targets: ["ImageProcessingCPUProvider"]
+        ),
+        .library(
+            name: "ImageProcessingReferenceOperations",
+            targets: ["ImageProcessingReferenceOperations"]
         )
     ],
     targets: [
@@ -27,6 +35,18 @@ let package = Package(
             name: "ImageProcessingRuntime",
             dependencies: ["GeneralExecutionProtocol", "ImageProcessingProtocol"]
         ),
+        .target(
+            name: "ImageProcessingCPUProvider",
+            dependencies: ["GeneralExecutionProtocol"]
+        ),
+        .target(
+            name: "ImageProcessingReferenceOperations",
+            dependencies: [
+                "GeneralExecutionProtocol",
+                "ImageProcessingProtocol",
+                "ImageProcessingCPUProvider"
+            ]
+        ),
         .testTarget(
             name: "GeneralExecutionProtocolTests",
             dependencies: ["GeneralExecutionProtocol"]
@@ -38,6 +58,16 @@ let package = Package(
         .testTarget(
             name: "ImageProcessingRuntimeTests",
             dependencies: ["ImageProcessingRuntime", "ImageProcessingProtocol", "GeneralExecutionProtocol"]
+        ),
+        .testTarget(
+            name: "ImageProcessingCPUReferenceTests",
+            dependencies: [
+                "GeneralExecutionProtocol",
+                "ImageProcessingProtocol",
+                "ImageProcessingRuntime",
+                "ImageProcessingCPUProvider",
+                "ImageProcessingReferenceOperations"
+            ]
         )
     ],
     swiftLanguageModes: [.v6]
