@@ -39,7 +39,10 @@ public enum PixelStorageBindingError: Error, Equatable, Sendable {
 }
 
 /// Immutable binding from semantic pixel-plane descriptors to generic,
-/// provider-owned resources. It retains each resource for its lifetime.
+/// provider-owned resources. It retains each concrete resource handle for the
+/// image revision's lifetime. If a resource depends on provider/package code
+/// for native destruction, that resource must itself retain an
+/// ExecutionResourceOwnerLifetime token.
 ///
 /// It does not allocate, import, copy, synchronize, or infer provider choice.
 /// The runtime and provider packages own those operations.
