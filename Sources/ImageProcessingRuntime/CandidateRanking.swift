@@ -632,6 +632,10 @@ enum CandidateInputResidencyEstimator {
             deviceLocalCapacity = .unknown(
                 reason: "Conflicting descriptors exist for an input resource identity; resident capacity cannot be aggregated."
             )
+        } else if resources.contains(where: { $0.disposition == .providerRegistrationUnknown }) {
+            deviceLocalCapacity = .unknown(
+                reason: "At least one device-local input resource has no provider registration provenance; its residency for this candidate cannot be established."
+            )
         } else {
             var total: UInt64 = 0
             var overflowed = false
